@@ -5,15 +5,19 @@ import { botAction, defaultAction } from "@/engine/decisions";
 import { MAX_PLAYERS, MIN_PLAYERS, ROLE_TABLE } from "@/engine/setup";
 import { RuleError, type Action, type GameState } from "@/engine/types";
 import { viewFor, type PlayerView } from "@/engine/view";
+import { holdFor } from "@/lib/beats";
 import { ping, store, type ChatMessage, type GameRow, type Timers } from "./store";
 
 export class HttpError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
 
-const DEFAULT_TIMERS: Timers = { turn: 60, vote: 45, elim: 45 };
-/** a bot's turn waits this long so the humans can follow what happened */
-const BOT_DELAY_MS = 2500;
+const DEFAULT_TIMERS: Timers = { turn: 60, vote: 45, elim: 45, debate: 90 };
+const EXTEND_SECONDS = 30;
+/** the open floor scales with who is still talking: 45s for a small table, up to the debate cap (90s) at 15+ */
+export const debateSeconds = (living: number, cap: number) => Math.min(cap, Math.max(45, 5 * living + 15));
+/** a bot's turn waits this long AFTER the table has watched the last beat */
+const BOT_DELAY_MS = 1200;
 const BOT_NAMES = ["Raju", "Shyam", "Babu Rao", "Pappu", "Munna", "Circuit", "Chintu", "Bunty", "Golu", "Tinku",
   "Gabbar", "Basanti", "Mogambo", "Jhumru", "Lallan", "Kallu", "Bholu", "Chhotu", "Guddu", "Sonu",
   "Monu", "Titu", "Bablu", "Pinky", "Dolly", "Rinku", "Mintu", "Sweety", "Lucky", "Happy"];
@@ -41,7 +45,9 @@ function seatOf(row: GameRow, token: string | null): number {
 function deadlineFor(state: GameState, timers: Timers): number | null {
   const k = state.phase.kind;
   if (k === "over") return null;
-  const secs = k === "vote" || k === "batwara" ? timers.vote : k === "elim" ? timers.elim : timers.turn;
+  const secs = k === "vote" && state.phase.debate
+    ? debateSeconds(state.players.filter((p) => p.alive).length, timers.debate ?? DEFAULT_TIMERS.debate!)
+    : k === "vote" || k === "batwara" ? timers.vote : k === "elim" ? timers.elim : timers.turn;
   return Date.now() + secs * 1000;
 }
 
@@ -75,7 +81,7 @@ export async function createRoom(name: unknown, timers?: Partial<Timers>) {
 
 function sanitizeTimers(t?: Partial<Timers>): Partial<Timers> {
   const out: Partial<Timers> = {};
-  for (const k of ["turn", "vote", "elim"] as const) {
+  for (const k of ["turn", "vote", "elim", "debate"] as const) {
     const v = Number(t?.[k]);
     if (Number.isFinite(v) && v >= 15 && v <= 600) out[k] = Math.round(v);
   }
@@ -145,13 +151,17 @@ function runBots(row: GameRow, s: GameState): GameState {
 }
 
 function commitState(row: GameRow, state: GameState): GameRow {
+  const before = row.state?.events.length ?? 0;
   state = runBots(row, state);
+  // the Table Stage: no clock runs while every phone is still showing what just happened
+  const hold = holdFor(state.events.slice(before), row.lobby.map((p) => p.name));
   const waiting = waitingOn(state);
   row.state = state;
   row.status = state.phase.kind === "over" ? "over" : "playing";
-  row.deadline = waiting.length && waiting.every((seat) => isBot(row, seat))
+  const base = waiting.length && waiting.every((seat) => isBot(row, seat))
     ? Date.now() + BOT_DELAY_MS
     : deadlineFor(state, row.timers);
+  row.deadline = base === null ? null : base + hold;
   return row;
 }
 
@@ -168,6 +178,21 @@ export async function act(code: string, token: string | null, action: Action) {
   });
 }
 
+/** The host adds time to the open floor — once per debate. Everyone sees it happen. */
+export async function extendDebate(code: string, token: string | null) {
+  await mutate(code, (row) => {
+    if (row.hostToken !== token) throw new HttpError(403, "Only the host can add time");
+    const ph = row.state?.phase;
+    if (!ph || ph.kind !== "vote" || !ph.debate) throw new HttpError(409, "The floor isn't open");
+    if (ph.extended) throw new HttpError(409, "Time was already added to this debate");
+    ph.extended = true;
+    row.deadline = (row.deadline ?? Date.now()) + EXTEND_SECONDS * 1000;
+    const s = row.state!;
+    s.events.push({ n: s.events.length, type: "floor_extended", to: "all", msg: `The host adds ${EXTEND_SECONDS} seconds to the debate.` });
+    return row;
+  });
+}
+
 /** Any phone may call this when the clock runs out; it does nothing unless the deadline really passed. */
 export async function tick(code: string) {
   const row = await load(code);
@@ -176,8 +201,9 @@ export async function tick(code: string) {
     if (!r.state || r.deadline === null || Date.now() < r.deadline) return r;
     let s = r.state;
     const waiting = waitingOn(s);
+    const floorClosing = s.phase.kind === "vote" && s.phase.debate; // the debate ending on time is normal, not a timeout
     for (const seat of waiting) s = apply(s, seat, isBot(r, seat) ? botAction(s, seat) : defaultAction(s, seat));
-    if (waiting.some((seat) => !isBot(r, seat))) s.events.push({ n: s.events.length, type: "timeout", to: "all", msg: "Time ran out — the default was played for anyone still deciding." });
+    if (!floorClosing && waiting.some((seat) => !isBot(r, seat))) s.events.push({ n: s.events.length, type: "timeout", to: "all", msg: "Time ran out — the default was played for anyone still deciding." });
     return commitState(r, s);
   });
   return { applied: true };

@@ -15,12 +15,14 @@ export const MAX_PLAYERS = 30;
 
 /** First 5 / 4 are the box; the rest are the role packs (proposed names — designer to edit). */
 export const VILLAGER_ROLES = [
-  "Sarpanch", "Kisaan", "Vaidya", "Pehelwan", "Police",
+  "Kisaan", "Sarpanch", "Baba", "Teacher", "Police",
+  "Vaidya", "Pehelwan",
   "NRI", "Dafliwala", "Deewani", "Lohar", "Sonar", "Mali", "Kumhar", "Pujari", "Guruji",
   "Darzi", "Nai", "Halwai", "Dhobi", "Chaiwala",
 ];
 export const THIEF_ROLES = [
-  "Daku", "Chor", "Lootera", "Gunda",
+  "Chor", "Lootera", "Mastikhor",
+  "Daku", "Gunda",
   "Taskar", "Uchakka", "Jebkatra", "Thug", "Dakait", "Lafanga", "Chhota Chor",
 ];
 

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { act, addBot, chat, createRoom, removeBot, getState, joinRoom, startGame, tick, HttpError } from "./game";
+import { act, addBot, chat, createRoom, debateSeconds, extendDebate, removeBot, getState, joinRoom, startGame, tick, HttpError } from "./game";
 import { defaultAction, randomAction } from "@/engine/decisions";
 import { waitingOn } from "@/engine/engine";
 import { memoryStore } from "./store";
@@ -122,7 +122,7 @@ describe("room service (memory store)", () => {
           if (s.phase.kind === "vote" || s.phase.kind === "batwara") expect(waiting).toEqual([me]);
           if (waiting.includes(me)) await act(host.code, host.token, randomAction(s, me, rnd));
           else {
-            expect(row.deadline! - Date.now()).toBeLessThanOrEqual(2500);
+            expect(row.deadline! - Date.now()).toBeLessThanOrEqual(1200 + 9000); // bot pause + the beats the table is watching
             vi.setSystemTime(row.deadline! + 1);
             expect((await tick(host.code)).applied).toBe(true);
           }
@@ -134,5 +134,28 @@ describe("room service (memory store)", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("the open floor scales with the table: 45s small, capped at 90s", () => {
+    expect(debateSeconds(4, 90)).toBe(45);
+    expect(debateSeconds(6, 90)).toBe(45);
+    expect(debateSeconds(12, 90)).toBe(75);
+    expect(debateSeconds(20, 90)).toBe(90);
+  });
+
+  it("only the host adds time to an open debate, and only once", async () => {
+    const { code, tokens } = await room(5);
+    await startGame(code, tokens[0]);
+    await err(extendDebate(code, tokens[0]), 409);            // no debate yet
+    const row = (await memoryStore.get(code))!;
+    row.state!.phase = { kind: "vote", reason: "faisla", caller: 0, voters: [0, 1, 2, 3, 4], ballots: {}, debate: true, ready: [] };
+    await memoryStore.update({ ...row }, row.version);
+    await err(extendDebate(code, tokens[1]), 403);
+    const before = (await memoryStore.get(code))!.deadline!;
+    await extendDebate(code, tokens[0]);
+    const after = (await memoryStore.get(code))!;
+    expect(after.deadline! - before).toBe(30000);
+    expect(after.state!.events.at(-1)!.type).toBe("floor_extended");
+    await err(extendDebate(code, tokens[0]), 409);            // once per debate
   });
 });

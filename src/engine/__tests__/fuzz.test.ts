@@ -24,7 +24,6 @@ function check(s: GameState, thieves: number, roles: string, firstPickupDone: bo
   const inPlay = [...s.pile, ...s.players.flatMap((p) => p.hand)].filter(isStone).length;
   if (inPlay !== 2) hit(`Stones in hands+pile = ${inPlay}`);
   if ([...s.deck, ...s.discard].some(isStone)) hit("Stone in deck/discard");
-  if (firstPickupDone && s.pile.some(isStone)) hit("Stone in the pile after seat 1's pickup");
   if (s.players.filter((p) => p.side === "T").length !== thieves) hit("thief count changed");
   if (s.players.map((p) => p.role).sort().join() !== roles) hit("role set changed");
   const elimSeat = s.phase.kind === "elim" ? s.phase.seat : -1;

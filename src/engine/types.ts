@@ -32,6 +32,11 @@ export type Phase =
       caller: number | null;
       voters: number[];
       ballots: Record<number, number | null>;
+      /** the open floor before ballots: every living player talks; it closes when all are ready (or time runs out) */
+      debate: boolean;
+      ready: number[];
+      /** the host may add time to the floor once per debate */
+      extended?: boolean;
     }
   | {
       kind: "batwara";
@@ -84,6 +89,7 @@ export type Action =
       target?: number;
       roles?: [string, string];
     }
+  | { type: "ready" }
   | { type: "vote"; target: number | null }
   | { type: "batwara"; left: Card; right: Card }
   | { type: "dal_badal"; a: number; b: number }

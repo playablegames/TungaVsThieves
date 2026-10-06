@@ -35,6 +35,7 @@ export const api = {
   addBot: (code: string, token: string) => call(`/api/games/${code}/bots`, { method: "POST", token }),
   removeBot: (code: string, token: string, index: number) =>
     call(`/api/games/${code}/bots`, { method: "DELETE", token, body: JSON.stringify({ index }) }),
+  extend: (code: string, token: string) => call(`/api/games/${code}/extend`, { method: "POST", token }),
   tick: (code: string) => call<{ applied: boolean }>(`/api/games/${code}/tick`, { method: "POST" }),
   chat: (code: string, token: string, text: string) =>
     call(`/api/games/${code}/chat`, { method: "POST", token, body: JSON.stringify({ text }) }),
@@ -105,11 +106,16 @@ export function useGame(code: string) {
     try { await api.act(code, token, a); await refresh(); } catch (e) { setError((e as Error).message); }
   }, [code, token, refresh]);
 
+  const extend = useCallback(async () => {
+    if (!token) return;
+    try { await api.extend(code, token); await refresh(); } catch (e) { setError((e as Error).message); }
+  }, [code, token, refresh]);
+
   const say = useCallback(async (text: string) => {
     if (!token) return;
     try { await api.chat(code, token, text); await refresh(); } catch (e) { setError((e as Error).message); }
   }, [code, token, refresh]);
 
   const now = () => Date.now() + skew.current;
-  return { hydrated, token, state, messages, error, setError, act, say, refresh, now };
+  return { hydrated, token, state, messages, error, setError, act, say, extend, refresh, now };
 }

@@ -4,7 +4,8 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { GameState } from "@/engine/types";
 
-export interface Timers { turn: number; vote: number; elim: number }
+/** seconds per decision; `debate` = the open floor before a vote (older rooms may lack it) */
+export interface Timers { turn: number; vote: number; elim: number; debate?: number }
 
 export interface GameRow {
   code: string;

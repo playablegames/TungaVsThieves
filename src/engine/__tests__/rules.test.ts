@@ -48,19 +48,27 @@ describe("YOUR TURN — power or Stone", () => {
     expect(n.players[0].hand.sort()).toEqual([M, S1].sort());
     expect(n.players[1].hand.sort()).toEqual([B, B, F, K, T].sort()); // picked up the pass
   });
-  it("a Stone can never be passed into the pile", () => {
+  it("a Stone CAN be passed into the pile — the next seat picks it up", () => {
     const s = rig(5, { hands: [[F, T, K, S1, M], [], [], [], []] });
-    expect(() => apply(s, 0, { type: "pass", pass: [F, T, S1] })).toThrow(RuleError);
+    const n = apply(s, 0, { type: "pass", pass: [F, T, S1] });
+    expect(n.players[1].hand).toContain(S1);
   });
-  it("a Stone holder with a normal hand can NEVER play a pair (needs 3 other cards to pass first)", () => {
+  it("power or Stone: a Stone holder with a normal hand plays a pair only by passing the Stone", () => {
     const s = rig(5, { hands: [[K, K, F, T, S1], [B, B], [F], [T], [K]] });
-    expect(canPlay(s, 0, "KUNDLI")).toBe(false);
-    const two = rig(5, { hands: [[K, K, S2, T, S1], [B, B], [F], [T], [K]] });
-    expect(canPlay(two, 0, "KUNDLI")).toBe(false);
-  });
-  it("...but one extra card frees him (hand of 2 + Stones)", () => {
-    const s = rig(5, { hands: [[K, K, F, T, M, S1], [B, B], [F], [T], [K]] });
     expect(canPlay(s, 0, "KUNDLI")).toBe(true);
+    expect(() => apply(s, 0, { type: "play", card: "KUNDLI", pass: [F, T], target: 1 })).toThrow(RuleError);
+    const n = apply(s, 0, { type: "play", card: "KUNDLI", pass: [F, T, S1], target: 1 });
+    expect(n.players[0].hand).not.toContain(S1);
+    expect(n.players[1].hand).toContain(S1);
+  });
+  it("a pair needs 3 other cards of any kind to pass first", () => {
+    expect(canPlay(rig(5, { hands: [[K, K, S2, S1], [B, B], [F], [T], [K]] }), 0, "KUNDLI")).toBe(false);
+    expect(canPlay(rig(5, { hands: [[K, K, S2, T, S1], [B, B], [F], [T], [K]] }), 0, "KUNDLI")).toBe(true);
+  });
+  it("a Stone is never discarded with the played pair", () => {
+    const s = rig(5, { hands: [[K, K, F, T, S1], [B, B], [F], [T], [K]] });
+    const n = apply(s, 0, { type: "play", card: "KUNDLI", pass: [F, T, S1], target: 1 });
+    expect(n.discard).not.toContain(S1);
   });
   it("playing a pair passes the other 3 FIRST, then resolves", () => {
     const s = rig(5, { hands: [[K, K, F, T, M], [B, B], [F], [T], [K]] });
@@ -97,13 +105,13 @@ describe("THE CARDS", () => {
     expect(n.players[1].hand).toHaveLength(2 + 3); // drew 2, and is next: picked up the pass
     expect(n.events.find((e) => e.type === "hera_pheri_private")!.to).toEqual([0, 1]);
   });
-  it("BATWARA: draw 2, then every living player passes 1 left and 1 right", () => {
+  it("BHUKAMP: draw 2, then every OTHER living player passes 1 left and 1 right", () => {
     const s = rig(4, { hands: [[B, B, F, K, M], [S1, T], [F, K], [T, M]] });
     let n = apply(s, 0, { type: "play", card: "BATWARA", pass: [F, K, M], target: undefined });
     expect(n.phase.kind).toBe("batwara");
     const hand0 = n.players[0].hand;
-    n = apply(n, 0, { type: "batwara", left: hand0[0], right: hand0[1] });
-    n = apply(n, 1, { type: "batwara", left: S1, right: T }); // a Stone CAN move by Batwara
+    expect(() => apply(n, 0, { type: "batwara", left: hand0[0], right: hand0[1] })).toThrow(RuleError); // the player who played it doesn't pass
+    n = apply(n, 1, { type: "batwara", left: S1, right: T }); // a Stone CAN move by Bhukamp
     n = apply(n, 2, { type: "batwara", left: F, right: K });
     n = apply(n, 3, { type: "batwara", left: T, right: M });
     expect(n.players[0].hand).toContain(S1); // seat 1's left neighbour is seat 0
@@ -133,10 +141,15 @@ describe("THE CARDS", () => {
   it("FAISLA: most votes is out; a tie does nothing; the caller draws 2 either way", () => {
     const s = rig(5, { sides: ["V", "V", "V", "T", "T"], hands: [[F, F, T, K, M], [B], [F], [T], [K]] });
     let n = apply(s, 0, { type: "play", card: "FAISLA", pass: [T, K, M] });
+    expect(n.phase).toMatchObject({ kind: "vote", debate: true });       // the open floor comes first
+    expect(() => apply(n, 1, { type: "vote", target: 4 })).toThrow(RuleError); // no ballots during the debate
+    for (const v of [0, 1, 2, 3, 4]) n = apply(n, v, { type: "ready" });
+    expect(n.events.at(-1)!.type).toBe("ballots_open");
     for (const v of [0, 1, 2, 3, 4]) n = apply(n, v, { type: "vote", target: v < 3 ? 4 : 0 });
     expect(n.players[4].alive).toBe(false); // 3 votes beat 2
     const tie = rig(4, { hands: [[F, F, T, K, M], [B], [F], [T]] });
     let m = apply(tie, 0, { type: "play", card: "FAISLA", pass: [T, K, M] });
+    for (const v of [0, 1, 2, 3]) m = apply(m, v, { type: "ready" });
     for (const v of [0, 1, 2, 3]) m = apply(m, v, { type: "vote", target: v < 2 ? 2 : 3 });
     expect(m.players.every((p) => p.alive)).toBe(true);
     expect(m.players[0].hand).toHaveLength(2); // drew 2 on a tie too
@@ -220,6 +233,7 @@ describe("THE END — Mandatory Vote, then everyone reveals", () => {
       const v = n.players.find((p) => p.side === "V")!, t = n.players.find((p) => p.side === "T")!;
       for (const p of n.players) p.hand = p.hand.filter((c) => !c.startsWith("STONE"));
       (holder === "V" ? v : t).hand.push("STONE_1", "STONE_2");
+      for (const p of n.players.filter((x) => x.alive)) n = apply(n, p.seat, { type: "ready" });
       for (const p of n.players.filter((x) => x.alive)) n = apply(n, p.seat, { type: "vote", target: null });
       expect(n.phase).toMatchObject({ kind: "over", winner });
     }

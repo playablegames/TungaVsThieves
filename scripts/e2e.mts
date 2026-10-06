@@ -13,6 +13,7 @@ for (const n of ["Bilal", "Chitra", "Dev", "Esha"]) tokens.push((await j(`/api/g
 await j(`/api/games/${host.code}/start`, { method: "POST" }, tokens[0]);
 await j(`/api/games/${host.code}/chat`, { method: "POST", body: JSON.stringify({ text: "Main Tunga hoon, sach mein!" }) }, tokens[1]);
 let moves = 0;
+let extended = false;
 for (let k = 0; k < 3000; k++) {
   const views = await Promise.all(tokens.map((t) => j(`/api/games/${host.code}/state`, {}, t)));
   if (views[0].status === "over") break;
@@ -29,12 +30,16 @@ for (let k = 0; k < 3000; k++) {
     if (playable.length && rnd() < 0.7) {
       const card = playable[Math.floor(rnd() * playable.length)];
       const rest = [...v.me.hand]; rest.splice(rest.indexOf(card), 1); rest.splice(rest.indexOf(card), 1);
-      const pass = rest.filter((c: string) => !c.startsWith("STONE")).slice(0, 3);
+      const stonesLast = (h: string[]) => [...h.filter((c) => !c.startsWith("STONE")), ...h.filter((c) => c.startsWith("STONE"))];
+      const pass = stonesLast(rest).slice(0, 3); // a Stone may go into the pile (v16), only if it must
       const others = v.players.filter((p: any) => p.alive && p.seat !== v.me.seat);
       const dead = v.players.filter((p: any) => !p.alive);
       const target = card === "MAYA_JAAL" ? dead[0]?.seat : ["KUNDLI", "TALASHI", "TEER_KAMAN"].includes(card) ? others[0].seat : card === "HERA_PHERI" ? others.find((p: any) => p.handSize > 0)?.seat : undefined;
       act = { type: "play", card, pass, target, roles: card === "TEER_KAMAN" ? v.rolesInPlay.slice(0, 2) : undefined };
-    } else act = { type: "pass", pass: v.me.hand.filter((c: string) => !c.startsWith("STONE")).slice(0, v.decision.passSize) };
+    } else act = { type: "pass", pass: [...v.me.hand.filter((c: string) => !c.startsWith("STONE")), ...v.me.hand.filter((c: string) => c.startsWith("STONE"))].slice(0, v.decision.passSize) };
+  } else if (v.decision.kind === "debate") {
+    if (mi === 0 && !extended) { await j(`/api/games/${host.code}/extend`, { method: "POST" }, tokens[0]); extended = true; } // the host adds 30s once
+    act = { type: "ready" };
   } else act = randomAction(fake as GameState, v.me.seat, rnd);
   await j(`/api/games/${host.code}/act`, { method: "POST", body: JSON.stringify(act) }, tokens[mi]);
   moves++;

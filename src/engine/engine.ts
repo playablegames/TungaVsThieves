@@ -11,8 +11,8 @@ import { int, shuffle } from "./rng";
 
 export const CARD_NAME: Record<Card, string> = {
   FAISLA: "Faisla", TALASHI: "Talashi", KUNDLI: "Kundli", HERA_PHERI: "Hera Pheri",
-  BATWARA: "Batwara", MAYA_JAAL: "Maya Jaal", TEER_KAMAN: "Teer Kaman",
-  DAL_BADAL: "Dal Badal", STONE_1: "Stone I", STONE_2: "Stone II",
+  BATWARA: "Bhukamp", MAYA_JAAL: "Mayajaal", TEER_KAMAN: "Teer Kaman",
+  DAL_BADAL: "Dal Badal", STONE_1: "Bhadra Stone", STONE_2: "Tunga Stone",
 };
 const names = (cs: Card[]) => cs.map((c) => CARD_NAME[c]).join(", ") || "nothing";
 
@@ -23,7 +23,6 @@ const P = (s: GameState, seat: number): Player => {
   return p;
 };
 export const living = (s: GameState) => s.players.filter((p) => p.alive);
-const nonStones = (h: Card[]) => h.filter((c) => !isStone(c));
 const count = (h: Card[], c: Card) => h.filter((x) => x === c).length;
 
 function emit(s: GameState, type: string, to: GameEvent["to"], msg: string, data?: Record<string, unknown>) {
@@ -66,11 +65,11 @@ function neighbour(s: GameState, seat: number, dir: -1 | 1): number {
 }
 
 // ---------------------------------------------------------------- legality
-/** A pair is playable only if, after removing it, 3 non-Stone cards remain to pass first. */
+/** A pair is playable only if, after removing it, 3 cards remain to pass first (a Stone may be one of them). */
 export function canPlay(s: GameState, seat: number, card: ActionCard): boolean {
   const h = P(s, seat).hand;
   if (count(h, card) < 2) return false;
-  if (nonStones(h).length - 2 < 3) return false;
+  if (h.length - 2 < 3) return false;
   const others = living(s).filter((p) => p.seat !== seat);
   switch (card) {
     case "MAYA_JAAL": return s.players.some((p) => !p.alive);
@@ -83,10 +82,9 @@ export function canPlay(s: GameState, seat: number, card: ActionCard): boolean {
 export const playableCards = (s: GameState, seat: number) => ACTION_CARDS.filter((c) => canPlay(s, seat, c));
 
 /** how many cards a pass must contain (normally 3; fewer only if the hand is starved) */
-export const passSize = (h: Card[]) => Math.min(3, nonStones(h).length);
+export const passSize = (h: Card[]) => Math.min(3, h.length);
 
 function checkPass(hand: Card[], pass: Card[]) {
-  if (pass.some(isStone)) throw new RuleError("A Stone can never be passed into the pile");
   if (pass.length !== passSize(hand)) throw new RuleError(`Pass exactly ${passSize(hand)} cards`);
   const tmp = [...hand];
   removeCards(tmp, pass);
@@ -162,7 +160,7 @@ function endTurn(s: GameState) {
 function startFinalVote(s: GameState) {
   const voters = living(s).filter((p) => p.votes > 0).map((p) => p.seat);
   emit(s, "final_vote", "all", "The last round is over. MANDATORY VOTE — talk, then vote.");
-  s.phase = { kind: "vote", reason: "final", caller: null, voters, ballots: {} };
+  s.phase = { kind: "vote", reason: "final", caller: null, voters, ballots: {}, debate: true, ready: [] };
   if (voters.length === 0) resolveVote(s);
 }
 
@@ -171,6 +169,7 @@ function finalReveal(s: GameState) {
   for (const p of s.players) emit(s, "reveal", "all", `${p.name} (${p.role}) shows: ${names(p.hand)}`, { seat: p.seat, hand: p.hand, role: p.role });
   const villagerStones = holders.filter((p) => p.side === "V").reduce((k, p) => k + p.hand.filter(isStone).length, 0);
   if (villagerStones === 2) finish(s, "V", "both Stones are with villagers");
+  else if (s.pile.some(isStone)) finish(s, "T", "a Stone was left in the pile, not with a villager");
   else finish(s, "T", "a thief holds a Stone");
 }
 
@@ -179,7 +178,9 @@ export function waitingOn(s: GameState): number[] {
   const ph = s.phase;
   switch (ph.kind) {
     case "turn": return [ph.seat];
-    case "vote": return ph.voters.filter((v) => !(v in ph.ballots));
+    case "vote": return ph.debate
+      ? living(s).map((p) => p.seat).filter((x) => !ph.ready.includes(x))
+      : ph.voters.filter((v) => !(v in ph.ballots));
     case "batwara": return ph.givers.filter((g) => !(g in ph.picks));
     case "elim": return [ph.seat];
     default: return [];
@@ -198,6 +199,15 @@ export function apply(prev: GameState, seat: number, action: Action): GameState 
     if (action.type === "pass") return doPassTurn(s, seat, action.pass);
     if (action.type === "play") return doPlay(s, seat, action);
     throw new RuleError("On your turn: pass 3, or play a pair");
+  }
+  if (ph.kind === "vote" && ph.debate) {
+    if (action.type !== "ready") throw new RuleError("The floor is open — the vote starts when everyone is ready");
+    ph.ready.push(seat);
+    if (waitingOn(s).length === 0) {
+      ph.debate = false;
+      emit(s, "ballots_open", "all", "The floor closes. Vote now.", { reason: ph.reason });
+    }
+    return s;
   }
   if (ph.kind === "vote") {
     if (action.type !== "vote") throw new RuleError("Vote now");
@@ -278,14 +288,15 @@ function doPlay(s: GameState, seat: number, a: Extract<Action, { type: "play" }>
     }
     case "BATWARA": {
       p.hand.push(...draw(s, 2));
-      const live = living(s);
+      // Bhukamp (printed card): every OTHER living player passes — the player who played it does not
+      const live = living(s).filter((x) => x.seat !== seat);
       const givers = live.filter((x) => x.hand.length >= 2).map((x) => x.seat);
       // a player with exactly 1 card gives it left, no choice
       for (const x of live.filter((x) => x.hand.length === 1)) {
         const c = x.hand.pop()!;
         P(s, neighbour(s, x.seat, -1)).hand.push(c);
       }
-      emit(s, "batwara", "all", "BATWARA — everyone passes 1 card left and 1 card right.");
+      emit(s, "batwara", "all", `BHUKAMP — everyone except ${p.name} passes 1 card left and 1 card right.`);
       s.phase = { kind: "batwara", actor: seat, givers, picks: {} };
       if (givers.length === 0) resolveBatwara(s);
       return s;
@@ -319,7 +330,7 @@ function doPlay(s: GameState, seat: number, a: Extract<Action, { type: "play" }>
     case "FAISLA": {
       const voters = living(s).filter((x) => x.votes > 0).map((x) => x.seat);
       emit(s, "faisla", "all", `${p.name} calls a FAISLA vote.`, { seat });
-      s.phase = { kind: "vote", reason: "faisla", caller: seat, voters, ballots: {} };
+      s.phase = { kind: "vote", reason: "faisla", caller: seat, voters, ballots: {}, debate: true, ready: [] };
       if (voters.length === 0) resolveVote(s);
       return s;
     }
@@ -332,7 +343,7 @@ function validateTarget(s: GameState, seat: number, a: Extract<Action, { type: "
   if (a.target === undefined) throw new RuleError("Choose a player");
   const t = P(s, a.target);
   if (a.card === "MAYA_JAAL") {
-    if (t.alive) throw new RuleError("Maya Jaal brings back an eliminated player");
+    if (t.alive) throw new RuleError("Mayajaal brings back an eliminated player");
     return;
   }
   if (!t.alive || t.seat === seat) throw new RuleError("Choose another living player");
@@ -386,7 +397,7 @@ function resolveBatwara(s: GameState) {
     P(s, to).hand.push(c);
     emit(s, "batwara_private", [from, to], `${P(s, from).name} passed ${CARD_NAME[c]} to ${P(s, to).name}.`, { from, to, card: c });
   }
-  emit(s, "batwara_done", "all", "Batwara is done.");
+  emit(s, "batwara_done", "all", "Bhukamp is done.");
   endTurn(s);
 }
 

@@ -7,6 +7,8 @@ import type { Action, ActionCard, Card } from "@/engine/types";
 import type { PlayerView, PublicPlayer } from "@/engine/view";
 import type { ClientState } from "@/server/game";
 import type { ChatMessage } from "@/server/store";
+import { useStage } from "@/lib/stage";
+import { LastPlay, Stage } from "./Stage";
 
 const TARGETED: ActionCard[] = ["KUNDLI", "TALASHI", "HERA_PHERI", "TEER_KAMAN", "MAYA_JAAL"];
 
@@ -26,7 +28,7 @@ export default function Game({ code }: { code: string }) {
     <Shell>
       {g.error && <button onClick={() => g.setError(null)} className="w-full rounded-lg bg-red-900/70 p-2 text-sm">{g.error} ✕</button>}
       {s.status === "lobby" ? <Lobby s={s} code={code} token={g.token!} onError={g.setError} />
-        : s.view && <Table s={s} v={s.view} act={g.act} now={g.now} />}
+        : s.view && <Table s={s} v={s.view} act={g.act} now={g.now} extend={s.you.host ? g.extend : undefined} />}
       {s.view && s.status === "over" && <Final v={s.view} host={s.you.host} code={code} token={g.token!} />}
       <Chat messages={g.messages} me={s.you.seat} say={g.say} canSpeak={!s.view || s.view.me.alive || s.status === "over"} />
     </Shell>
@@ -78,11 +80,22 @@ function Lobby({ s, code, token, onError }: { s: ClientState; code: string; toke
 }
 
 // ---------------------------------------------------------------- table
-function Table({ s, v, act, now }: { s: ClientState; v: PlayerView; act: (a: Action) => void; now: () => number }) {
+function Table({ s, v, act, now, extend }: { s: ClientState; v: PlayerView; act: (a: Action) => void; now: () => number; extend?: () => void }) {
   const name = (seat: number) => v.players[seat]?.name ?? "?";
   const turnName = name(v.turnSeat);
+  const stage = useStage(v.events, v.players.map((p) => p.name));
+  const myMove = v.decision?.kind ?? null;
+  // your move: a short buzz and a tab-title flag, so a phone face-down on the table still tells you
+  useEffect(() => {
+    if (!myMove) return;
+    navigator.vibrate?.(60);
+    const was = document.title;
+    document.title = "● Your move — Tunga vs Thieves";
+    return () => { document.title = was; };
+  }, [myMove]);
   return (
     <section className="flex flex-col gap-4">
+      <Stage stage={stage} skip={stage.skip} />
       <div className="flex items-center justify-between text-sm">
         <span className="rounded bg-stone-800 px-2 py-1">Round {v.round}/{v.rounds}</span>
         <Phase v={v} turnName={turnName} />
@@ -96,9 +109,10 @@ function Table({ s, v, act, now }: { s: ClientState; v: PlayerView; act: (a: Act
         <p className="mt-1 text-xs text-stone-400">{v.me.alive ? `${v.me.votes} vote${v.me.votes === 1 ? "" : "s"}` : "You are out — stay silent, the app passes the pile for you."}</p>
       </div>
 
+      <LastPlay last={stage.last} />
       <Players players={v.players} turn={v.turnSeat} waiting={v.waitingOn} me={v.me.seat} />
       <Hand cards={v.me.hand} />
-      {v.decision && <Decide v={v} act={act} />}
+      {v.decision && <Decide v={v} act={act} extend={extend} />}
       {!v.decision && v.phase !== "over" && (
         <p className="rounded-lg bg-stone-900 p-3 text-center text-sm text-stone-400">
           Waiting for {v.waitingOn.map(name).join(", ") || "…"}
@@ -111,8 +125,9 @@ function Table({ s, v, act, now }: { s: ClientState; v: PlayerView; act: (a: Act
 
 function Phase({ v, turnName }: { v: PlayerView; turnName: string }) {
   const p = v.phase;
-  const label = p.startsWith("turn") ? `${turnName}'s turn` : p === "faisla_vote" ? "Faisla vote" : p === "final_vote" ? "MANDATORY VOTE"
-    : p === "batwara" ? "Batwara" : p.startsWith("elim") ? "Elimination" : p === "over" ? "Game over" : p;
+  const label = p.startsWith("turn") ? `${turnName}'s turn` : p === "faisla_debate" ? "Faisla — open floor" : p === "final_debate" ? "Last debate"
+    : p === "faisla_vote" ? "Faisla vote" : p === "final_vote" ? "MANDATORY VOTE"
+    : p === "batwara" ? "Bhukamp" : p.startsWith("elim") ? "Elimination" : p === "over" ? "Game over" : p;
   return <span className="font-bold text-amber-400">{label}</span>;
 }
 
@@ -161,12 +176,23 @@ function Hand({ cards }: { cards: Card[] }) {
 }
 
 // ---------------------------------------------------------------- decisions
-function Decide({ v, act }: { v: PlayerView; act: (a: Action) => void }) {
+function Decide({ v, act, extend }: { v: PlayerView; act: (a: Action) => void; extend?: () => void }) {
   const d = v.decision!;
   const living = v.players.filter((p) => p.alive);
   const others = living.filter((p) => p.seat !== v.me.seat);
   switch (d.kind) {
     case "turn": return <TurnDecision v={v} playable={d.playable as ActionCard[]} passSize={d.passSize} act={act} />;
+    case "debate": {
+      const ready = d.ready.length, total = living.length;
+      return (
+        <Box title={d.reason === "final" ? "Last debate — talk before the mandatory vote" : "Faisla — the floor is open"}
+          hint="Accuse, defend, claim a Stone, call a bluff — on your call or in the chat. The vote opens when everyone is ready, or when time runs out.">
+          <p className="text-sm text-stone-300">{ready} of {total} ready to vote</p>
+          <button onClick={() => act({ type: "ready" })} className="rounded-lg bg-amber-500 py-3 text-lg font-bold text-stone-950">I&rsquo;m ready to vote</button>
+          {extend && <button onClick={extend} className="rounded-lg border border-stone-600 py-2 text-sm">+30 seconds (host, once)</button>}
+        </Box>
+      );
+    }
     case "vote": return (
       <Pick title={d.reason === "final" ? "MANDATORY VOTE — who is out?" : "Faisla — who is out?"} hint="All your votes go on one player. A tie does nothing."
         options={living} onPick={(seat) => act({ type: "vote", target: seat })} extra={{ label: "Abstain", onClick: () => act({ type: "vote", target: null }) }} />
@@ -276,7 +302,7 @@ function TurnDecision({ v, playable, passSize, act }: { v: PlayerView; playable:
 
   if (!card) {
     return (
-      <Box title="Your turn" hint={playable.length ? "Play a pair (you pass 3 other cards first), or play nothing and pass 3." : "No pair you can play — pass 3. (Holding a Stone? Power OR Stone.)"}>
+      <Box title="Your turn" hint={playable.length ? "Play a pair (you pass 3 other cards first — a Stone can go too), or play nothing and pass 3." : "No pair you can play — pass 3."}>
         <div className="flex flex-wrap gap-2">
           {playable.map((c) => <CardChip key={c} c={c} onClick={() => setCard(c)} />)}
         </div>
@@ -285,10 +311,10 @@ function TurnDecision({ v, playable, passSize, act }: { v: PlayerView; playable:
     );
   }
   return (
-    <Box title={card === "NONE" ? "Pass 3 cards" : `${CARD[card].name}: pass 3 other cards first`} hint={card === "NONE" ? "A Stone can never be passed." : CARD[card].text}>
+    <Box title={card === "NONE" ? "Pass 3 cards" : `${CARD[card].name}: pass 3 other cards first`} hint={card === "NONE" ? "A Stone can be passed — whoever is next picks it up." : `${CARD[card].text} A Stone you pass goes to the next player.`}>
       <div className="flex flex-wrap gap-2">
         {hand.map((c, i) => {
-          const locked = isStoneCard(c) || pairIdx.includes(i);
+          const locked = pairIdx.includes(i);
           return <CardChip key={i} c={c} dim={locked} selected={pass.includes(i)} onClick={locked ? undefined : () => togglePass(i)} />;
         })}
       </div>
@@ -320,7 +346,7 @@ function BatwaraDecision({ v, act }: { v: PlayerView; act: (a: Action) => void }
     if (left === null) setLeft(k); else if (right === null) setRight(k);
   };
   return (
-    <Box title="BATWARA — pass 1 card left and 1 card right" hint={`First tap goes LEFT to ${L}, second goes RIGHT to ${R}. Stones may move.`}>
+    <Box title="BHUKAMP — pass 1 card left and 1 card right" hint={`First tap goes LEFT to ${L}, second goes RIGHT to ${R}. Stones may move.`}>
       <div className="flex flex-wrap gap-2">
         {v.me.hand.map((c, k) => <CardChip key={k} c={c} selected={k === left || k === right} onClick={() => tap(k)} />)}
       </div>

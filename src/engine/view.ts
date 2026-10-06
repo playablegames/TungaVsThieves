@@ -41,7 +41,7 @@ function phaseLabel(s: GameState): string {
   const ph = s.phase;
   switch (ph.kind) {
     case "turn": return `turn:${ph.seat}`;
-    case "vote": return ph.reason === "final" ? "final_vote" : "faisla_vote";
+    case "vote": return (ph.reason === "final" ? "final_" : "faisla_") + (ph.debate ? "debate" : "vote");
     case "batwara": return "batwara";
     case "elim": return `elim:${ph.step}:${ph.seat}`;
     case "over": return "over";
