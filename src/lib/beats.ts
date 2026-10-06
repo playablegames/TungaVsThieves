@@ -32,8 +32,18 @@ const SKIP = new Set(["setup", "role", "pickup", "pickup_private", "conduit", "r
 type D = Record<string, unknown>;
 const num = (d: D | undefined, k: string) => (typeof d?.[k] === "number" ? (d[k] as number) : undefined);
 
+/** Voice carries the table; the screen only takes over for the climaxes — and for what only you may see.
+ * Every other play is one line in the centre ("last declaration"). */
+const STAGE = new Set(["faisla", "ballots_open", "final_vote", "vote_result", "eliminated", "dal_badal", "last_shot", "over"]);
+
 /** One event → one beat, or null when the table needn't stop for it. `names[seat]` = player name. */
 export function beatFor(e: GameEvent, names: string[]): Beat | null {
+  const b = rawBeat(e, names);
+  if (b) b.big = STAGE.has(b.type) || b.private;
+  return b;
+}
+
+function rawBeat(e: GameEvent, names: string[]): Beat | null {
   if (Array.isArray(e.to) && e.to.length === 0) return null; // analytics: server only
   if (SKIP.has(e.type)) return null;
   const d = e.data;

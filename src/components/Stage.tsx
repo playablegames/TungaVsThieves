@@ -48,12 +48,7 @@ export function Stage({ stage, skip }: { stage: StageSnapshot; skip: () => void 
           </div>
         </button>
       )}
-      {b && !b.big && (
-        <button type="button" onClick={skip}
-          className="stage-in fixed inset-x-3 top-16 z-40 mx-auto max-w-md rounded-xl bg-paper-2/95 px-4 py-3 text-left text-[14px] ring-1 ring-rim">
-          <b>{b.title}</b>{b.detail ? <span className="text-ink-2"> — {b.detail}</span> : null}
-        </button>
-      )}
+      {/* small beats don't interrupt: they land on the centre's "last declaration" line */}
     </>
   );
 }

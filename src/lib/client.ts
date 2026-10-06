@@ -46,7 +46,7 @@ export const api = {
 
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SB_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const realtime = SB_URL && SB_ANON ? createClient(SB_URL, SB_ANON) : null;
+export const realtime = SB_URL && SB_ANON ? createClient(SB_URL, SB_ANON) : null;
 
 const noop = () => () => {};
 /** false during server render and hydration, true once running in the browser */

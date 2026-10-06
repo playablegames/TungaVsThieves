@@ -31,10 +31,14 @@ describe("Table Stage beats", () => {
     expect([...fellThrough]).toEqual([]);
   });
 
-  it("the big plays all reach the stage: Teer Kaman, Talashi, Kundli, votes, eliminations", () => {
-    const seen = new Set<string>();
-    for (const s of games) for (const b of beatsFor(s.events, s.players.map((p) => p.name))) if (b.big) seen.add(b.type);
-    for (const t of ["teer_kaman", "talashi", "kundli", "faisla", "vote_result", "eliminated", "over"]) expect(seen).toContain(t);
+  it("only the climaxes take the stage — pair plays are one line; votes, eliminations and the end are big", () => {
+    const big = new Set<string>(), small = new Set<string>();
+    for (const s of games) for (const b of beatsFor(s.events, s.players.map((p) => p.name))) {
+      if (b.private) continue;
+      (b.big ? big : small).add(b.type);
+    }
+    for (const t of ["faisla", "vote_result", "eliminated", "over"]) expect(big).toContain(t);
+    for (const t of ["teer_kaman", "talashi", "kundli", "hera_pheri", "pass"]) { expect(small).toContain(t); expect(big).not.toContain(t); }
   });
 
   it("analytics never become beats; private beats only reach the seats allowed to see them", () => {

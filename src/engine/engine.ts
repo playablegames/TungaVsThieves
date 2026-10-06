@@ -296,7 +296,7 @@ function doPlay(s: GameState, seat: number, a: Extract<Action, { type: "play" }>
         const c = x.hand.pop()!;
         P(s, neighbour(s, x.seat, -1)).hand.push(c);
       }
-      emit(s, "batwara", "all", `BHUKAMP — everyone except ${p.name} passes 1 card left and 1 card right.`);
+      emit(s, "batwara", "all", `BHUKAMP — everyone except ${p.name} passes 1 card left and 1 card right.`, { seat });
       s.phase = { kind: "batwara", actor: seat, givers, picks: {} };
       if (givers.length === 0) resolveBatwara(s);
       return s;

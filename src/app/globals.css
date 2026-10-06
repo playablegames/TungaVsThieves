@@ -53,6 +53,8 @@ body {
 .stage-stamp { animation: stage-stamp 260ms cubic-bezier(0.16, 1, 0.3, 1) 420ms both; }
 .flip-in { animation: flip-in 450ms cubic-bezier(0.16, 1, 0.3, 1) both; }
 .spotlight { animation: spot 1.8s ease-in-out infinite; }
+/* voice: a seat lights up while that player talks (Discord's green ring) */
+.speaking { box-shadow: 0 0 0 3px var(--color-jade), 0 0 14px 2px color-mix(in srgb, var(--color-jade) 55%, transparent); transition: box-shadow 120ms; }
 @media (prefers-reduced-motion: reduce) {
   .stage-in, .stage-card, .stage-stamp, .flip-in { animation: stage-in 150ms linear both; }
   .spotlight { animation: none; box-shadow: 0 0 0 2px var(--color-jade); }

@@ -7,7 +7,7 @@ import { beatsFor, type Beat } from "./beats";
 
 export interface StageSnapshot {
   current: Beat | null;   // on stage right now
-  last: Beat | null;      // the most recent big beat — stays visible as "last play"
+  last: Beat | null;      // the most recent public beat — the "last declaration" line
   pending: number;        // beats still waiting
 }
 
@@ -33,7 +33,7 @@ export class BeatQueue {
     if (top <= this.seen) return;
     if (this.seen < 0) {
       this.seen = top;
-      this.last = beatsFor(events, names).filter((b) => b.big).at(-1) ?? null;
+      this.last = beatsFor(events, names).filter((b) => !b.private).at(-1) ?? null;
       return this.emit();
     }
     const fresh = events.filter((e) => e.n > this.seen);
@@ -51,7 +51,7 @@ export class BeatQueue {
   private next() {
     this.current = this.queue.shift() ?? null;
     if (this.current) {
-      if (this.current.big) this.last = this.current;
+      if (!this.current.private) this.last = this.current;
       // a phone that fell behind (or came back from the background) catches up fast
       const hold = this.queue.length > 2 ? 500 : this.current.hold;
       this.timer = setTimeout(() => this.next(), reducedMotion() ? Math.min(hold, 1800) : hold);

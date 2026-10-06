@@ -9,7 +9,6 @@ import { Btn, CardFace } from "./ui";
 
 const TARGETED: ActionCard[] = ["KUNDLI", "TALASHI", "HERA_PHERI", "TEER_KAMAN", "MAYA_JAAL"];
 const CONFIRM_MS = 5000;
-export const QUICK_CLAIMS = ["Mere paas Stone hai", "Mere paas Stone nahi hai", "Main Tunga hoon", "Jhooth!", "Kundli mein dekha hai", "Bharosa karo"];
 
 type Ask = (label: string, action: Action) => void;
 
@@ -64,7 +63,8 @@ function RolePicker({ roles, sel, setSel }: { roles: string[]; sel: string[]; se
   );
 }
 
-export function Decide({ v, act, say, extend }: { v: PlayerView; act: (a: Action) => void; say: (t: string) => void; extend?: () => void }) {
+/** The tray: your move when it needs your cards or a pick. Debate and voting happen on the centre stage. */
+export function Decide({ v, act }: { v: PlayerView; act: (a: Action) => void }) {
   const c = useTimedConfirm(act);
   if (c.pending) {
     const left = Math.ceil(c.left / 1000);
@@ -85,19 +85,7 @@ export function Decide({ v, act, say, extend }: { v: PlayerView; act: (a: Action
   const name = (s: number) => v.players[s]?.name ?? "?";
   switch (d.kind) {
     case "turn": return <Turn v={v} playable={d.playable as ActionCard[]} passSize={d.passSize} act={act} ask={c.ask} />;
-    case "debate": return (
-      <div className="flex flex-col gap-3">
-        <Head title={d.reason === "final" ? "Last debate" : "The floor is open"}
-          hint="Accuse, defend, claim a Stone — on your call or here. Voting opens when everyone is ready or time runs out." />
-        <div className="flex flex-wrap gap-2">
-          {QUICK_CLAIMS.map((q) => <button key={q} type="button" onClick={() => say(q)} className="min-h-11 rounded-full bg-raise px-4 text-[14px] font-bold">{q}</button>)}
-        </div>
-        <p className="text-[14px] text-ink-2">{d.ready.length} of {living.length} ready</p>
-        <Btn voice="vote" onClick={() => act({ type: "ready" })}>Ready to vote</Btn>
-        {extend && <Btn voice="ghost" onClick={extend}>+30 seconds (host, once)</Btn>}
-      </div>
-    );
-    case "vote": return <Vote options={living} me={v.me.seat} reason={d.reason} act={act} ask={c.ask} name={name} />;
+    case "debate": case "vote": return null;
     case "batwara": return <Bhukamp v={v} act={act} />;
     case "dal_badal": return <Swap options={others} ask={c.ask} name={name} />;
     case "gift": return <OneOf title="Dying power — give 1 vote" hint="They vote with one more from now on." options={others}
@@ -117,20 +105,6 @@ function OneOf({ title, hint, options, go, skip, act }: { title: string; hint: s
       <div className="grid grid-cols-2 gap-2">
         {skip ? <Btn voice="ghost" onClick={() => act(skip.action)}>{skip.label}</Btn> : <span />}
         <Btn voice="vote" disabled={sel === null} onClick={() => go(sel!)}>Confirm</Btn>
-      </div>
-    </div>
-  );
-}
-
-function Vote({ options, me, reason, act, ask, name }: { options: PublicPlayer[]; me: number; reason: "faisla" | "final"; act: (a: Action) => void; ask: Ask; name: (s: number) => string }) {
-  const [sel, setSel] = useState<number | null>(null);
-  return (
-    <div className="flex flex-col gap-3">
-      <Head title={reason === "final" ? "Mandatory vote — who is out?" : "Faisla — who is out?"} hint="All your votes go on one player. Seals stay hidden until everyone has voted." />
-      <div className="grid grid-cols-2 gap-2">{options.map((p) => <PlayerChip key={p.seat} p={p} me={p.seat === me} selected={sel === p.seat} onClick={() => setSel(p.seat)} />)}</div>
-      <div className="grid grid-cols-2 gap-2">
-        <Btn voice="ghost" onClick={() => act({ type: "vote", target: null })}>Abstain</Btn>
-        <Btn voice="vote" disabled={sel === null} onClick={() => ask(`Vote ${name(sel!)} out`, { type: "vote", target: sel })}>Vote</Btn>
       </div>
     </div>
   );
@@ -204,17 +178,19 @@ function Turn({ v, playable, passSize, act, ask }: { v: PlayerView; playable: Ac
   const name = (s: number) => v.players[s]?.name ?? "?";
 
   if (!card) {
+    // your cards face up; each pair you may legally play is declared in words, beside Pass
+    const blocked = (["FAISLA", "TALASHI", "KUNDLI", "HERA_PHERI", "BATWARA", "MAYA_JAAL", "TEER_KAMAN"] as ActionCard[])
+      .filter((c) => !playable.includes(c) && hand.filter((h) => h === c).length >= 2);
     return (
       <div className="flex flex-col gap-3">
-        <Head title="Your move" hint={playable.length ? "Tap a pair to play it — or play nothing and pass 3 face down." : "No pair to play. Pass 3 cards face down."} />
-        <div className="flex flex-wrap gap-2 pt-2">
-          {hand.map((c, i) => {
-            const isPair = (playable as Card[]).includes(c) && hand.indexOf(c) === i;
-            return <CardFace key={i} c={c} size="sm" label={isPair ? "PAIR" : undefined} dim={!isPair && playable.length > 0}
-              onClick={isPair ? () => setCard(c as ActionCard) : undefined} />;
-          })}
+        <div className="flex flex-wrap gap-1.5">
+          {hand.map((c, i) => <CardFace key={i} c={c} size="sm" selected={(playable as Card[]).includes(c)} dim={!(playable as Card[]).includes(c)} />)}
         </div>
-        <Btn voice="pass" onClick={() => setCard("NONE")}>Play nothing — pass 3</Btn>
+        <div className="grid grid-cols-2 gap-2">
+          {playable.map((c) => <Btn key={c} voice={CARD[c].voice} onClick={() => setCard(c)}>Declare {CARD[c].name}</Btn>)}
+          <Btn voice="pass" className={playable.length % 2 === 0 ? "col-span-2" : ""} onClick={() => setCard("NONE")}>Pass</Btn>
+        </div>
+        {blocked.map((c) => <p key={c} className="text-[12px] text-muted">{CARD[c].name} ×2 — needs {passSize} other cards left to pass</p>)}
       </div>
     );
   }
@@ -222,7 +198,7 @@ function Turn({ v, playable, passSize, act, ask }: { v: PlayerView; playable: Ac
   const label = !playing ? "" : `${CARD[card].name}${target !== null ? ` on ${name(target)}` : ""}${card === "TEER_KAMAN" && roles.length === 2 ? `: ${roles.join(" or ")}` : ""}`;
   return (
     <div className="flex flex-col gap-3">
-      <Head title={playing ? `Play ${CARD[card].name}` : "Pass 3 cards"}
+      <Head title={playing ? `Declare ${CARD[card].name}` : `Pass ${passSize} cards`}
         hint={playing ? `First pass ${passSize} other cards face down to the next player — a Stone only if you must. ${CARD[card].text}` : "Face down to the next player. A Stone may go — whoever is next picks it up."} />
       <div className="flex flex-wrap gap-2 pt-2">
         {hand.map((c, i) => {
@@ -237,7 +213,7 @@ function Turn({ v, playable, passSize, act, ask }: { v: PlayerView; playable: Ac
       <div className="grid grid-cols-2 gap-2">
         <Btn voice="ghost" onClick={reset}>Back</Btn>
         {playing
-          ? <Btn voice={CARD[card].voice} disabled={!ready} onClick={() => { ask(`Playing ${label}`, { type: "play", card, pass: pass.map((i) => hand[i]), target: target ?? undefined, roles: card === "TEER_KAMAN" ? (roles as [string, string]) : undefined }); reset(); }}>Play</Btn>
+          ? <Btn voice={CARD[card].voice} disabled={!ready} onClick={() => { ask(`Declaring ${label}`, { type: "play", card, pass: pass.map((i) => hand[i]), target: target ?? undefined, roles: card === "TEER_KAMAN" ? (roles as [string, string]) : undefined }); reset(); }}>Declare</Btn>
           : <Btn voice="pass" disabled={!ready} onClick={() => { act({ type: "pass", pass: pass.map((i) => hand[i]) }); reset(); }}>Pass</Btn>}
       </div>
     </div>

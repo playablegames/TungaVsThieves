@@ -5,18 +5,28 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, useGame, useHydrated } from "@/lib/client";
-import { isStoneCard, sideName } from "@/lib/cards";
+import { CARD, isStoneCard, sideName } from "@/lib/cards";
+import type { Beat } from "@/lib/beats";
 import type { Action } from "@/engine/types";
 import type { PlayerView, PublicPlayer } from "@/engine/view";
 import type { ClientState } from "@/server/game";
-import type { ChatMessage } from "@/server/store";
 import { useStage } from "@/lib/stage";
 import { Stage } from "./Stage";
-import { Decide, QUICK_CLAIMS } from "./Decide";
-import { Btn, CardBack, CardFace, Sheet, TimerRing } from "./ui";
+import { Decide } from "./Decide";
+import { Btn, CardFace, TimerRing } from "./ui";
+import { useVoice } from "@/lib/voice";
+
+type VoiceCtl = ReturnType<typeof useVoice>;
 
 export default function Game({ code }: { code: string }) {
   const g = useGame(code);
+  const st = g.state;
+  const voice = useVoice(
+    code,
+    st ? { seat: st.you.seat, name: st.you.name } : null,
+    st?.status !== "playing",
+    st?.view?.players.filter((p) => !p.alive).map((p) => p.seat) ?? [],
+  );
   if (!g.hydrated) return <Centered>Connecting…</Centered>;
   if (g.token === null)
     return (
@@ -28,16 +38,17 @@ export default function Game({ code }: { code: string }) {
   if (!g.state) return <Centered>{g.error ?? "Connecting…"}</Centered>;
   const s = g.state;
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col">
+    <main className="mx-auto flex h-dvh w-full max-w-md flex-col overflow-y-auto">
       {s.you.away && s.status === "playing" && (
         <button onClick={g.reclaim} className="m-3 mb-0 rounded-xl bg-marigold p-3 text-left font-bold text-card-ink">
           A stand-in is playing safe for you. Tap — I&rsquo;m back.
         </button>
       )}
       {g.error && <button onClick={() => g.setError(null)} className="m-3 mb-0 rounded-xl bg-crimson-deep p-3 text-left text-[14px]">{g.error} — tap to dismiss</button>}
+      <VoiceBanner voice={voice} />
       {s.status === "lobby"
-        ? <Lobby s={s} code={code} token={g.token!} onError={g.setError} />
-        : s.view && <Table s={s} v={s.view} act={g.act} say={g.say} now={g.now} messages={g.messages} extend={s.you.host ? g.extend : undefined} code={code} token={g.token!} />}
+        ? <Lobby s={s} code={code} token={g.token!} onError={g.setError} voice={voice} />
+        : s.view && <Table s={s} v={s.view} act={g.act} now={g.now} extend={s.you.host ? g.extend : undefined} code={code} token={g.token!} voice={voice} />}
     </main>
   );
 }
@@ -47,7 +58,7 @@ function Centered({ children }: { children: React.ReactNode }) {
 }
 
 // ---------------------------------------------------------------- lobby
-function Lobby({ s, code, token, onError }: { s: ClientState; code: string; token: string; onError: (e: string) => void }) {
+function Lobby({ s, code, token, onError, voice }: { s: ClientState; code: string; token: string; onError: (e: string) => void; voice: VoiceCtl }) {
   const names = s.lobby!.names;
   const bots = s.lobby!.bots;
   const row = s.lobby!.roleTable[names.length];
@@ -64,7 +75,10 @@ function Lobby({ s, code, token, onError }: { s: ClientState; code: string; toke
             className="inline-flex min-h-12 items-center justify-center rounded-full bg-jade px-4 text-[13px] font-extrabold uppercase tracking-wide text-card-ink">Invite on WhatsApp</a>
           <Btn voice="pass" onClick={() => navigator.clipboard?.writeText(link).catch(() => {})}>Copy link</Btn>
         </div>
-        <p className="mt-3 text-[13px] leading-snug text-ink-2">Playing apart? Start a WhatsApp group call and keep this tab open — your phone buzzes when it&rsquo;s your move.</p>
+        <div className="mt-3 flex items-center gap-3 text-left">
+          <MicButton voice={voice} />
+          <p className="text-[13px] leading-snug text-ink-2">Voice is built in — everyone talks from their seat. Earphones stop the echo. Your phone buzzes when it&rsquo;s your move.</p>
+        </div>
       </div>
 
       <div>
@@ -74,8 +88,9 @@ function Lobby({ s, code, token, onError }: { s: ClientState; code: string; toke
         </div>
         <ul className="flex flex-col gap-2">{names.map((n, i) => (
           <li key={i} className="flex min-h-12 items-center gap-3 rounded-xl bg-paper-2/70 px-3 ring-1 ring-rim">
-            <span className={`grid h-8 w-8 place-items-center rounded-full text-[13px] font-extrabold ${i === 0 ? "bg-marigold text-card-ink" : "bg-raise-2"}`}>{n.slice(0, 1)}</span>
+            <span className={`grid h-8 w-8 place-items-center rounded-full text-[13px] font-extrabold ${i === 0 ? "bg-marigold text-card-ink" : "bg-raise-2"} ${(i === s.you.seat ? voice.speaking : voice.peers[i]?.speaking) ? "speaking" : ""}`}>{n.slice(0, 1)}</span>
             <span className="font-bold">{n}</span>
+            {i !== s.you.seat && voice.peers[i]?.muted && <MicOff />}
             {i === 0 && <span className="rounded-full bg-marigold/20 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-marigold-soft">Host</span>}
             {bots[i] && <span className="rounded-full bg-jade/15 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-jade-soft">Bot</span>}
             {s.you.host && bots[i] && (
@@ -118,16 +133,16 @@ function status(v: PlayerView): string {
   return "";
 }
 
-function Table({ s, v, act, say, now, messages, extend, code, token }: {
-  s: ClientState; v: PlayerView; act: (a: Action) => void; say: (t: string) => void; now: () => number;
-  messages: ChatMessage[]; extend?: () => void; code: string; token: string;
+// One screen: a ring of seats around a centre stage. You are the seat at the bottom. Voice carries the table —
+// the centre holds the round, the clock, the vote and one "last declaration" line; only climaxes take the stage.
+function Table({ s, v, act, now, extend, code, token, voice }: {
+  s: ClientState; v: PlayerView; act: (a: Action) => void; now: () => number;
+  extend?: () => void; code: string; token: string; voice: VoiceCtl;
 }) {
   const stage = useStage(v.events, v.players.map((p) => p.name));
-  const [talk, setTalk] = useState(false);
-  const [story, setStory] = useState(false);
-  const [seen, setSeen] = useState(0);
+  const [pick, setPick] = useState<number | null>(null);
   const myMove = v.decision?.kind ?? null;
-  // your move: a short buzz and a tab-title flag, so a phone face-down on the table (or on a call) still tells you
+  // your move: a short buzz and a tab-title flag, so a phone face-down on the table still tells you
   useEffect(() => {
     if (!myMove) return;
     navigator.vibrate?.(60);
@@ -135,147 +150,150 @@ function Table({ s, v, act, say, now, messages, extend, code, token }: {
     document.title = "● Your move — Tunga vs Thieves";
     return () => { document.title = was; };
   }, [myMove]);
-  const over = s.status === "over";
-  const unread = Math.max(0, messages.length - seen);
-  const canSpeak = v.me.alive || over;
 
+  if (s.status === "over") return (<><Stage stage={stage} skip={stage.skip} /><Final v={v} host={s.you.host} code={code} token={token} /></>);
+
+  const voting = myMove === "vote";
+  const living = v.players.filter((p) => p.alive);
   return (
-    <div className="flex min-h-dvh flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       <Stage stage={stage} skip={stage.skip} />
-
-      {/* the status line — the same sentence on every phone, worded for you when it's yours */}
-      <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-rim bg-paper/90 px-4 py-2 backdrop-blur">
-        <span className="rounded-full bg-raise px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wide text-ink-2">R{v.round}/{v.rounds}</span>
-        <p className={`min-w-0 flex-1 truncate text-[15px] font-bold ${v.decision ? "text-jade-soft" : "text-ink"}`}>{status(v)}</p>
-        {!over && <TimerRing deadline={s.deadline} now={now} />}
-      </header>
-
-      {over && <Final v={v} host={s.you.host} code={code} token={token} />}
-
-      {/* seats — the spotlight glows on whoever the table is waiting for */}
-      <Seats v={v} />
-
-      {/* the table centre */}
-      {!over && (
-        <section className="flex flex-1 flex-col items-center justify-center gap-4 px-4 py-4">
-          <div className="flex items-center gap-4">
-            <div className="relative h-[78px] w-[86px]" aria-label={`Procession pile: ${v.pileSize} cards face down`}>
-              {Array.from({ length: Math.max(v.pileSize, 1) }).map((_, i) => (
-                <div key={i} className="absolute top-0" style={{ left: i * 14, transform: `rotate(${(i - 1) * 5}deg)` }}>
-                  <CardBack size="sm" className={v.pileSize ? "" : "opacity-30"} />
-                </div>
-              ))}
-            </div>
-            <div className="text-[13px] leading-snug text-ink-2">
-              <p className="font-bold text-ink">Procession pile</p>
-              <p>{v.pileSize} face down · deck {v.deckSize}</p>
-            </div>
-          </div>
-          {stage.last && (
-            <div className="w-full rounded-xl border border-rim bg-paper-2/70 px-4 py-3">
-              <p className="text-[11px] font-extrabold uppercase tracking-[0.1em] text-muted">Last play</p>
-              <p className="font-display text-[18px] font-bold leading-snug">{stage.last.title}</p>
-              {stage.last.detail && <p className="text-[14px] text-ink-2">{stage.last.detail}</p>}
-            </div>
-          )}
-        </section>
-      )}
-
-      {/* the dock — your role, your hand, your move */}
-      {!over && (
-        <section className="sticky bottom-0 z-10 flex flex-col gap-3 rounded-t-2xl border-t border-rim bg-paper-2 px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
-          <div className="flex items-center gap-2">
-            <RolePeek v={v} />
-            <button onClick={() => { setTalk(true); setSeen(messages.length); }} className="relative ml-auto min-h-11 rounded-full bg-raise px-4 text-[13px] font-extrabold uppercase tracking-wide">
-              Talk{unread > 0 && <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-marigold px-1 text-[11px] text-card-ink">{unread}</span>}
-            </button>
-            <button onClick={() => setStory(true)} className="min-h-11 rounded-full bg-raise px-4 text-[13px] font-extrabold uppercase tracking-wide">Story</button>
-          </div>
-          {!v.me.alive ? (
-            <p className="text-[14px] text-ink-2">You&rsquo;re out. Watch closely — and stay silent; the pile passes through you on its own.</p>
-          ) : v.decision ? (
-            <Decide key={v.phase} v={v} act={act} say={say} extend={extend} />
-          ) : (
-            <div>
-              <p className="mb-2 text-[11px] font-extrabold uppercase tracking-[0.1em] text-muted">Your hand · {v.me.hand.length}</p>
-              <div className="flex flex-wrap gap-2">{v.me.hand.map((c, i) => <CardFace key={i} c={c} size="sm" />)}</div>
-            </div>
-          )}
-        </section>
-      )}
-
-      <Sheet open={talk} onClose={() => { setTalk(false); setSeen(messages.length); }} title="Table talk">
-        <Talk messages={messages} me={v.me.seat} say={say} canSpeak={canSpeak} />
-      </Sheet>
-      <Sheet open={story} onClose={() => setStory(false)} title="The story so far">
-        <Story v={v} />
-      </Sheet>
+      <Ring v={v} voice={voice} pick={pick} onPick={voting ? (seat) => setPick(seat === pick ? null : seat) : undefined}>
+        <Centre s={s} v={v} now={now} last={stage.last} pick={pick} living={living.length} extend={extend}
+          vote={(target) => { act({ type: "vote", target }); setPick(null); }} ready={() => act({ type: "ready" })} />
+      </Ring>
+      <Tray v={v} act={act} voice={voice} />
     </div>
   );
 }
 
-function Seats({ v }: { v: PlayerView }) {
+/** Seats on an ellipse, in turn order, starting from you at the bottom. */
+function Ring({ v, voice, pick, onPick, children }: {
+  v: PlayerView; voice: VoiceCtl; pick: number | null; onPick?: (seat: number) => void; children: React.ReactNode;
+}) {
+  const n = v.players.length;
+  const voteOpen = v.phase.endsWith("_vote");
   return (
-    <ul className="grid max-h-[25dvh] grid-cols-5 gap-x-1 gap-y-2 overflow-y-auto px-3 py-3" aria-label="Players">
-      {v.players.map((p) => <Seat key={p.seat} p={p} me={p.seat === v.me.seat} spot={v.waitingOn.includes(p.seat)} />)}
-    </ul>
-  );
-}
-
-function Seat({ p, me, spot }: { p: PublicPlayer; me: boolean; spot: boolean }) {
-  return (
-    <li className={`flex flex-col items-center gap-1 text-center ${p.alive ? "" : "opacity-45"}`} aria-label={`${p.name}${me ? " (you)" : ""}: ${p.handSize} cards, ${p.votes} votes${p.alive ? "" : `, out — was ${p.revealedRole}`}${spot ? ", deciding" : ""}`}>
-      <span className={`relative grid h-11 w-11 place-items-center rounded-full font-display text-[17px] font-black ${me ? "bg-marigold text-card-ink" : "bg-raise-2"} ${spot ? "spotlight" : ""}`}>
-        {p.name.slice(0, 1)}
-        <span className="absolute -bottom-1 -right-1 rounded-full bg-paper px-1 text-[10px] font-extrabold tabular-nums text-ink-2 ring-1 ring-raise-2">{p.handSize}</span>
-      </span>
-      <span className="w-full truncate text-[12px] font-bold leading-tight">{me ? "You" : p.name}</span>
-      <span className="flex h-2 gap-0.5" aria-hidden>{Array.from({ length: p.votes }).map((_, i) => <span key={i} className="h-2 w-2 rounded-full bg-marigold" />)}</span>
-      {!p.alive && p.revealedRole && <span className="text-[10px] leading-tight text-crimson-soft">{p.revealedRole}</span>}
-    </li>
-  );
-}
-
-/** Your role stays face down. Hold to see it — so a phone on the table never gives you away. */
-function RolePeek({ v }: { v: PlayerView }) {
-  const [open, setOpen] = useState(false);
-  const show = () => setOpen(true), hide = () => setOpen(false);
-  return (
-    <button type="button" onPointerDown={show} onPointerUp={hide} onPointerLeave={hide} onPointerCancel={hide}
-      onKeyDown={(e) => { if (e.key === " " || e.key === "Enter") show(); }} onKeyUp={hide} onContextMenu={(e) => e.preventDefault()}
-      aria-label="Hold to see your role"
-      className={`flex min-h-11 select-none items-center gap-2 rounded-full px-4 text-left [-webkit-touch-callout:none] ${open ? (v.me.side === "V" ? "bg-marigold text-card-ink" : "bg-crimson text-ink") : "bg-raise text-ink"}`}>
-      {open ? (
-        <span className="text-[14px] font-extrabold">{v.me.role} · {sideName(v.me.side)} · {v.me.votes} vote{v.me.votes === 1 ? "" : "s"}</span>
-      ) : (
-        <span className="text-[13px] font-extrabold uppercase tracking-wide">Hold — your role</span>
-      )}
-    </button>
-  );
-}
-
-function Talk({ messages, me, say, canSpeak }: { messages: ChatMessage[]; me: number; say: (t: string) => void; canSpeak: boolean }) {
-  const [text, setText] = useState("");
-  return (
-    <>
-      <ul className="flex min-h-24 flex-col gap-1.5 overflow-y-auto text-[15px]">
-        {messages.length === 0 && <li className="text-ink-2">Nothing said yet. On a call? Talk there — this is for claims you want on the record.</li>}
-        {messages.map((m) => <li key={m.id}><b className={m.seat === me ? "text-marigold-soft" : ""}>{m.name}:</b> {m.text}</li>)}
-      </ul>
-      {canSpeak ? (
-        <>
-          <div className="flex flex-wrap gap-2">
-            {QUICK_CLAIMS.map((q) => <button key={q} type="button" onClick={() => say(q)} className="min-h-11 rounded-full bg-raise px-4 text-[14px] font-bold">{q}</button>)}
+    <section className="relative mt-2 min-h-[420px] flex-1" aria-label="The table">
+      <div className="absolute inset-x-[14%] inset-y-[18%] rounded-[50%] border border-rim bg-paper-2/40" aria-hidden />
+      {Array.from({ length: n }, (_, k) => {
+        const p = v.players[(v.me.seat + k) % n];
+        const angle = Math.PI / 2 + (k * 2 * Math.PI) / n;
+        const me = p.seat === v.me.seat;
+        const peer = voice.peers[p.seat];
+        return (
+          <div key={p.seat} className="absolute -translate-x-1/2 -translate-y-1/2"
+            style={{ left: `${50 + 41 * Math.cos(angle)}%`, top: `${51 + 40 * Math.sin(angle)}%` }}>
+            <Seat p={p} me={me} v={v}
+              spot={!voteOpen && v.waitingOn.includes(p.seat)}
+              voted={voteOpen && p.alive && !v.waitingOn.includes(p.seat)}
+              picked={pick === p.seat}
+              speaking={me ? voice.speaking : Boolean(peer?.speaking && !peer.hushed)}
+              micOff={me ? !voice.micOn || voice.micBlocked : Boolean(peer?.muted)}
+              hushed={Boolean(peer?.hushed)}
+              onTap={onPick && p.alive ? () => onPick(p.seat) : !me && peer ? () => voice.hush(p.seat) : undefined} />
           </div>
-          <form onSubmit={(e) => { e.preventDefault(); if (text.trim()) { say(text); setText(""); } }} className="flex gap-2">
-            <label htmlFor="say" className="sr-only">Say something</label>
-            <input id="say" value={text} onChange={(e) => setText(e.target.value)} maxLength={300} placeholder="Claim, deny, accuse…"
-              className="min-h-12 min-w-0 flex-1 rounded-xl border border-gold bg-field px-4 text-[15px] text-ink caret-jade outline-none placeholder:text-muted" />
-            <Btn voice="vote" type="submit">Say</Btn>
-          </form>
+        );
+      })}
+      <div className="absolute left-1/2 top-1/2 w-[52%] -translate-x-1/2 -translate-y-1/2">{children}</div>
+    </section>
+  );
+}
+
+function Seat({ p, me, v, spot, voted, picked, speaking, micOff, hushed, onTap }: {
+  p: PublicPlayer; me: boolean; v: PlayerView; spot: boolean; voted: boolean; picked: boolean;
+  speaking: boolean; micOff: boolean; hushed: boolean; onTap?: () => void;
+}) {
+  const [peek, setPeek] = useState(false);
+  // your own seat: hold it to see your role — so a phone on the table never gives you away
+  const hold = me && !onTap ? {
+    onPointerDown: () => setPeek(true), onPointerUp: () => setPeek(false), onPointerLeave: () => setPeek(false), onPointerCancel: () => setPeek(false),
+    onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
+  } : {};
+  const label = `${p.name}${me ? " (you)" : ""}: ${p.handSize} cards, ${p.votes} vote${p.votes === 1 ? "" : "s"}${p.alive ? "" : `, out — was ${p.revealedRole}`}${spot ? ", deciding" : ""}${speaking ? ", talking" : ""}${voted ? ", has voted" : ""}`;
+  return (
+    <div className={`relative flex w-[64px] flex-col items-center gap-0.5 text-center ${p.alive ? "" : "opacity-45"}`}>
+      {peek && (
+        <span className={`absolute bottom-full mb-2 whitespace-nowrap rounded-full px-3 py-1.5 text-[13px] font-extrabold ${v.me.side === "V" ? "bg-marigold text-card-ink" : "bg-crimson text-ink"}`}>
+          {v.me.role} · {sideName(v.me.side)}
+        </span>
+      )}
+      <button type="button" disabled={!onTap && !me} onClick={onTap} aria-label={me && !onTap ? `${label}. Hold to see your role` : label} aria-pressed={onTap ? picked : undefined} {...hold}
+        className={`relative grid h-12 w-12 select-none place-items-center rounded-full font-display text-[18px] font-black [-webkit-touch-callout:none]
+          ${me ? "bg-marigold text-card-ink" : "bg-raise-2"} ${spot ? "spotlight" : ""} ${speaking ? "speaking" : ""} ${picked ? "ring-4 ring-jade" : ""}`}>
+        {p.alive ? p.name.slice(0, 1) : "✕"}
+        <span className="absolute -bottom-1 -right-1 rounded-full bg-paper px-1 text-[10px] font-extrabold tabular-nums text-ink-2 ring-1 ring-raise-2" aria-hidden>{p.handSize}</span>
+        {(micOff || hushed) && <span className="absolute -left-1 -top-1 grid h-4 w-4 place-items-center rounded-full bg-paper ring-1 ring-raise-2"><MicOff small crossed={hushed} /></span>}
+        {voted && <span className="absolute -right-1 -top-1 grid h-5 w-5 place-items-center rounded-full bg-marigold text-[11px] font-black text-card-ink" aria-hidden>✓</span>}
+      </button>
+      <span className="w-full truncate text-[11px] font-bold leading-tight">{me ? "You" : p.name}</span>
+      {p.alive
+        ? <span className="flex h-1.5 gap-0.5" aria-hidden>{Array.from({ length: p.votes }).map((_, i) => <span key={i} className="h-1.5 w-1.5 rounded-full bg-marigold" />)}</span>
+        : <span className="text-[10px] leading-tight text-crimson-soft">{p.revealedRole}</span>}
+    </div>
+  );
+}
+
+/** The centre stage: round, clock, what the table is waiting for, the vote, and the last declaration. */
+function Centre({ s, v, now, last, pick, living, extend, vote, ready }: {
+  s: ClientState; v: PlayerView; now: () => number; last: Beat | null; pick: number | null; living: number;
+  extend?: () => void; vote: (target: number | null) => void; ready: () => void;
+}) {
+  const d = v.decision;
+  const voteOpen = v.phase.endsWith("_vote");
+  const debate = v.phase.endsWith("_debate");
+  const name = (seat: number) => v.players[seat]?.name ?? "?";
+  const lastLine = last ? `${last.title}${last.cards?.length ? `: ${last.cards.map((c) => CARD[c].name).join(", ")}` : last.detail ? ` — ${last.detail}` : ""}` : null;
+  return (
+    <div className="flex flex-col items-center gap-2 text-center">
+      <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-ink-2">Round {v.round} · {v.rounds}</p>
+      <TimerRing deadline={s.deadline} now={now} size={60} />
+      <p className={`font-display text-[17px] font-black leading-tight ${d ? "text-jade-soft" : "text-ink"}`}>{status(v)}</p>
+
+      {debate && d?.kind === "debate" && (
+        <>
+          <p className="text-[12px] text-ink-2">{d.ready.length} of {living} ready</p>
+          <Btn voice="vote" onClick={ready}>Ready to vote</Btn>
+          {extend && <button onClick={extend} className="min-h-11 text-[12px] font-bold text-ink-2 underline">+30s (host, once)</button>}
         </>
-      ) : <p className="text-[14px] text-ink-2">You&rsquo;re out — eliminated players stay silent.</p>}
-    </>
+      )}
+      {voteOpen && (
+        <p className="text-[12px] text-ink-2">{living - v.waitingOn.length} of {living} voted</p>
+      )}
+      {voteOpen && d?.kind === "vote" && (
+        <>
+          <p className="text-[13px] font-bold">{pick === null ? "Tap a seat to vote" : `${name(pick)}?`}</p>
+          <div className="grid w-full grid-cols-2 gap-1.5">
+            <Btn voice="ghost" onClick={() => vote(null)}>Abstain</Btn>
+            <Btn voice="vote" disabled={pick === null} onClick={() => vote(pick)}>Vote</Btn>
+          </div>
+        </>
+      )}
+
+      {lastLine && !voteOpen && !debate && (
+        <p className="line-clamp-2 text-[12px] leading-snug text-ink-2"><span className="text-muted">Last: </span>{lastLine}</p>
+      )}
+    </div>
+  );
+}
+
+/** Your cards, face up, and — when it's yours — the legal declarations or Pass. */
+function Tray({ v, act, voice }: { v: PlayerView; act: (a: Action) => void; voice: VoiceCtl }) {
+  const d = v.decision;
+  const inTray = d && d.kind !== "vote" && d.kind !== "debate";
+  return (
+    <section className="sticky bottom-0 z-10 flex flex-col gap-2 rounded-t-2xl border-t border-rim bg-paper-2 px-3 pt-2.5 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+      <div className="flex items-center gap-2">
+        <MicButton voice={voice} />
+        <p className="text-[11px] font-extrabold uppercase tracking-[0.1em] text-muted">
+          {!v.me.alive ? "Gone room — you hear the table; only the gone hear you" : inTray ? "Your move" : `Your cards · ${v.me.hand.length}`}
+        </p>
+      </div>
+      {v.me.alive && (inTray
+        ? <Decide key={v.phase} v={v} act={act} />
+        : <div className="flex flex-wrap gap-1.5 opacity-60">{v.me.hand.map((c, i) => <CardFace key={i} c={c} size="sm" />)}</div>)}
+      {!v.me.alive && inTray && <Decide key={v.phase} v={v} act={act} />}
+    </section>
   );
 }
 
@@ -329,4 +347,40 @@ function Final({ v, host, code, token }: { v: PlayerView; host: boolean; code: s
       </div>
     </section>
   );
+}
+
+// ---------------------------------------------------------------- voice
+function MicOff({ small = false, crossed = false }: { small?: boolean; crossed?: boolean }) {
+  const px = small ? 10 : 14;
+  return (
+    <svg width={px} height={px} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-label={crossed ? "muted by you" : "mic off"} className={crossed ? "text-crimson-soft" : "text-muted"}>
+      {crossed
+        ? <><path d="M11 5L6 9H3v6h3l5 4z" /><path d="M22 9l-6 6M16 9l6 6" /></>
+        : <><path d="M9 9v3a3 3 0 0 0 5.1 2.1M15 9.3V5a3 3 0 0 0-5.9-.7" /><path d="M19 11a7 7 0 0 1-1.2 3.9M5 11a7 7 0 0 0 11.2 5.6M12 19v3M3 3l18 18" /></>}
+    </svg>
+  );
+}
+
+function MicButton({ voice }: { voice: VoiceCtl }) {
+  if (voice.status === "unavailable") return null;
+  if (voice.status === "off")
+    return <button onClick={voice.join} className="min-h-11 rounded-full bg-jade px-4 text-[13px] font-extrabold uppercase tracking-wide text-card-ink">Join voice</button>;
+  const live = voice.micOn && !voice.micBlocked;
+  return (
+    <button onClick={voice.toggleMic} aria-pressed={live} aria-label={voice.micBlocked ? "Microphone blocked — tap to retry" : live ? "Mute your mic" : "Unmute your mic"}
+      className={`grid h-11 w-11 place-items-center rounded-full ${live ? (voice.speaking ? "speaking bg-jade text-card-ink" : "bg-jade/20 text-jade-soft") : "bg-crimson-deep text-ink"}`}>
+      {live
+        ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v4" /></svg>
+        : <MicOff />}
+    </button>
+  );
+}
+
+/** Voice is on by default — this only shows when the browser needs a tap, or the mic was refused. */
+function VoiceBanner({ voice }: { voice: VoiceCtl }) {
+  if (voice.status === "needs-tap")
+    return <button onClick={voice.unlock} className="m-3 mb-0 rounded-xl bg-jade p-3 text-left font-bold text-card-ink">Tap to hear the table 🔊</button>;
+  if (voice.micBlocked && voice.status === "on")
+    return <p className="m-3 mb-0 rounded-xl bg-raise p-3 text-[13px] text-ink-2">Your mic is blocked, so you&rsquo;re listening only. Allow the microphone for this site, then tap the mic button.</p>;
+  return null;
 }
