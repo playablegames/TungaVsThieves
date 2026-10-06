@@ -26,6 +26,11 @@ export default function Game({ code }: { code: string }) {
   const s = g.state;
   return (
     <Shell>
+      {s.you.away && s.status === "playing" && (
+        <button onClick={g.reclaim} className="w-full rounded-lg bg-amber-500 p-3 text-left font-bold text-stone-950">
+          A stand-in is playing safe for you. Tap here — I&rsquo;m back.
+        </button>
+      )}
       {g.error && <button onClick={() => g.setError(null)} className="w-full rounded-lg bg-red-900/70 p-2 text-sm">{g.error} ✕</button>}
       {s.status === "lobby" ? <Lobby s={s} code={code} token={g.token!} onError={g.setError} />
         : s.view && <Table s={s} v={s.view} act={g.act} now={g.now} extend={s.you.host ? g.extend : undefined} />}

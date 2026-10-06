@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { act, addBot, chat, createRoom, debateSeconds, extendDebate, removeBot, getState, joinRoom, startGame, tick, HttpError } from "./game";
+import { act, addBot, chat, createRoom, debateSeconds, extendDebate, reclaim, removeBot, sweep, getState, joinRoom, startGame, tick, HttpError } from "./game";
 import { defaultAction, randomAction } from "@/engine/decisions";
 import { waitingOn } from "@/engine/engine";
 import { memoryStore } from "./store";
@@ -157,5 +157,49 @@ describe("room service (memory store)", () => {
     expect(after.deadline! - before).toBe(30000);
     expect(after.state!.events.at(-1)!.type).toBe("floor_extended");
     await err(extendDebate(code, tokens[0]), 409);            // once per debate
+  });
+});
+
+describe("the server's clock and stand-ins", () => {
+  it("sweep closes every room whose deadline passed — no phone needed", async () => {
+    const { code, tokens } = await room(4);
+    await startGame(code, tokens[0]);
+    expect((await sweep()).closed).toBe(0);                    // nothing is due yet
+    const row = (await memoryStore.get(code))!;
+    row.deadline = Date.now() - 1;
+    await memoryStore.update({ ...row }, row.version);
+    const r = await sweep();
+    expect(r.closed).toBeGreaterThanOrEqual(1);
+    expect((await memoryStore.get(code))!.state!.events.some((e) => e.type === "timeout")).toBe(true);
+  });
+
+  it("two timeouts in a row bring in a stand-in that only plays safe; acting or 'I'm back' ends it", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const { code, tokens } = await room(4);
+      await startGame(code, tokens[0]);
+      let row = (await memoryStore.get(code))!;
+      const quiet = waitingOn(row.state!)[0];
+      // time out the quiet player's decisions until the stand-in arrives
+      for (let k = 0; k < 40 && !row.lobby[quiet].away; k++) {
+        vi.setSystemTime(row.deadline! + 1);
+        await tick(code);
+        row = (await memoryStore.get(code))!;
+        if (row.status === "over") break;
+        const w = waitingOn(row.state!);
+        // everyone else acts at once, so only the quiet player ever times out
+        for (const seat of w.filter((x) => x !== quiet)) await act(code, row.lobby[seat].token, defaultAction(row.state!, seat));
+        row = (await memoryStore.get(code))!;
+      }
+      expect(row.lobby[quiet].away).toBe(true);
+      expect(row.state!.events.some((e) => e.type === "away")).toBe(true);
+      expect((await getState(code, row.lobby[quiet].token, 0)).you.away).toBe(true);
+      await reclaim(code, row.lobby[quiet].token);
+      row = (await memoryStore.get(code))!;
+      expect(row.lobby[quiet].away).toBe(false);
+      expect(row.state!.events.at(-1)!.type).toBe("back");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

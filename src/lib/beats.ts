@@ -67,6 +67,9 @@ export function beatFor(e: GameEvent, names: string[]): Beat | null {
       return { ...base, title: `${nm(actor)} loses a vote for good`, tone: "lethal", big: false, hold: SMALL };
     case "faisla":
       return { ...base, card: "FAISLA", title: `${nm(actor)} calls a Faisla`, detail: "The floor is open — accuse, defend, claim. Then everyone votes.", tone: "vote", big: true, hold: BIG };
+    case "away":
+    case "back":
+      return { ...base, title: e.msg, tone: "neutral", big: false, hold: SMALL };
     case "floor_extended":
       return { ...base, title: "30 more seconds", detail: "The host keeps the floor open.", tone: "vote", big: false, hold: 1100 };
     case "ballots_open":

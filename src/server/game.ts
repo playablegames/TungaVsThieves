@@ -137,15 +137,20 @@ export async function startGame(code: string, token: string | null) {
 
 // ------------------------------------------------------------------ play
 const isBot = (row: GameRow, seat: number) => Boolean(row.lobby[seat]?.bot);
+/** seats the server plays: lobby bots, and players who went quiet */
+const isAuto = (row: GameRow, seat: number) => isBot(row, seat) || Boolean(row.lobby[seat]?.away);
+/** a bot plays like a player; a stand-in for someone who went quiet only plays safe (pass, abstain) so it never leaks their role */
+const autoAction = (row: GameRow, s: GameState, seat: number) => (isBot(row, seat) ? botAction(s, seat) : defaultAction(s, seat));
+const AWAY_AFTER = 2; // consecutive timeouts before a stand-in takes the seat
 
 /** Bots answer votes and Batwara at once; their turns and eliminations wait BOT_DELAY_MS for a tick. */
 function runBots(row: GameRow, s: GameState): GameState {
   for (let guard = 0; guard < 100; guard++) {
     const k = s.phase.kind;
     if (k !== "vote" && k !== "batwara") break;
-    const bots = waitingOn(s).filter((seat) => isBot(row, seat));
+    const bots = waitingOn(s).filter((seat) => isAuto(row, seat));
     if (!bots.length) break;
-    for (const seat of bots) if (waitingOn(s).includes(seat)) s = apply(s, seat, botAction(s, seat));
+    for (const seat of bots) if (waitingOn(s).includes(seat)) s = apply(s, seat, autoAction(row, s, seat));
   }
   return s;
 }
@@ -158,7 +163,7 @@ function commitState(row: GameRow, state: GameState): GameRow {
   const waiting = waitingOn(state);
   row.state = state;
   row.status = state.phase.kind === "over" ? "over" : "playing";
-  const base = waiting.length && waiting.every((seat) => isBot(row, seat))
+  const base = waiting.length && waiting.every((seat) => isAuto(row, seat))
     ? Date.now() + BOT_DELAY_MS
     : deadlineFor(state, row.timers);
   row.deadline = base === null ? null : base + hold;
@@ -169,8 +174,12 @@ export async function act(code: string, token: string | null, action: Action) {
   await mutate(code, (row) => {
     if (!row.state) throw new HttpError(409, "The game hasn't started");
     const seat = seatOf(row, token);
+    const p = row.lobby[seat];
+    p.strikes = 0;
     try {
-      return commitState(row, apply(row.state, seat, action));
+      const next = apply(row.state, seat, action);
+      if (p.away) { p.away = false; next.events.push({ n: next.events.length, type: "back", to: "all", msg: `${p.name} is back.`, data: { seat } }); }
+      return commitState(row, next);
     } catch (e) {
       if (e instanceof RuleError) throw new HttpError(422, e.message);
       throw e;
@@ -202,11 +211,44 @@ export async function tick(code: string) {
     let s = r.state;
     const waiting = waitingOn(s);
     const floorClosing = s.phase.kind === "vote" && s.phase.debate; // the debate ending on time is normal, not a timeout
-    for (const seat of waiting) s = apply(s, seat, isBot(r, seat) ? botAction(s, seat) : defaultAction(s, seat));
-    if (!floorClosing && waiting.some((seat) => !isBot(r, seat))) s.events.push({ n: s.events.length, type: "timeout", to: "all", msg: "Time ran out — the default was played for anyone still deciding." });
+    for (const seat of waiting) s = apply(s, seat, isAuto(r, seat) ? autoAction(r, s, seat) : defaultAction(s, seat));
+    // a human who keeps timing out gets a stand-in (BGA's "zombie"): the game never stalls on one phone
+    if (!floorClosing) for (const seat of waiting.filter((x) => !isAuto(r, x))) {
+      const p = r.lobby[seat];
+      p.strikes = (p.strikes ?? 0) + 1;
+      if (p.strikes >= AWAY_AFTER && s.phase.kind !== "over") {
+        p.away = true;
+        s.events.push({ n: s.events.length, type: "away", to: "all", msg: `${p.name} has gone quiet — a stand-in plays safe for them until they're back.`, data: { seat } });
+      }
+    }
+    if (!floorClosing && waiting.some((seat) => !isAuto(r, seat))) s.events.push({ n: s.events.length, type: "timeout", to: "all", msg: "Time ran out — the default was played for anyone still deciding." });
     return commitState(r, s);
   });
   return { applied: true };
+}
+
+/** The player taps "I'm back" — the stand-in leaves their seat. */
+export async function reclaim(code: string, token: string | null) {
+  await mutate(code, (row) => {
+    const seat = seatOf(row, token);
+    const p = row.lobby[seat];
+    if (!p.away || !row.state) return row;
+    p.away = false; p.strikes = 0;
+    const s = row.state;
+    s.events.push({ n: s.events.length, type: "back", to: "all", msg: `${p.name} is back.`, data: { seat } });
+    return commitState(row, s);
+  });
+}
+
+/** The server's clock: close every room whose deadline has passed. Safe to call from anywhere, any time —
+ *  tick() does nothing unless a deadline really passed. Supabase pg_cron calls it every few seconds. */
+export async function sweep(limit = 50) {
+  const codes = await store.due(Date.now(), limit);
+  let closed = 0;
+  for (const code of codes) {
+    try { if ((await tick(code)).applied) closed++; } catch { /* a lost race: a phone got there first */ }
+  }
+  return { due: codes.length, closed };
 }
 
 // ------------------------------------------------------------------ read
@@ -214,7 +256,7 @@ export interface ClientState {
   code: string;
   version: number;
   status: GameRow["status"];
-  you: { seat: number; name: string; host: boolean };
+  you: { seat: number; name: string; host: boolean; away: boolean };
   lobby: { names: string[]; bots: boolean[]; roleTable: Record<number, [number, number, number]> } | null;
   view: PlayerView | null;
   deadline: number | null;
@@ -230,7 +272,7 @@ export async function getState(code: string, token: string | null, sinceMsg: num
     code: row.code,
     version: row.version,
     status: row.status,
-    you: { seat, name: row.lobby[seat].name, host: row.hostToken === token },
+    you: { seat, name: row.lobby[seat].name, host: row.hostToken === token, away: Boolean(row.lobby[seat].away) },
     lobby: row.status === "lobby" ? { names: row.lobby.map((p) => p.name), bots: row.lobby.map((p) => Boolean(p.bot)), roleTable: ROLE_TABLE } : null,
     view: row.state ? viewFor(row.state, seat) : null,
     deadline: row.deadline,

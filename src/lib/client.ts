@@ -35,6 +35,7 @@ export const api = {
   addBot: (code: string, token: string) => call(`/api/games/${code}/bots`, { method: "POST", token }),
   removeBot: (code: string, token: string, index: number) =>
     call(`/api/games/${code}/bots`, { method: "DELETE", token, body: JSON.stringify({ index }) }),
+  reclaim: (code: string, token: string) => call(`/api/games/${code}/reclaim`, { method: "POST", token }),
   extend: (code: string, token: string) => call(`/api/games/${code}/extend`, { method: "POST", token }),
   tick: (code: string) => call<{ applied: boolean }>(`/api/games/${code}/tick`, { method: "POST" }),
   chat: (code: string, token: string, text: string) =>
@@ -86,7 +87,10 @@ export function useGame(code: string) {
     refresh();
     const fallback = setInterval(refresh, realtime ? 5000 : 1200);
     const ch = realtime?.channel(`game:${code.toUpperCase()}`).on("broadcast", { event: "v" }, () => refresh()).subscribe();
-    return () => { clearInterval(fallback); if (ch) realtime?.removeChannel(ch); };
+    // back from a phone call or another app: catch up at once instead of waiting for the next poll
+    const wake = () => { if (document.visibilityState === "visible") refresh(); };
+    document.addEventListener("visibilitychange", wake);
+    return () => { clearInterval(fallback); if (ch) realtime?.removeChannel(ch); document.removeEventListener("visibilitychange", wake); };
   }, [code, token, refresh]);
 
   // when the clock runs out, nudge the server (it checks the deadline itself)
@@ -106,6 +110,11 @@ export function useGame(code: string) {
     try { await api.act(code, token, a); await refresh(); } catch (e) { setError((e as Error).message); }
   }, [code, token, refresh]);
 
+  const reclaim = useCallback(async () => {
+    if (!token) return;
+    try { await api.reclaim(code, token); await refresh(); } catch (e) { setError((e as Error).message); }
+  }, [code, token, refresh]);
+
   const extend = useCallback(async () => {
     if (!token) return;
     try { await api.extend(code, token); await refresh(); } catch (e) { setError((e as Error).message); }
@@ -117,5 +126,5 @@ export function useGame(code: string) {
   }, [code, token, refresh]);
 
   const now = () => Date.now() + skew.current;
-  return { hydrated, token, state, messages, error, setError, act, say, extend, refresh, now };
+  return { hydrated, token, state, messages, error, setError, act, say, extend, reclaim, refresh, now };
 }

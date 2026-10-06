@@ -12,7 +12,8 @@ export interface GameRow {
   version: number;
   status: "lobby" | "playing" | "over";
   hostToken: string;
-  lobby: { name: string; token: string; bot?: boolean }[];
+  /** bot = a bot seat from the lobby · away = a player who timed out twice; a stand-in plays safe for them */
+  lobby: { name: string; token: string; bot?: boolean; away?: boolean; strikes?: number }[];
   state: GameState | null;
   deadline: number | null;
   timers: Timers;
@@ -28,6 +29,8 @@ export interface Store {
   update(row: GameRow, expected: number): Promise<boolean>;
   addMessage(code: string, m: Omit<ChatMessage, "id" | "at">): Promise<void>;
   messages(code: string, sinceId: number): Promise<ChatMessage[]>;
+  /** rooms whose decision clock has run out — the server's sweep closes them even if every phone is asleep */
+  due(now: number, limit: number): Promise<string[]>;
 }
 
 // ------------------------------------------------------------------ memory
@@ -49,6 +52,9 @@ export const memoryStore: Store = {
     mem.chat.set(code, list.slice(-500));
   },
   async messages(code, since) { return (mem.chat.get(code) ?? []).filter((m) => m.id > since); },
+  async due(now, limit) {
+    return [...mem.games.values()].filter((g) => g.status === "playing" && g.deadline !== null && g.deadline < now).slice(0, limit).map((g) => g.code);
+  },
 };
 
 // ------------------------------------------------------------------ supabase
@@ -87,6 +93,11 @@ function supabaseStore(sb: SupabaseClient): Store {
       const { data, error } = await sb.from("messages").select("*").eq("code", code).gt("id", since).order("id").limit(200);
       if (error) throw error;
       return (data ?? []).map((d) => ({ id: d.id, seat: d.seat, name: d.name, text: d.text, at: d.created_at, phase: d.phase }));
+    },
+    async due(now, limit) {
+      const { data, error } = await sb.from("games").select("code").eq("status", "playing").lt("deadline", now).limit(limit);
+      if (error) throw error;
+      return (data ?? []).map((d) => d.code as string);
     },
   };
 }
