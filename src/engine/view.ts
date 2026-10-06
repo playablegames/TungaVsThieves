@@ -73,7 +73,8 @@ export function viewFor(s: GameState, seat: number): PlayerView {
   const me = s.players[seat];
   return {
     ...publicView(s),
-    events: s.events.filter((e) => visibleTo(e, seat)),
+    // when it's over, the whole story opens up: every private moment (Kundli reads, steals, swaps) — never analytics
+    events: s.phase.kind === "over" ? s.events.filter((e) => !(Array.isArray(e.to) && e.to.length === 0)) : s.events.filter((e) => visibleTo(e, seat)),
     me: { seat, name: me.name, role: me.role, side: me.side, alive: me.alive, votes: me.votes, hand: [...me.hand] },
     decision: decisionFor(s, seat),
   };

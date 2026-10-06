@@ -1,0 +1,245 @@
+"use client";
+// The action dock: what YOU can do right now, one step at a time. Irreversible moves go through a 5-second
+// timed confirm instead of undo (BGA: undo is impossible once hidden information is out).
+import { useEffect, useMemo, useState } from "react";
+import type { Action, ActionCard, Card } from "@/engine/types";
+import type { PlayerView, PublicPlayer } from "@/engine/view";
+import { CARD } from "@/lib/cards";
+import { Btn, CardFace } from "./ui";
+
+const TARGETED: ActionCard[] = ["KUNDLI", "TALASHI", "HERA_PHERI", "TEER_KAMAN", "MAYA_JAAL"];
+const CONFIRM_MS = 5000;
+export const QUICK_CLAIMS = ["Mere paas Stone hai", "Mere paas Stone nahi hai", "Main Tunga hoon", "Jhooth!", "Kundli mein dekha hai", "Bharosa karo"];
+
+type Ask = (label: string, action: Action) => void;
+
+/** Hold an irreversible action for 5 seconds with Cancel / Now — the table still sees it the moment it lands. */
+function useTimedConfirm(act: (a: Action) => void) {
+  const [pending, setPending] = useState<{ label: string; action: Action; until: number } | null>(null);
+  const [left, setLeft] = useState(CONFIRM_MS);
+  useEffect(() => {
+    if (!pending) return;
+    const t = setInterval(() => {
+      const ms = pending.until - Date.now();
+      if (ms <= 0) { setPending(null); act(pending.action); } else setLeft(ms);
+    }, 200);
+    return () => clearInterval(t);
+  }, [pending, act]);
+  const ask: Ask = (label, action) => { setLeft(CONFIRM_MS); setPending({ label, action, until: Date.now() + CONFIRM_MS }); };
+  return { pending, left, ask, cancel: () => setPending(null), now: () => { if (pending) { setPending(null); act(pending.action); } } };
+}
+
+function Head({ title, hint }: { title: string; hint?: string }) {
+  return (
+    <div>
+      <h2 className="font-display text-[22px] font-black leading-tight">{title}</h2>
+      {hint && <p className="mt-0.5 text-[14px] leading-snug text-ink-2">{hint}</p>}
+    </div>
+  );
+}
+
+export function PlayerChip({ p, selected, onClick, me }: { p: PublicPlayer; selected?: boolean; onClick?: () => void; me?: boolean }) {
+  return (
+    <button type="button" onClick={onClick} aria-pressed={selected}
+      className={`flex min-h-12 items-center gap-2 rounded-full py-1.5 pl-1.5 pr-4 text-left text-[14px] font-bold ${selected ? "bg-jade text-card-ink" : "bg-raise text-ink"}`}>
+      <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-[13px] font-extrabold ${selected ? "bg-card-ink text-jade" : "bg-raise-2"}`}>{p.name.slice(0, 1)}</span>
+      <span className="truncate">{p.name}{me ? " (you)" : ""}</span>
+    </button>
+  );
+}
+
+function Pickers({ options, sel, onPick }: { options: PublicPlayer[]; sel: number | null; onPick: (s: number) => void }) {
+  return <div className="grid grid-cols-2 gap-2">{options.map((p) => <PlayerChip key={p.seat} p={p} selected={sel === p.seat} onClick={() => onPick(p.seat)} />)}</div>;
+}
+
+function RolePicker({ roles, sel, setSel }: { roles: string[]; sel: string[]; setSel: (r: string[]) => void }) {
+  const toggle = (r: string) => setSel(sel.includes(r) ? sel.filter((x) => x !== r) : sel.length < 2 ? [...sel, r] : sel);
+  return (
+    <div className="flex flex-wrap gap-2" role="group" aria-label="Name two roles">
+      {roles.map((r) => (
+        <button key={r} type="button" onClick={() => toggle(r)} aria-pressed={sel.includes(r)}
+          className={`min-h-11 rounded-full px-4 text-[14px] font-bold ${sel.includes(r) ? "bg-crimson text-ink" : "bg-raise text-ink"}`}>{r}</button>
+      ))}
+    </div>
+  );
+}
+
+export function Decide({ v, act, say, extend }: { v: PlayerView; act: (a: Action) => void; say: (t: string) => void; extend?: () => void }) {
+  const c = useTimedConfirm(act);
+  if (c.pending) {
+    const left = Math.ceil(c.left / 1000);
+    return (
+      <div className="flex flex-col gap-3" role="status">
+        <Head title={c.pending.label} hint={`Goes to the table in ${left}s.`} />
+        <div className="h-1.5 overflow-hidden rounded-full bg-raise"><div className="h-full bg-jade transition-[width] duration-200" style={{ width: `${(c.left / CONFIRM_MS) * 100}%` }} /></div>
+        <div className="grid grid-cols-2 gap-2">
+          <Btn voice="ghost" onClick={c.cancel}>Cancel</Btn>
+          <Btn voice="relic" onClick={c.now}>Now</Btn>
+        </div>
+      </div>
+    );
+  }
+  const d = v.decision!;
+  const living = v.players.filter((p) => p.alive);
+  const others = living.filter((p) => p.seat !== v.me.seat);
+  const name = (s: number) => v.players[s]?.name ?? "?";
+  switch (d.kind) {
+    case "turn": return <Turn v={v} playable={d.playable as ActionCard[]} passSize={d.passSize} act={act} ask={c.ask} />;
+    case "debate": return (
+      <div className="flex flex-col gap-3">
+        <Head title={d.reason === "final" ? "Last debate" : "The floor is open"}
+          hint="Accuse, defend, claim a Stone — on your call or here. Voting opens when everyone is ready or time runs out." />
+        <div className="flex flex-wrap gap-2">
+          {QUICK_CLAIMS.map((q) => <button key={q} type="button" onClick={() => say(q)} className="min-h-11 rounded-full bg-raise px-4 text-[14px] font-bold">{q}</button>)}
+        </div>
+        <p className="text-[14px] text-ink-2">{d.ready.length} of {living.length} ready</p>
+        <Btn voice="vote" onClick={() => act({ type: "ready" })}>Ready to vote</Btn>
+        {extend && <Btn voice="ghost" onClick={extend}>+30 seconds (host, once)</Btn>}
+      </div>
+    );
+    case "vote": return <Vote options={living} me={v.me.seat} reason={d.reason} act={act} ask={c.ask} name={name} />;
+    case "batwara": return <Bhukamp v={v} act={act} />;
+    case "dal_badal": return <Swap options={others} ask={c.ask} name={name} />;
+    case "gift": return <OneOf title="Dying power — give 1 vote" hint="They vote with one more from now on." options={others}
+      go={(s) => c.ask(`Give your vote to ${name(s)}`, { type: "gift", target: s })} skip={{ label: "Give it to nobody", action: { type: "gift", target: null } }} act={act} />;
+    case "shot": return <Shot v={v} options={others} ask={c.ask} act={act} name={name} />;
+    case "handoff": return <OneOf title="Hand ALL your cards to someone" hint="Stones included. Everyone sees what you hand over." options={others}
+      go={(s) => c.ask(`Hand everything to ${name(s)}`, { type: "handoff", target: s })} act={act} />;
+  }
+}
+
+function OneOf({ title, hint, options, go, skip, act }: { title: string; hint: string; options: PublicPlayer[]; go: (s: number) => void; skip?: { label: string; action: Action }; act: (a: Action) => void }) {
+  const [sel, setSel] = useState<number | null>(null);
+  return (
+    <div className="flex flex-col gap-3">
+      <Head title={title} hint={hint} />
+      <Pickers options={options} sel={sel} onPick={setSel} />
+      <div className="grid grid-cols-2 gap-2">
+        {skip ? <Btn voice="ghost" onClick={() => act(skip.action)}>{skip.label}</Btn> : <span />}
+        <Btn voice="vote" disabled={sel === null} onClick={() => go(sel!)}>Confirm</Btn>
+      </div>
+    </div>
+  );
+}
+
+function Vote({ options, me, reason, act, ask, name }: { options: PublicPlayer[]; me: number; reason: "faisla" | "final"; act: (a: Action) => void; ask: Ask; name: (s: number) => string }) {
+  const [sel, setSel] = useState<number | null>(null);
+  return (
+    <div className="flex flex-col gap-3">
+      <Head title={reason === "final" ? "Mandatory vote — who is out?" : "Faisla — who is out?"} hint="All your votes go on one player. Seals stay hidden until everyone has voted." />
+      <div className="grid grid-cols-2 gap-2">{options.map((p) => <PlayerChip key={p.seat} p={p} me={p.seat === me} selected={sel === p.seat} onClick={() => setSel(p.seat)} />)}</div>
+      <div className="grid grid-cols-2 gap-2">
+        <Btn voice="ghost" onClick={() => act({ type: "vote", target: null })}>Abstain</Btn>
+        <Btn voice="vote" disabled={sel === null} onClick={() => ask(`Vote ${name(sel!)} out`, { type: "vote", target: sel })}>Vote</Btn>
+      </div>
+    </div>
+  );
+}
+
+function Swap({ options, ask, name }: { options: PublicPlayer[]; ask: Ask; name: (s: number) => string }) {
+  const [sel, setSel] = useState<number[]>([]);
+  const toggle = (s: number) => setSel((x) => (x.includes(s) ? x.filter((y) => y !== s) : x.length < 2 ? [...x, s] : x));
+  return (
+    <div className="flex flex-col gap-3">
+      <Head title="Dal Badal — swap two roles" hint="Both see their new role in secret. The table sees who was swapped, nothing more." />
+      <div className="grid grid-cols-2 gap-2">{options.map((p) => <PlayerChip key={p.seat} p={p} selected={sel.includes(p.seat)} onClick={() => toggle(p.seat)} />)}</div>
+      <Btn voice="lethal" disabled={sel.length !== 2} onClick={() => ask(`Swap ${name(sel[0])} and ${name(sel[1])}`, { type: "dal_badal", a: sel[0], b: sel[1] })}>Swap</Btn>
+    </div>
+  );
+}
+
+function Shot({ v, options, ask, act, name }: { v: PlayerView; options: PublicPlayer[]; ask: Ask; act: (a: Action) => void; name: (s: number) => string }) {
+  const [target, setTarget] = useState<number | null>(null);
+  const [roles, setRoles] = useState<string[]>([]);
+  return (
+    <div className="flex flex-col gap-3">
+      <Head title="Your last shot" hint="Point at one player, name two roles. Either is theirs: they're out with you." />
+      <Pickers options={options} sel={target} onPick={setTarget} />
+      <RolePicker roles={v.rolesInPlay} sel={roles} setSel={setRoles} />
+      <div className="grid grid-cols-2 gap-2">
+        <Btn voice="ghost" onClick={() => act({ type: "shot", target: null })}>No shot</Btn>
+        <Btn voice="lethal" disabled={target === null || roles.length !== 2}
+          onClick={() => ask(`Shoot ${name(target!)}: ${roles.join(" or ")}`, { type: "shot", target, roles: roles as [string, string] })}>Shoot</Btn>
+      </div>
+    </div>
+  );
+}
+
+function Bhukamp({ v, act }: { v: PlayerView; act: (a: Action) => void }) {
+  const [left, setLeft] = useState<number | null>(null);
+  const [right, setRight] = useState<number | null>(null);
+  const living = v.players.filter((p) => p.alive).map((p) => p.seat);
+  const i = living.indexOf(v.me.seat);
+  const L = v.players[living[(i - 1 + living.length) % living.length]].name;
+  const R = v.players[living[(i + 1) % living.length]].name;
+  const tap = (k: number) => {
+    if (left === k) return setLeft(null);
+    if (right === k) return setRight(null);
+    if (left === null) setLeft(k); else if (right === null) setRight(k);
+  };
+  return (
+    <div className="flex flex-col gap-3">
+      <Head title="Bhukamp — split your cards" hint={`First tap goes left to ${L}, second goes right to ${R}. A Stone may move.`} />
+      <div className="flex flex-wrap gap-2 pt-2">
+        {v.me.hand.map((c, k) => <CardFace key={k} c={c} size="sm" selected={k === left || k === right} label={k === left ? "LEFT" : k === right ? "RIGHT" : undefined} onClick={() => tap(k)} />)}
+      </div>
+      <Btn voice="gold" disabled={left === null || right === null} onClick={() => act({ type: "batwara", left: v.me.hand[left!], right: v.me.hand[right!] })}>Pass them</Btn>
+    </div>
+  );
+}
+
+function Turn({ v, playable, passSize, act, ask }: { v: PlayerView; playable: ActionCard[]; passSize: number; act: (a: Action) => void; ask: Ask }) {
+  const [card, setCard] = useState<ActionCard | "NONE" | null>(null);
+  const [pass, setPass] = useState<number[]>([]);
+  const [target, setTarget] = useState<number | null>(null);
+  const [roles, setRoles] = useState<string[]>([]);
+  const hand = v.me.hand;
+  const pairIdx = useMemo(() => (!card || card === "NONE" ? [] : hand.map((c, i) => (c === card ? i : -1)).filter((i) => i >= 0).slice(0, 2)), [card, hand]);
+  const reset = () => { setCard(null); setPass([]); setTarget(null); setRoles([]); };
+  const togglePass = (i: number) => setPass((p) => (p.includes(i) ? p.filter((x) => x !== i) : p.length < passSize ? [...p, i] : p));
+  const others = v.players.filter((p) => p.alive && p.seat !== v.me.seat);
+  const targets = card === "MAYA_JAAL" ? v.players.filter((p) => !p.alive) : card === "HERA_PHERI" ? others.filter((p) => p.handSize > 0) : others;
+  const needsTarget = card && card !== "NONE" && TARGETED.includes(card);
+  const ready = card && pass.length === passSize && (!needsTarget || target !== null) && (card !== "TEER_KAMAN" || roles.length === 2);
+  const name = (s: number) => v.players[s]?.name ?? "?";
+
+  if (!card) {
+    return (
+      <div className="flex flex-col gap-3">
+        <Head title="Your move" hint={playable.length ? "Tap a pair to play it — or play nothing and pass 3 face down." : "No pair to play. Pass 3 cards face down."} />
+        <div className="flex flex-wrap gap-2 pt-2">
+          {hand.map((c, i) => {
+            const isPair = (playable as Card[]).includes(c) && hand.indexOf(c) === i;
+            return <CardFace key={i} c={c} size="sm" label={isPair ? "PAIR" : undefined} dim={!isPair && playable.length > 0}
+              onClick={isPair ? () => setCard(c as ActionCard) : undefined} />;
+          })}
+        </div>
+        <Btn voice="pass" onClick={() => setCard("NONE")}>Play nothing — pass 3</Btn>
+      </div>
+    );
+  }
+  const playing = card !== "NONE";
+  const label = !playing ? "" : `${CARD[card].name}${target !== null ? ` on ${name(target)}` : ""}${card === "TEER_KAMAN" && roles.length === 2 ? `: ${roles.join(" or ")}` : ""}`;
+  return (
+    <div className="flex flex-col gap-3">
+      <Head title={playing ? `Play ${CARD[card].name}` : "Pass 3 cards"}
+        hint={playing ? `First pass ${passSize} other cards face down to the next player — a Stone only if you must. ${CARD[card].text}` : "Face down to the next player. A Stone may go — whoever is next picks it up."} />
+      <div className="flex flex-wrap gap-2 pt-2">
+        {hand.map((c, i) => {
+          const locked = pairIdx.includes(i);
+          return <CardFace key={i} c={c} size="sm" dim={locked} selected={pass.includes(i)} label={locked ? "PLAY" : pass.includes(i) ? "PASS" : undefined}
+            onClick={locked ? undefined : () => togglePass(i)} />;
+        })}
+      </div>
+      <p className="text-[13px] text-ink-2">{pass.length} of {passSize} chosen to pass</p>
+      {needsTarget && <Pickers options={targets} sel={target} onPick={setTarget} />}
+      {card === "TEER_KAMAN" && <RolePicker roles={v.rolesInPlay} sel={roles} setSel={setRoles} />}
+      <div className="grid grid-cols-2 gap-2">
+        <Btn voice="ghost" onClick={reset}>Back</Btn>
+        {playing
+          ? <Btn voice={CARD[card].voice} disabled={!ready} onClick={() => { ask(`Playing ${label}`, { type: "play", card, pass: pass.map((i) => hand[i]), target: target ?? undefined, roles: card === "TEER_KAMAN" ? (roles as [string, string]) : undefined }); reset(); }}>Play</Btn>
+          : <Btn voice="pass" disabled={!ready} onClick={() => { act({ type: "pass", pass: pass.map((i) => hand[i]) }); reset(); }}>Pass</Btn>}
+      </div>
+    </div>
+  );
+}

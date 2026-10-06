@@ -1,29 +1,22 @@
-import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+import { Playfair_Display, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+// DESIGN.md: Playfair Display for roles, banners and reveals (roman only); Plus Jakarta Sans for everything you tap or read fast
+const playfair = Playfair_Display({ variable: "--font-playfair", subsets: ["latin"], weight: ["700", "900"], style: ["normal"] });
+const jakarta = Plus_Jakarta_Sans({ variable: "--font-jakarta", subsets: ["latin"], weight: ["400", "500", "700", "800"] });
 
 export const metadata: Metadata = {
   title: "Tunga vs Thieves",
-  description: "Two Serpent Stones, hidden roles — play Tunga vs Thieves online with your group.",
+  description: "Two Serpent Stones, hidden roles — play Tunga vs Thieves on your phone with your group.",
 };
+
+export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: "#11131c" };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col bg-stone-950 text-stone-100">{children}</body>
+    <html lang="en" className={`${playfair.variable} ${jakarta.variable} h-full antialiased`}>
+      <body className="min-h-dvh">{children}</body>
     </html>
   );
 }

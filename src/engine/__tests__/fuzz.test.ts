@@ -42,7 +42,9 @@ function redaction(s: GameState, bad: Map<string, number>) {
   const over = s.phase.kind === "over";
   for (const p of s.players) {
     const v = viewFor(s, p.seat);
-    if (v.events.some((e) => e.to !== "all" && !e.to.includes(p.seat))) hit("view leaks a private event");
+    if (!over && v.events.some((e) => e.to !== "all" && !e.to.includes(p.seat))) hit("view leaks a private event");
+    if (v.events.some((e) => Array.isArray(e.to) && e.to.length === 0)) hit("view shows analytics");
+    if (over && v.events.length !== s.events.filter((e) => !(Array.isArray(e.to) && e.to.length === 0)).length) hit("the end doesn't open the whole story");
     if (!over && v.finalReveal) hit("final reveal before the end");
     for (const q of v.players) {
       if ("role" in q || "hand" in q) hit("public player row carries role/hand");

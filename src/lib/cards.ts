@@ -1,18 +1,32 @@
-// Card copy — from the v15 rulebook / card-copy sheet. Shared by the UI.
+// Card copy — from the printed cards (v7 print = v16 rules). Shared by the UI.
 import type { Card } from "@/engine/types";
 
-export const CARD: Record<Card, { name: string; text: string; tone: string }> = {
-  FAISLA: { name: "Faisla", text: "Voting begins. Most votes is out — a tie, nobody. Draw 2.", tone: "bg-blue-700" },
-  TALASHI: { name: "Talashi", text: "A player shows ALL their cards to everyone — never their role. Draw 2.", tone: "bg-orange-600" },
-  KUNDLI: { name: "Kundli", text: "Look at one player's role card in secret. Say anything — or nothing. Draw 2.", tone: "bg-purple-700" },
-  HERA_PHERI: { name: "Hera Pheri", text: "Swap action cards: steal 2 face down from any one player. They draw 2.", tone: "bg-amber-700" },
-  BATWARA: { name: "Bhukamp", text: "Split your cards: draw 2. Every OTHER player passes 1 card left and 1 right.", tone: "bg-teal-700" },
-  MAYA_JAAL: { name: "Mayajaal", text: "Turn back time: revive any one eliminated player. They draw 2 fresh. Draw 2.", tone: "bg-fuchsia-700" },
-  TEER_KAMAN: { name: "Teer Kaman", text: "Point at ONE player, say TWO roles. Either is theirs: they are OUT. Miss: lose 1 vote for good. Draw 2.", tone: "bg-red-700" },
-  DAL_BADAL: { name: "Dal Badal", text: "Never played. Villagers pass it, thieves hold it. A THIEF eliminated holding it swaps two living players' roles.", tone: "bg-stone-700" },
-  STONE_1: { name: "Bhadra Stone", text: "Villagers need BOTH Stones. Thieves need any ONE. Can be passed, never discarded.", tone: "bg-blue-800" },
-  STONE_2: { name: "Tunga Stone", text: "Villagers need BOTH Stones. Thieves need any ONE. Can be passed, never discarded.", tone: "bg-amber-600" },
+/** DESIGN.md button voices: marigold vote · crimson lethal · jade relic · gold Bhukamp · stones · neutral */
+export type Voice = "vote" | "lethal" | "relic" | "gold" | "neutral" | "bhadra" | "tunga";
+
+export const CARD: Record<Card, { name: string; sub: string; text: string; voice: Voice }> = {
+  FAISLA: { name: "Faisla", sub: "Voting begins", text: "Open the floor, then everyone votes. Most votes is out — a tie, nobody. Draw 2.", voice: "vote" },
+  TALASHI: { name: "Talashi", sub: "See action cards", text: "Choose a player: their cards are shown to everyone — never their role. Draw 2.", voice: "relic" },
+  KUNDLI: { name: "Kundli", sub: "See role", text: "Secretly see one player's role card. Say anything — or nothing. Draw 2.", voice: "relic" },
+  HERA_PHERI: { name: "Hera Pheri", sub: "Swap action cards", text: "Steal 2 cards face down from any one player. They draw 2.", voice: "lethal" },
+  BATWARA: { name: "Bhukamp", sub: "Split your cards", text: "Draw 2. Every OTHER player passes 1 card left and 1 right.", voice: "gold" },
+  MAYA_JAAL: { name: "Mayajaal", sub: "Turn back time", text: "Revive any one eliminated player. They draw 2 fresh. Draw 2.", voice: "relic" },
+  TEER_KAMAN: { name: "Teer Kaman", sub: "Eliminate a player", text: "Pick a player, name two roles. Either is theirs: they're out. Miss: you lose a vote for good. Draw 2.", voice: "lethal" },
+  DAL_BADAL: { name: "Dal Badal", sub: "Villagers pass · Thieves hold", text: "Never played. A thief eliminated holding it swaps two living players' roles.", voice: "neutral" },
+  STONE_1: { name: "Bhadra Stone", sub: "Villagers need both · Thieves need one", text: "Can be passed, never discarded.", voice: "bhadra" },
+  STONE_2: { name: "Tunga Stone", sub: "Villagers need both · Thieves need one", text: "Can be passed, never discarded.", voice: "tunga" },
 };
 
 export const isStoneCard = (c: Card) => c === "STONE_1" || c === "STONE_2";
 export const sideName = (s: "V" | "T") => (s === "V" ? "Tunga" : "Thief");
+
+/** Tailwind classes per voice — the band on a card face, a button fill, a ring */
+export const VOICE: Record<Voice, { band: string; text: string; fill: string; ring: string }> = {
+  vote: { band: "bg-marigold", text: "text-marigold-deep", fill: "bg-marigold text-card-ink", ring: "ring-marigold" },
+  lethal: { band: "bg-crimson", text: "text-crimson-deep", fill: "bg-crimson text-ink", ring: "ring-crimson" },
+  relic: { band: "bg-jade", text: "text-jade-deep", fill: "bg-jade text-card-ink", ring: "ring-jade" },
+  gold: { band: "bg-gold", text: "text-edge", fill: "bg-gold text-card-ink", ring: "ring-gold" },
+  neutral: { band: "bg-raise-2", text: "text-card-ink", fill: "bg-raise-2 text-ink", ring: "ring-raise-2" },
+  bhadra: { band: "bg-bhadra", text: "text-bhadra", fill: "bg-bhadra text-ink", ring: "ring-bhadra" },
+  tunga: { band: "bg-tunga", text: "text-tunga", fill: "bg-tunga text-card-ink", ring: "ring-tunga" },
+};

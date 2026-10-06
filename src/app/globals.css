@@ -1,37 +1,59 @@
+/* Hallmark · genre: atmospheric · macrostructure: Workbench (app, portrait) · design-system: DESIGN.md "Shadows of the Haveli" · designed-as-app */
 @import "tailwindcss";
 
-:root {
-  --background: #0c0a09;
-  --foreground: #f5f5f4;
+/* Shadows of the Haveli — every colour and face the app uses lives here (no raw values in components) */
+@theme {
+  --color-paper: #11131c;        /* midnight charcoal */
+  --color-paper-2: #1a1a2e;      /* royal indigo */
+  --color-paper-3: #1d1f29;
+  --color-raise: #282933;
+  --color-raise-2: #32343e;
+  --color-field: #181926;        /* field-notes paper for inputs */
+  --color-ink: #f3efe6;          /* parchment white */
+  --color-ink-2: #c5bcab;
+  --color-muted: #8c8476;
+  --color-rim: #b7791f59;        /* gold-leaf rim, 35% */
+  --color-gold: #b7791f;
+  --color-edge: #8c5311;         /* card amber edging */
+  --color-stock: #f5e6ca;        /* cream cardstock */
+  --color-card-ink: #1f1610;
+  --color-card-ink-2: #2c1810;
+  --color-marigold: #e67e22;     /* villagers · votes · Faisla */
+  --color-marigold-deep: #944a00;
+  --color-marigold-soft: #ffb783;
+  --color-crimson: #c0392b;      /* thieves · lethal plays */
+  --color-crimson-deep: #8e130c;
+  --color-crimson-soft: #ffb4a9;
+  --color-jade: #2ecc71;         /* serpent relics · Kundli · Talashi · selection */
+  --color-jade-deep: #005228;
+  --color-jade-soft: #4ae183;
+  --color-bhadra: #3b6fd8;       /* Bhadra Stone (blue gem) */
+  --color-tunga: #e8b923;        /* Tunga Stone (gold gem) */
+  --font-display: var(--font-playfair), "Playfair Display", serif;
+  --font-sans: var(--font-jakarta), "Plus Jakarta Sans", sans-serif;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+html, body { overflow-x: clip; }
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  background: radial-gradient(130% 70% at 50% 0%, var(--color-paper-2) 0%, var(--color-paper) 70%) fixed;
+  color: var(--color-ink);
+  font-family: var(--font-sans);
 }
+:focus-visible { outline: 2px solid var(--color-jade-soft); outline-offset: 2px; }
+.font-display { font-family: var(--font-display); font-style: normal; }
 
-/* Table Stage — one entrance, one slam, one stamp (transform + opacity only) */
+/* Table Stage — one entrance, one slam, one stamp (transform + opacity only, ≤ 0.8s per BGA) */
 @keyframes stage-in { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
 @keyframes stage-card { from { opacity: 0; transform: translateY(-28px) rotate(-6deg); } to { opacity: 1; transform: none; } }
 @keyframes stage-stamp { 0% { opacity: 0; transform: scale(1.6) rotate(-3deg); } 100% { opacity: 1; transform: scale(1) rotate(-3deg); } }
+@keyframes flip-in { from { opacity: 0; transform: perspective(600px) rotateY(80deg); } to { opacity: 1; transform: none; } }
+@keyframes spot { 0%, 100% { box-shadow: 0 0 0 2px var(--color-jade), 0 0 14px 2px #2ecc7155; } 50% { box-shadow: 0 0 0 2px var(--color-jade), 0 0 22px 4px #2ecc7166; } }
 .stage-in { animation: stage-in 280ms cubic-bezier(0.16, 1, 0.3, 1) both; }
 .stage-card { animation: stage-card 320ms cubic-bezier(0.16, 1, 0.3, 1) both; }
 .stage-stamp { animation: stage-stamp 260ms cubic-bezier(0.16, 1, 0.3, 1) 420ms both; }
+.flip-in { animation: flip-in 450ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.spotlight { animation: spot 1.8s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {
-  .stage-in, .stage-card, .stage-stamp { animation: stage-in 150ms linear both; }
+  .stage-in, .stage-card, .stage-stamp, .flip-in { animation: stage-in 150ms linear both; }
+  .spotlight { animation: none; box-shadow: 0 0 0 2px var(--color-jade); }
 }
