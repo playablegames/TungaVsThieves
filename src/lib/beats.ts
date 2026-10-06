@@ -27,7 +27,7 @@ const SMALL = 1100;
 
 /** events the stage never shows: bookkeeping, analytics, and things the end screen tells better */
 const SKIP = new Set(["setup", "role", "pickup", "pickup_private", "conduit", "reshuffle", "batwara_done",
-  "reveal", "play", "analytics_deal", "analytics_turn", "batwara_private"]);
+  "reveal", "play", "analytics_deal", "analytics_turn", "batwara_private", "batwara_pile"]);
 
 type D = Record<string, unknown>;
 const num = (d: D | undefined, k: string) => (typeof d?.[k] === "number" ? (d[k] as number) : undefined);
@@ -65,7 +65,7 @@ function rawBeat(e: GameEvent, names: string[]): Beat | null {
     case "hera_pheri_private":
       return { ...base, card: "HERA_PHERI", title: "What moved", detail: e.msg, tone: "lethal", big: false, hold: SMALL };
     case "batwara":
-      return { ...base, card: "BATWARA", title: `Bhukamp — ${nm(actor)} splits the table`, detail: "Everyone else: one card left, one card right.", tone: "gold", big: true, hold: BIG };
+      return { ...base, card: "BATWARA", title: `Bhukamp — ${nm(actor)} splits the table`, detail: "Everyone — them too: one card left, one card right. Then they draw 2 for the next player.", tone: "gold", big: true, hold: BIG };
     case "maya_jaal":
       return { ...base, card: "MAYA_JAAL", title: `${nm(target)} is back`, detail: `${nm(actor)} turns back time.`, tone: "relic", big: true, hold: BIG };
     case "teer_kaman": {

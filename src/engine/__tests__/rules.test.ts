@@ -105,16 +105,36 @@ describe("THE CARDS", () => {
     expect(n.players[1].hand).toHaveLength(2 + 3); // drew 2, and is next: picked up the pass
     expect(n.events.find((e) => e.type === "hera_pheri_private")!.to).toEqual([0, 1]);
   });
-  it("BHUKAMP: draw 2, then every OTHER living player passes 1 left and 1 right", () => {
+  it("BHUKAMP: everyone splits FIRST — the player too, from their own 3 — then the player draws 2 and those plus their last card are the pile", () => {
     const s = rig(4, { hands: [[B, B, F, K, M], [S1, T], [F, K], [T, M]] });
-    let n = apply(s, 0, { type: "play", card: "BATWARA", pass: [F, K, M], target: undefined });
+    expect(() => apply(s, 0, { type: "play", card: "BATWARA", pass: [F, K, M], target: undefined })).toThrow(RuleError); // nothing passes before the split
+    let n = apply(s, 0, { type: "play", card: "BATWARA", pass: [], target: undefined });
     expect(n.phase.kind).toBe("batwara");
-    const hand0 = n.players[0].hand;
-    expect(() => apply(n, 0, { type: "batwara", left: hand0[0], right: hand0[1] })).toThrow(RuleError); // the player who played it doesn't pass
+    expect(n.players[0].hand.sort()).toEqual([F, K, M].sort()); // the pair is gone, the 3 stay for the split
+    expect(waitingOn(n).sort()).toEqual([0, 1, 2, 3]);
+    n = apply(n, 0, { type: "batwara", left: F, right: K }); // the player chooses what each neighbour gets
     n = apply(n, 1, { type: "batwara", left: S1, right: T }); // a Stone CAN move by Bhukamp
     n = apply(n, 2, { type: "batwara", left: F, right: K });
     n = apply(n, 3, { type: "batwara", left: T, right: M });
-    expect(n.players[0].hand).toContain(S1); // seat 1's left neighbour is seat 0
+    // the player keeps what the neighbours sent; their last own card and 2 drawn went on as the pile
+    expect(n.players[0].hand.sort()).toEqual([S1, M].sort());
+    const pile = n.events.find((e) => e.type === "batwara_pile")!;
+    expect(pile.to).toEqual([0]);
+    expect((pile.data!.cards as Card[])[0]).toBe(M);
+    expect(pile.data!.cards).toHaveLength(3);
+    // nobody's hand shrinks; seat 1, who is next, has also picked up the 3
+    expect(n.players[2].hand).toHaveLength(2);
+    expect(n.players[3].hand).toHaveLength(2);
+    expect(n.players[1].hand).toHaveLength(2 + 3);
+  });
+  it("BHUKAMP with cards to spare: the player picks which own card joins the 2 they draw", () => {
+    const s = rig(4, { hands: [[B, B, F, K, M, T, F], [S1, T], [F, K], [T, M]] });
+    let n = apply(s, 0, { type: "play", card: "BATWARA", pass: [], target: undefined });
+    expect(() => apply(n, 0, { type: "batwara", left: F, right: K })).toThrow(RuleError); // 3 left: which one goes on?
+    n = apply(n, 0, { type: "batwara", left: F, right: K, pile: M });
+    for (const seat of [1, 2, 3]) n = apply(n, seat, { type: "batwara", left: n.players[seat].hand[0], right: n.players[seat].hand[1] });
+    expect((n.events.find((e) => e.type === "batwara_pile")!.data!.cards as Card[])[0]).toBe(M);
+    expect(n.players[0].hand).toHaveLength(2 + 2); // T and F kept, plus one from each neighbour
   });
   it("MAYA JAAL brings back ANY eliminated player; they draw 2 fresh, the inheritor keeps the cards", () => {
     const s = rig(5, { sides: ["V", "V", "V", "T", "T"], hands: [[M, M, F, K, T], [B, B], [F], [T], [K]] });

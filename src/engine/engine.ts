@@ -220,7 +220,13 @@ export function apply(prev: GameState, seat: number, action: Action): GameState 
     if (action.type !== "batwara") throw new RuleError("Choose 1 card left and 1 right");
     const tmp = [...P(s, seat).hand];
     removeCards(tmp, [action.left, action.right]);
-    ph.picks[seat] = { left: action.left, right: action.right };
+    let pile: Card | undefined;
+    if (seat === ph.actor && tmp.length > 1) {
+      // more than one card left after the split: the player picks which one joins the 2 they draw
+      if (!action.pile || !tmp.includes(action.pile)) throw new RuleError("Choose the card that goes on with the 2 you draw");
+      pile = action.pile;
+    }
+    ph.picks[seat] = { left: action.left, right: action.right, ...(pile ? { pile } : {}) };
     if (waitingOn(s).length === 0) resolveBatwara(s);
     return s;
   }
@@ -252,14 +258,19 @@ function doPlay(s: GameState, seat: number, a: Extract<Action, { type: "play" }>
   });
   const afterPair = [...p.hand];
   removeCards(afterPair, [a.card, a.card]);
-  checkPass(afterPair, a.pass);
+  // Bhukamp splits FIRST, so its pile is made after the split; every other pair passes 3 out first
+  const bhukamp = a.card === "BATWARA";
+  if (bhukamp) { if (a.pass.length) throw new RuleError("Bhukamp: split first — your pile is made after the split"); }
+  else checkPass(afterPair, a.pass);
   validateTarget(s, seat, a);
 
   // pair to the discard, the other 3 out FIRST (power or Stone)
   removeCards(p.hand, [a.card, a.card, ...a.pass]);
   discard(s, [a.card, a.card]);
-  s.pile = a.pass;
-  s.pileFrom = seat;
+  if (!bhukamp) {
+    s.pile = a.pass;
+    s.pileFrom = seat;
+  }
   emit(s, "play", "all", `${p.name} plays a pair of ${CARD_NAME[a.card]}.`, { seat, card: a.card, target: a.target ?? null });
 
   const t = a.target !== undefined ? P(s, a.target) : null;
@@ -287,16 +298,17 @@ function doPlay(s: GameState, seat: number, a: Extract<Action, { type: "play" }>
       endTurn(s); return s;
     }
     case "BATWARA": {
-      p.hand.push(...draw(s, 2));
-      // Bhukamp (printed card): every OTHER living player passes — the player who played it does not
-      const live = living(s).filter((x) => x.seat !== seat);
+      // Bhukamp (designer, 2026-10-07): the table splits FIRST — every living player passes 1 left and 1 right, the
+      // player too (from the cards left after the pair) — then the player draws 2, and those 2 plus their last own
+      // card go to the next player as the pile. Nobody's hand shrinks; the player chooses what each neighbour gets.
+      const live = living(s);
       const givers = live.filter((x) => x.hand.length >= 2).map((x) => x.seat);
       // a player with exactly 1 card gives it left, no choice
       for (const x of live.filter((x) => x.hand.length === 1)) {
         const c = x.hand.pop()!;
         P(s, neighbour(s, x.seat, -1)).hand.push(c);
       }
-      emit(s, "batwara", "all", `BHUKAMP — everyone except ${p.name} passes 1 card left and 1 card right.`, { seat });
+      emit(s, "batwara", "all", `BHUKAMP — ${p.name} shakes the table: everyone passes 1 card left and 1 card right.`, { seat });
       s.phase = { kind: "batwara", actor: seat, givers, picks: {} };
       if (givers.length === 0) resolveBatwara(s);
       return s;
@@ -387,6 +399,12 @@ function resolveVote(s: GameState) {
 // ---------------------------------------------------------------- Batwara
 function resolveBatwara(s: GameState) {
   const ph = s.phase as Extract<GameState["phase"], { kind: "batwara" }>;
+  // the player's own card for the pile: what's left of their hand after their split (or the one they picked)
+  const actor = P(s, ph.actor);
+  const mine = ph.picks[ph.actor];
+  const rest = [...actor.hand];
+  if (mine) removeCards(rest, [mine.left, mine.right]);
+  const own = mine?.pile ? [mine.pile] : rest.slice(0, 1);
   const moves: [number, Card, number][] = [];
   for (const [g, { left, right }] of Object.entries(ph.picks)) {
     const seat = Number(g);
@@ -397,6 +415,12 @@ function resolveBatwara(s: GameState) {
     P(s, to).hand.push(c);
     emit(s, "batwara_private", [from, to], `${P(s, from).name} passed ${CARD_NAME[c]} to ${P(s, to).name}.`, { from, to, card: c });
   }
+  // then the player draws 2: those 2 and their own card go to the next player
+  removeCards(actor.hand, own);
+  const drawn = draw(s, 2);
+  s.pile = [...own, ...drawn];
+  s.pileFrom = actor.seat;
+  emit(s, "batwara_pile", [actor.seat], `You drew ${names(drawn)} — with ${names(own)} they go to the next player.`, { cards: [...s.pile] });
   emit(s, "batwara_done", "all", "Bhukamp is done.");
   endTurn(s);
 }

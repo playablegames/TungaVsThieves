@@ -42,7 +42,8 @@ export type Phase =
       kind: "batwara";
       actor: number;
       givers: number[];
-      picks: Record<number, { left: Card; right: Card }>;
+      /** pile = the Bhukamp player's own card for the next player, when more than one is left after the split */
+      picks: Record<number, { left: Card; right: Card; pile?: Card }>;
     }
   | { kind: "elim"; seat: number; step: "dal_badal" | "dying" | "handoff" }
   | { kind: "over"; winner: Side; reason: string };
@@ -91,7 +92,7 @@ export type Action =
     }
   | { type: "ready" }
   | { type: "vote"; target: number | null }
-  | { type: "batwara"; left: Card; right: Card }
+  | { type: "batwara"; left: Card; right: Card; pile?: Card }
   | { type: "dal_badal"; a: number; b: number }
   | { type: "gift"; target: number | null }
   | { type: "shot"; target: number | null; roles?: [string, string] }

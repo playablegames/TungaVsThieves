@@ -1,7 +1,9 @@
 // Room service: create / join / start / act / tick / view / chat. The engine is the only thing that changes state.
+import { iceServers } from "./turn";
 import { randomBytes, randomInt } from "node:crypto";
 import { apply, start, waitingOn } from "@/engine/engine";
 import { botAction, defaultAction } from "@/engine/decisions";
+import { botTalk, botVote } from "./botmind";
 import { MAX_PLAYERS, MIN_PLAYERS, ROLE_TABLE } from "@/engine/setup";
 import { RuleError, type Action, type GameState } from "@/engine/types";
 import { viewFor, type PlayerView } from "@/engine/view";
@@ -52,6 +54,18 @@ function deadlineFor(state: GameState, timers: Timers): number | null {
 }
 
 /** read-modify-write with optimistic concurrency; retried on a lost race */
+/** A state change at a table with bots: after it lands, the bots say what they make of it (botmind). */
+async function play(code: string, f: (row: GameRow) => GameRow): Promise<GameRow> {
+  let from = 0;
+  const next = await mutate(code, (row) => { from = row.state?.events.length ?? 0; return f(row); });
+  const bots = next.lobby.flatMap((p, seat) => (p.bot ? [seat] : []));
+  if (!next.state || !bots.length) return next;
+  const lines = botTalk(next.state, from, bots, next.state.seed, Math.random);
+  for (const l of lines) await store.addMessage(next.code, { seat: l.seat, name: next.lobby[l.seat].name, text: l.text, phase: next.state.phase.kind });
+  if (lines.length) await ping(next.code, next.version);
+  return next;
+}
+
 async function mutate(code: string, f: (row: GameRow) => GameRow): Promise<GameRow> {
   for (let attempt = 0; attempt < 5; attempt++) {
     const row = await load(code);
@@ -125,7 +139,7 @@ export async function removeBot(code: string, token: string | null, index: unkno
 }
 
 export async function startGame(code: string, token: string | null) {
-  await mutate(code, (row) => {
+  await play(code, (row) => {
     if (row.hostToken !== token) throw new HttpError(403, "Only the host can start");
     if (row.status !== "lobby") throw new HttpError(409, "Already started");
     if (row.lobby.length < MIN_PLAYERS) throw new HttpError(409, `Tunga needs at least ${MIN_PLAYERS} players`);
@@ -140,7 +154,12 @@ const isBot = (row: GameRow, seat: number) => Boolean(row.lobby[seat]?.bot);
 /** seats the server plays: lobby bots, and players who went quiet */
 const isAuto = (row: GameRow, seat: number) => isBot(row, seat) || Boolean(row.lobby[seat]?.away);
 /** a bot plays like a player; a stand-in for someone who went quiet only plays safe (pass, abstain) so it never leaks their role */
-const autoAction = (row: GameRow, s: GameState, seat: number) => (isBot(row, seat) ? botAction(s, seat) : defaultAction(s, seat));
+const autoAction = (row: GameRow, s: GameState, seat: number): Action => {
+  if (!isBot(row, seat)) return defaultAction(s, seat);
+  // a bot votes on what it has seen and heard (botmind), not at random
+  if (s.phase.kind === "vote" && !s.phase.debate) return { type: "vote", target: botVote(s, seat, s.seed, Math.random) };
+  return botAction(s, seat);
+};
 const AWAY_AFTER = 2; // consecutive timeouts before a stand-in takes the seat
 
 /** Bots answer votes and Batwara at once; their turns and eliminations wait BOT_DELAY_MS for a tick. */
@@ -171,7 +190,7 @@ function commitState(row: GameRow, state: GameState): GameRow {
 }
 
 export async function act(code: string, token: string | null, action: Action) {
-  await mutate(code, (row) => {
+  await play(code, (row) => {
     if (!row.state) throw new HttpError(409, "The game hasn't started");
     const seat = seatOf(row, token);
     const p = row.lobby[seat];
@@ -206,7 +225,7 @@ export async function extendDebate(code: string, token: string | null) {
 export async function tick(code: string) {
   const row = await load(code);
   if (!row.state || row.deadline === null || Date.now() < row.deadline) return { applied: false };
-  await mutate(code, (r) => {
+  await play(code, (r) => {
     if (!r.state || r.deadline === null || Date.now() < r.deadline) return r;
     let s = r.state;
     const waiting = waitingOn(s);
@@ -229,7 +248,7 @@ export async function tick(code: string) {
 
 /** The player taps "I'm back" — the stand-in leaves their seat. */
 export async function reclaim(code: string, token: string | null) {
-  await mutate(code, (row) => {
+  await play(code, (row) => {
     const seat = seatOf(row, token);
     const p = row.lobby[seat];
     if (!p.away || !row.state) return row;
@@ -291,6 +310,12 @@ export async function chat(code: string, token: string | null, text: unknown) {
   if (s && s.phase.kind !== "over" && !s.players[seat].alive) throw new HttpError(403, "Eliminated players stay silent");
   await store.addMessage(row.code, { seat, name: row.lobby[seat].name, text: t, phase: s ? s.phase.kind : "lobby" });
   await ping(row.code, row.version);
+}
+
+/** TURN/STUN servers for table voice; seated players only. */
+export async function voiceServers(code: string, token: string | null) {
+  seatOf(await load(code), token);
+  return iceServers();
 }
 
 /** Full-information game record for analysis — host only, and only once the game is over. */

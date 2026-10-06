@@ -54,7 +54,7 @@ describe("room service (memory store)", () => {
     const turn = waitingOn(row.state!)[0];
     const notTurn = (turn + 1) % 4;
     await err(act(code, row.lobby[notTurn].token, { type: "pass", pass: [] }), 422);
-    await err(act(code, row.lobby[turn].token, { type: "pass", pass: ["STONE_1", "FAISLA", "KUNDLI"] }), 422);
+    await err(act(code, row.lobby[turn].token, { type: "pass", pass: [row.state!.players[turn].hand[0]] }), 422); // wrong count: always illegal
   });
 
   it("two simultaneous moves: exactly one wins, the table stays consistent", async () => {

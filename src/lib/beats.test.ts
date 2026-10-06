@@ -16,6 +16,9 @@ function game(n: number, seed: number): GameState {
   return s;
 }
 
+/** the table mid-game: once a game is over every secret is public by design, so secrecy is checked before that */
+const during = (s: GameState): GameState => ({ ...s, phase: { kind: "turn", seat: 0 } });
+
 describe("Table Stage beats", () => {
   const games = Array.from({ length: 60 }, (_, i) => game(4 + (i % 9), 1000 + i));
 
@@ -46,7 +49,7 @@ describe("Table Stage beats", () => {
       const names = s.players.map((p) => p.name);
       for (const e of s.events.filter((x) => Array.isArray(x.to) && x.to.length === 0)) expect(beatFor(e, names)).toBeNull();
       for (let seat = 0; seat < s.players.length; seat++) {
-        const v = viewFor(s, seat);
+        const v = viewFor(during(s), seat);
         for (const b of beatsFor(v.events, names)) {
           const e = s.events[b.n];
           expect(e.to === "all" || (e.to as number[]).includes(seat)).toBe(true);
@@ -64,8 +67,8 @@ describe("Table Stage beats", () => {
       const other = (reader + 1) % s.players.length;
       const names = s.players.map((p) => p.name);
       const role = String(k.data?.role);
-      expect(beatsFor(viewFor(s, reader).events, names).some((b) => b.private && b.title.includes(role))).toBe(true);
-      expect(beatsFor(viewFor(s, other).events, names).some((b) => b.type === "kundli_private")).toBe(false);
+      expect(beatsFor(viewFor(during(s), reader).events, names).some((b) => b.private && b.title.includes(role))).toBe(true);
+      expect(beatsFor(viewFor(during(s), other).events, names).some((b) => b.type === "kundli_private")).toBe(false);
       return;
     }
     throw new Error("no Kundli in 60 games");

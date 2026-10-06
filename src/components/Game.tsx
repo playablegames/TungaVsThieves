@@ -15,6 +15,8 @@ import { Stage } from "./Stage";
 import { Decide } from "./Decide";
 import { Btn, CardFace, TimerRing } from "./ui";
 import { useVoice } from "@/lib/voice";
+import { useBotSpeech, type Speech } from "@/lib/botspeech";
+import type { ChatMessage } from "@/server/store";
 
 type VoiceCtl = ReturnType<typeof useVoice>;
 
@@ -48,7 +50,7 @@ export default function Game({ code }: { code: string }) {
       <VoiceBanner voice={voice} />
       {s.status === "lobby"
         ? <Lobby s={s} code={code} token={g.token!} onError={g.setError} voice={voice} />
-        : s.view && <Table s={s} v={s.view} act={g.act} now={g.now} extend={s.you.host ? g.extend : undefined} code={code} token={g.token!} voice={voice} />}
+        : s.view && <Table s={s} v={s.view} act={g.act} now={g.now} extend={s.you.host ? g.extend : undefined} code={code} token={g.token!} voice={voice} messages={g.messages} />}
     </main>
   );
 }
@@ -135,11 +137,12 @@ function status(v: PlayerView): string {
 
 // One screen: a ring of seats around a centre stage. You are the seat at the bottom. Voice carries the table —
 // the centre holds the round, the clock, the vote and one "last declaration" line; only climaxes take the stage.
-function Table({ s, v, act, now, extend, code, token, voice }: {
+function Table({ s, v, act, now, extend, code, token, voice, messages }: {
   s: ClientState; v: PlayerView; act: (a: Action) => void; now: () => number;
-  extend?: () => void; code: string; token: string; voice: VoiceCtl;
+  extend?: () => void; code: string; token: string; voice: VoiceCtl; messages: ChatMessage[];
 }) {
   const stage = useStage(v.events, v.players.map((p) => p.name));
+  const bots = useBotSpeech(messages);
   const [pick, setPick] = useState<number | null>(null);
   const myMove = v.decision?.kind ?? null;
   // your move: a short buzz and a tab-title flag, so a phone face-down on the table still tells you
@@ -158,18 +161,18 @@ function Table({ s, v, act, now, extend, code, token, voice }: {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <Stage stage={stage} skip={stage.skip} />
-      <Ring v={v} voice={voice} pick={pick} onPick={voting ? (seat) => setPick(seat === pick ? null : seat) : undefined}>
-        <Centre s={s} v={v} now={now} last={stage.last} pick={pick} living={living.length} extend={extend}
+      <Ring v={v} voice={voice} talking={bots.current?.seat ?? null} pick={pick} onPick={voting ? (seat) => setPick(seat === pick ? null : seat) : undefined}>
+        <Centre s={s} v={v} now={now} last={stage.last} speech={bots.current} pick={pick} living={living.length} extend={extend}
           vote={(target) => { act({ type: "vote", target }); setPick(null); }} ready={() => act({ type: "ready" })} />
       </Ring>
-      <Tray v={v} act={act} voice={voice} />
+      <Tray v={v} act={act} voice={voice} botVoice={bots.voice} setBotVoice={bots.setVoice} />
     </div>
   );
 }
 
 /** Seats on an ellipse, in turn order, starting from you at the bottom. */
-function Ring({ v, voice, pick, onPick, children }: {
-  v: PlayerView; voice: VoiceCtl; pick: number | null; onPick?: (seat: number) => void; children: React.ReactNode;
+function Ring({ v, voice, talking, pick, onPick, children }: {
+  v: PlayerView; voice: VoiceCtl; talking: number | null; pick: number | null; onPick?: (seat: number) => void; children: React.ReactNode;
 }) {
   const n = v.players.length;
   const voteOpen = v.phase.endsWith("_vote");
@@ -188,7 +191,7 @@ function Ring({ v, voice, pick, onPick, children }: {
               spot={!voteOpen && v.waitingOn.includes(p.seat)}
               voted={voteOpen && p.alive && !v.waitingOn.includes(p.seat)}
               picked={pick === p.seat}
-              speaking={me ? voice.speaking : Boolean(peer?.speaking && !peer.hushed)}
+              speaking={me ? voice.speaking : Boolean(peer?.speaking && !peer.hushed) || talking === p.seat}
               micOff={me ? !voice.micOn || voice.micBlocked : Boolean(peer?.muted)}
               hushed={Boolean(peer?.hushed)}
               onTap={onPick && p.alive ? () => onPick(p.seat) : !me && peer ? () => voice.hush(p.seat) : undefined} />
@@ -235,8 +238,8 @@ function Seat({ p, me, v, spot, voted, picked, speaking, micOff, hushed, onTap }
 }
 
 /** The centre stage: round, clock, what the table is waiting for, the vote, and the last declaration. */
-function Centre({ s, v, now, last, pick, living, extend, vote, ready }: {
-  s: ClientState; v: PlayerView; now: () => number; last: Beat | null; pick: number | null; living: number;
+function Centre({ s, v, now, last, speech, pick, living, extend, vote, ready }: {
+  s: ClientState; v: PlayerView; now: () => number; last: Beat | null; speech: Speech | null; pick: number | null; living: number;
   extend?: () => void; vote: (target: number | null) => void; ready: () => void;
 }) {
   const d = v.decision;
@@ -270,7 +273,12 @@ function Centre({ s, v, now, last, pick, living, extend, vote, ready }: {
         </>
       )}
 
-      {lastLine && !voteOpen && !debate && (
+      {speech && (
+        <p key={`${speech.seat}:${speech.text}`} className="stage-in rounded-xl bg-paper-2/90 px-3 py-2 text-[13px] leading-snug ring-1 ring-jade/50" aria-live="polite">
+          <b className="text-jade-soft">{speech.name}:</b> <span className="italic">&ldquo;{speech.text}&rdquo;</span>
+        </p>
+      )}
+      {lastLine && !voteOpen && !debate && !speech && (
         <p className="line-clamp-2 text-[12px] leading-snug text-ink-2"><span className="text-muted">Last: </span>{lastLine}</p>
       )}
     </div>
@@ -278,13 +286,17 @@ function Centre({ s, v, now, last, pick, living, extend, vote, ready }: {
 }
 
 /** Your cards, face up, and — when it's yours — the legal declarations or Pass. */
-function Tray({ v, act, voice }: { v: PlayerView; act: (a: Action) => void; voice: VoiceCtl }) {
+function Tray({ v, act, voice, botVoice, setBotVoice }: { v: PlayerView; act: (a: Action) => void; voice: VoiceCtl; botVoice: boolean; setBotVoice: (on: boolean) => void }) {
   const d = v.decision;
   const inTray = d && d.kind !== "vote" && d.kind !== "debate";
   return (
     <section className="sticky bottom-0 z-10 flex flex-col gap-2 rounded-t-2xl border-t border-rim bg-paper-2 px-3 pt-2.5 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
       <div className="flex items-center gap-2">
         <MicButton voice={voice} />
+        <button onClick={() => setBotVoice(!botVoice)} aria-pressed={botVoice} aria-label={botVoice ? "Bots speak aloud — tap to mute" : "Bots are text only — tap to hear them"}
+          className={`grid h-11 w-11 place-items-center rounded-full text-[18px] ${botVoice ? "bg-jade/20" : "bg-raise opacity-70"}`}>
+          {botVoice ? "🔊" : "🔈"}
+        </button>
         <p className="text-[11px] font-extrabold uppercase tracking-[0.1em] text-muted">
           {!v.me.alive ? "Gone room — you hear the table; only the gone hear you" : inTray ? "Your move" : `Your cards · ${v.me.hand.length}`}
         </p>

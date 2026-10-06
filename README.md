@@ -59,3 +59,24 @@ It reports wins by side, the deal, Teer Kaman / last-shot hits, Kundli reads, Da
    - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (Realtime pings to phones)
    - `SUPABASE_SERVICE_ROLE_KEY` (server only — never expose)
 3. Deploy, open the URL on a phone, create a room, share the code.
+
+## Voice on mobile data (free TURN relay)
+
+Table voice goes phone to phone. On mobile data, carrier NAT often blocks that, so a TURN relay carries
+the audio. Vercel/Hostinger web hosting can't relay (no long-lived UDP), so we use free managed relays.
+Phones fetch the relay list from `/api/games/[code]/turn` (seated players only). Set any mix; phones get
+all of them and use whichever connects.
+
+**ExpressTURN — 1,000 GB/month free, no card (main relay).** Sign up at expressturn.com, copy the server,
+username and password from the dashboard, then set on the host (Vercel → Settings → Environment Variables):
+`TURN_URLS` = e.g. `turn:relay1.expressturn.com:3478,turn:relay1.expressturn.com:443?transport=tcp`
+(use the hostname your dashboard shows), `TURN_USERNAME`, `TURN_CREDENTIAL`. Redeploy.
+
+**metered.ca Open Relay — 20 GB/month free, no card (backup).** Sign up, create an app (gives
+`<app>.metered.live`), copy the API key: `METERED_TURN_APP` = `<app>`, `METERED_TURN_API_KEY`.
+
+Cloudflare Realtime TURN (1,000 GB free, needs a card): `CLOUDFLARE_TURN_KEY_ID` + `CLOUDFLARE_TURN_API_TOKEN`.
+Your own coturn on a VPS: use the `TURN_*` variables.
+
+Check: `curl https://<your-app>/api/games/<CODE>/turn -H "x-player-token: <token>"` returns `"relay": true`.
+With nothing set, voice uses STUN only (works on shared Wi-Fi and most home networks).

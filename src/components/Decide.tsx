@@ -146,18 +146,28 @@ function Bhukamp({ v, act }: { v: PlayerView; act: (a: Action) => void }) {
   const i = living.indexOf(v.me.seat);
   const L = v.players[living[(i - 1 + living.length) % living.length]].name;
   const R = v.players[living[(i + 1) % living.length]].name;
+  const [pile, setPile] = useState<number | null>(null);
+  const d = v.decision?.kind === "batwara" ? v.decision : null;
+  const mine = v.turnSeat === v.me.seat; // you played it: what's left after your split goes on with the 2 you draw
+  const choosePile = Boolean(d?.choosePile);
+  const next = v.players[living[(i + 1) % living.length]].name;
   const tap = (k: number) => {
     if (left === k) return setLeft(null);
     if (right === k) return setRight(null);
-    if (left === null) setLeft(k); else if (right === null) setRight(k);
+    if (pile === k) return setPile(null);
+    if (left === null) setLeft(k); else if (right === null) setRight(k); else if (choosePile && pile === null) setPile(k);
   };
+  const ready = left !== null && right !== null && (!choosePile || pile !== null);
   return (
     <div className="flex flex-col gap-3">
-      <Head title="Bhukamp — split your cards" hint={`First tap goes left to ${L}, second goes right to ${R}. A Stone may move.`} />
+      <Head title="Bhukamp — split your cards"
+        hint={`First tap goes left to ${L}, second goes right to ${R}.${choosePile ? ` Third tap: the card that goes to ${next} with the 2 you draw.` : mine ? ` Your last card goes to ${next} with the 2 you draw.` : ""} A Stone may move.`} />
       <div className="flex flex-wrap gap-2 pt-2">
-        {v.me.hand.map((c, k) => <CardFace key={k} c={c} size="sm" selected={k === left || k === right} label={k === left ? "LEFT" : k === right ? "RIGHT" : undefined} onClick={() => tap(k)} />)}
+        {v.me.hand.map((c, k) => <CardFace key={k} c={c} size="sm" selected={k === left || k === right || k === pile}
+          label={k === left ? "LEFT" : k === right ? "RIGHT" : k === pile ? "NEXT" : undefined} onClick={() => tap(k)} />)}
       </div>
-      <Btn voice="gold" disabled={left === null || right === null} onClick={() => act({ type: "batwara", left: v.me.hand[left!], right: v.me.hand[right!] })}>Pass them</Btn>
+      <Btn voice="gold" disabled={!ready}
+        onClick={() => act({ type: "batwara", left: v.me.hand[left!], right: v.me.hand[right!], ...(choosePile ? { pile: v.me.hand[pile!] } : {}) })}>Pass them</Btn>
     </div>
   );
 }
@@ -176,6 +186,26 @@ function Turn({ v, playable, passSize, act, ask }: { v: PlayerView; playable: Ac
   const needsTarget = card && card !== "NONE" && TARGETED.includes(card);
   const ready = card && pass.length === passSize && (!needsTarget || target !== null) && (card !== "TEER_KAMAN" || roles.length === 2);
   const name = (s: number) => v.players[s]?.name ?? "?";
+  const living = v.players.filter((p) => p.alive).map((p) => p.seat);
+  const next = name(living[(living.indexOf(v.me.seat) + 1) % living.length]);
+  /** the cards left once this pair is out — when exactly passSize remain, they go on by themselves */
+  const restAfter = (c: ActionCard) => {
+    const pair = hand.map((h, i) => (h === c ? i : -1)).filter((i) => i >= 0).slice(0, 2);
+    return hand.map((_, i) => i).filter((i) => !pair.includes(i));
+  };
+  const auto = card && card !== "NONE" && restAfter(card).length === passSize;
+  const declare = (c: ActionCard) => {
+    const rest = restAfter(c);
+    // nothing to choose: the pair is declared and the other cards go to the next player in the same move
+    // Bhukamp splits first: nothing is passed when it is declared — the split screen comes next
+    if (c === "BATWARA") { ask(`Declaring ${CARD[c].name} — then everyone splits, you too`, { type: "play", card: c, pass: [] }); return; }
+    if (rest.length === passSize && !TARGETED.includes(c)) {
+      ask(`Declaring ${CARD[c].name} · ${rest.map((i) => CARD[hand[i]].name).join(", ")} go to ${next}`, { type: "play", card: c, pass: rest.map((i) => hand[i]) });
+      return;
+    }
+    setCard(c);
+    if (rest.length === passSize) setPass(rest);
+  };
 
   if (!card) {
     // your cards face up; each pair you may legally play is declared in words, beside Pass
@@ -187,7 +217,7 @@ function Turn({ v, playable, passSize, act, ask }: { v: PlayerView; playable: Ac
           {hand.map((c, i) => <CardFace key={i} c={c} size="sm" selected={(playable as Card[]).includes(c)} dim={!(playable as Card[]).includes(c)} />)}
         </div>
         <div className="grid grid-cols-2 gap-2">
-          {playable.map((c) => <Btn key={c} voice={CARD[c].voice} onClick={() => setCard(c)}>Declare {CARD[c].name}</Btn>)}
+          {playable.map((c) => <Btn key={c} voice={CARD[c].voice} onClick={() => declare(c)}>Declare {CARD[c].name}</Btn>)}
           <Btn voice="pass" className={playable.length % 2 === 0 ? "col-span-2" : ""} onClick={() => setCard("NONE")}>Pass</Btn>
         </div>
         {blocked.map((c) => <p key={c} className="text-[12px] text-muted">{CARD[c].name} ×2 — needs {passSize} other cards left to pass</p>)}
@@ -195,19 +225,21 @@ function Turn({ v, playable, passSize, act, ask }: { v: PlayerView; playable: Ac
     );
   }
   const playing = card !== "NONE";
-  const label = !playing ? "" : `${CARD[card].name}${target !== null ? ` on ${name(target)}` : ""}${card === "TEER_KAMAN" && roles.length === 2 ? `: ${roles.join(" or ")}` : ""}`;
+  const label = !playing ? "" : `${CARD[card].name}${target !== null ? ` on ${name(target)}` : ""}${card === "TEER_KAMAN" && roles.length === 2 ? `: ${roles.join(" or ")}` : ""}${auto ? ` · ${pass.map((i) => CARD[hand[i]].name).join(", ")} go to ${next}` : ""}`;
   return (
     <div className="flex flex-col gap-3">
       <Head title={playing ? `Declare ${CARD[card].name}` : `Pass ${passSize} cards`}
-        hint={playing ? `First pass ${passSize} other cards face down to the next player — a Stone only if you must. ${CARD[card].text}` : "Face down to the next player. A Stone may go — whoever is next picks it up."} />
+        hint={playing
+          ? `${auto ? `Your other ${passSize} cards go face down to ${next} as you declare.` : `Choose ${passSize} cards to pass face down to ${next} — a Stone only if you must.`} ${CARD[card].text}`
+          : `Face down to ${next}. A Stone may go — whoever is next picks it up.`} />
       <div className="flex flex-wrap gap-2 pt-2">
         {hand.map((c, i) => {
           const locked = pairIdx.includes(i);
           return <CardFace key={i} c={c} size="sm" dim={locked} selected={pass.includes(i)} label={locked ? "PLAY" : pass.includes(i) ? "PASS" : undefined}
-            onClick={locked ? undefined : () => togglePass(i)} />;
+            onClick={locked || auto ? undefined : () => togglePass(i)} />;
         })}
       </div>
-      <p className="text-[13px] text-ink-2">{pass.length} of {passSize} chosen to pass</p>
+      {!auto && <p className="text-[13px] text-ink-2">{pass.length} of {passSize} chosen to pass</p>}
       {needsTarget && <Pickers options={targets} sel={target} onPick={setTarget} />}
       {card === "TEER_KAMAN" && <RolePicker roles={v.rolesInPlay} sel={roles} setSel={setRoles} />}
       <div className="grid grid-cols-2 gap-2">

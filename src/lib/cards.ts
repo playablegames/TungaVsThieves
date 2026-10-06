@@ -9,7 +9,7 @@ export const CARD: Record<Card, { name: string; sub: string; text: string; voice
   TALASHI: { name: "Talashi", sub: "See action cards", text: "Choose a player: their cards are shown to everyone — never their role. Draw 2.", voice: "relic" },
   KUNDLI: { name: "Kundli", sub: "See role", text: "Secretly see one player's role card. Say anything — or nothing. Draw 2.", voice: "relic" },
   HERA_PHERI: { name: "Hera Pheri", sub: "Swap action cards", text: "Steal 2 cards face down from any one player. They draw 2.", voice: "lethal" },
-  BATWARA: { name: "Bhukamp", sub: "Split your cards", text: "Draw 2. Every OTHER player passes 1 card left and 1 right.", voice: "gold" },
+  BATWARA: { name: "Bhukamp", sub: "Split your cards", text: "Everyone — you too — passes 1 card left and 1 right. Then draw 2: they and your last card go to the next player.", voice: "gold" },
   MAYA_JAAL: { name: "Mayajaal", sub: "Turn back time", text: "Revive any one eliminated player. They draw 2 fresh. Draw 2.", voice: "relic" },
   TEER_KAMAN: { name: "Teer Kaman", sub: "Eliminate a player", text: "Pick a player, name two roles. Either is theirs: they're out. Miss: you lose a vote for good. Draw 2.", voice: "lethal" },
   DAL_BADAL: { name: "Dal Badal", sub: "Villagers pass · Thieves hold", text: "Never played. A thief eliminated holding it swaps two living players' roles.", voice: "neutral" },

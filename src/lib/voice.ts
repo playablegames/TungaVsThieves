@@ -1,13 +1,14 @@
 "use client";
 // Table voice — open mic from every seat, like a Discord voice channel, at zero cost.
 // Supabase Realtime only introduces the phones (presence = who's in voice; broadcast = offer/answer/ICE);
+// on mobile data a free TURN relay (Cloudflare, credentials from /api/games/[code]/turn) carries what can't go direct;
 // the audio itself flows phone to phone (WebRTC mesh). Audio-only mesh holds up at a 12-seat table:
 // each phone sends ~24 kbps to each other phone.
 // The Gone room: an eliminated player hears the table, but only other eliminated players hear them.
 // Both ends enforce it — the speaker stops sending, the listener stops playing.
 import { useEffect, useSyncExternalStore } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { realtime } from "./client";
+import { loadToken, realtime } from "./client";
 
 export interface VoicePeer {
   seat: number;
@@ -44,21 +45,32 @@ interface Peer extends Meta {
   speaking: boolean;
   quietSince: number;
   connected: boolean;
+  /** when this connection attempt began */
+  since: number;
 }
 
-type Signal = { from: string; to: string; description?: RTCSessionDescriptionInit; candidate?: RTCIceCandidateInit };
+type Signal = { from: string; to: string; description?: RTCSessionDescriptionInit; candidate?: RTCIceCandidateInit; reset?: boolean };
 
 const PREF = "tunga:voice";
 const SPEAK_RMS = 0.025;
 const HOLD_MS = 350;
 const MAX_KBPS = 24;
+/** a link still not connected after this long is torn down and retried (a lost first offer otherwise stalls it forever) */
+const HEAL_MS = 10000;
 
-function iceServers(): RTCIceServer[] {
-  const servers: RTCIceServer[] = [{ urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] }];
-  // Phones on mobile data behind carrier NAT often need a relay. Any free TURN service works (metered.ca Open Relay, Cloudflare).
-  const urls = process.env.NEXT_PUBLIC_TURN_URLS;
-  if (urls) servers.push({ urls: urls.split(","), username: process.env.NEXT_PUBLIC_TURN_USERNAME, credential: process.env.NEXT_PUBLIC_TURN_CREDENTIAL });
-  return servers;
+const STUN: RTCIceServer[] = [{ urls: ["stun:stun.cloudflare.com:3478", "stun:stun.l.google.com:19302"] }];
+
+/** STUN + short-lived TURN relay credentials from our server (seated players only) — phones on mobile data need the relay. */
+async function fetchIce(code: string): Promise<RTCIceServer[]> {
+  const token = loadToken(code);
+  if (!token) return STUN;
+  try {
+    const r = await fetch(`/api/games/${code}/turn`, { headers: { "x-player-token": token }, cache: "no-store" });
+    if (!r.ok) return STUN;
+    return ((await r.json()) as { iceServers: RTCIceServer[] }).iceServers;
+  } catch {
+    return STUN;
+  }
 }
 
 class Voice {
@@ -69,6 +81,7 @@ class Voice {
   private localAnalyser: AnalyserNode | null = null;
   private ctx: AudioContext | null = null;
   private meter: ReturnType<typeof setInterval> | null = null;
+  private healer: ReturnType<typeof setInterval> | null = null;
   private gen = 0;
   private me: Meta = { seat: -1, name: "", muted: false };
   private open = true;
@@ -76,6 +89,7 @@ class Voice {
   private hushed = new Set<number>();
   private listeners = new Set<() => void>();
   private snap: VoiceSnap;
+  private ice: RTCIceServer[] = STUN;
 
   constructor(private code: string) {
     this.snap = { status: realtime ? "off" : "unavailable", micOn: true, micBlocked: false, speaking: false, peers: {} };
@@ -133,6 +147,7 @@ class Voice {
     const gen = ++this.gen;
     try { localStorage.setItem(PREF, "on"); } catch {}
     this.set({ status: "connecting" });
+    this.ice = await fetchIce(this.code);
 
     try {
       this.local = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
@@ -149,6 +164,7 @@ class Voice {
       this.ctx.createMediaStreamSource(this.local).connect(this.localAnalyser);
     }
     this.meter = setInterval(this.measure, 120);
+    this.healer = setInterval(this.heal, 3000);
 
     const ch = realtime.channel(`voice:${this.code.toUpperCase()}`, { config: { broadcast: { self: false }, presence: { key: this.id } } });
     this.channel = ch;
@@ -178,7 +194,8 @@ class Voice {
     this.local = null;
     this.localAnalyser = null;
     if (this.meter) clearInterval(this.meter);
-    this.meter = null;
+    if (this.healer) clearInterval(this.healer);
+    this.meter = this.healer = null;
     this.ctx?.close().catch(() => {});
     this.ctx = null;
     this.set({ status: realtime ? "off" : "unavailable", speaking: false, peers: {} });
@@ -225,7 +242,7 @@ class Voice {
   }
 
   private connect(id: string): Peer {
-    const pc = new RTCPeerConnection({ iceServers: iceServers() });
+    const pc = new RTCPeerConnection({ iceServers: this.ice });
     const audio = document.createElement("audio");
     audio.autoplay = true;
     audio.setAttribute("playsinline", "");
@@ -233,7 +250,7 @@ class Voice {
     document.body.appendChild(audio);
     const p: Peer = {
       id, seat: -1, name: "", muted: false, pc, audio, polite: this.id < id, making: false, ignoreOffer: false,
-      analyser: null, sender: null, speaking: false, quietSince: 0, connected: false,
+      analyser: null, sender: null, speaking: false, quietSince: 0, connected: false, since: Date.now(),
     };
     this.peers.set(id, p);
 
@@ -290,6 +307,7 @@ class Voice {
   /** "Perfect negotiation" (W3C/MDN pattern): either side may offer; the polite side yields on a collision. */
   private async onSignal(s: Signal) {
     if (s.to !== this.id || !this.channel) return;
+    if (s.reset) { this.renew(s.from); return; }
     const p = this.peers.get(s.from) ?? this.connect(s.from);
     try {
       if (s.description) {
@@ -305,6 +323,25 @@ class Voice {
         await p.pc.addIceCandidate(s.candidate).catch((e) => { if (!p.ignoreOffer) throw e; });
       }
     } catch { /* a stale offer or candidate — the next negotiation recovers */ }
+  }
+
+  /** Retry stalled links. Only the side with the smaller id leads, and tells the other to start fresh too. */
+  private heal = () => {
+    const now = Date.now();
+    for (const p of [...this.peers.values()]) {
+      if (p.connected || now - p.since < HEAL_MS || this.id > p.id) continue;
+      this.send({ to: p.id, reset: true });
+      this.renew(p.id);
+    }
+  };
+
+  /** A fresh connection to the same peer, keeping who they are. */
+  private renew(id: string) {
+    const old = this.peers.get(id);
+    this.drop(id);
+    const p = this.connect(id);
+    if (old) { p.seat = old.seat; p.name = old.name; p.muted = old.muted; }
+    this.applyRules();
   }
 
   // ------------------------------------------------------------ who's talking

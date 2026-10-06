@@ -6,7 +6,7 @@ export type Decision =
   | { kind: "turn"; playable: string[]; passSize: number }
   | { kind: "debate"; reason: "faisla" | "final"; ready: number[] }
   | { kind: "vote"; reason: "faisla" | "final"; candidates: number[] }
-  | { kind: "batwara"; left: number; right: number }
+  | { kind: "batwara"; left: number; right: number; /** you played it and more than one card is left after your split */ choosePile: boolean }
   | { kind: "dal_badal"; candidates: number[] }
   | { kind: "gift"; candidates: number[] }
   | { kind: "shot"; candidates: number[]; roles: string[] }
@@ -20,7 +20,7 @@ export function decisionFor(s: GameState, seat: number): Decision {
   switch (ph.kind) {
     case "turn": return { kind: "turn", playable: playableCards(s, seat), passSize: passSize(s.players[seat].hand) };
     case "vote": return ph.debate ? { kind: "debate", reason: ph.reason, ready: [...ph.ready] } : { kind: "vote", reason: ph.reason, candidates: live };
-    case "batwara": return { kind: "batwara", left: -1, right: -1 };
+    case "batwara": return { kind: "batwara", left: -1, right: -1, choosePile: ph.actor === seat && s.players[seat].hand.length > 3 };
     case "elim": {
       const others = live.filter((x) => x !== seat);
       if (ph.step === "dal_badal") return { kind: "dal_badal", candidates: others };
@@ -45,7 +45,8 @@ export function defaultAction(s: GameState, seat: number): Action {
     case "vote": return ph.debate ? { type: "ready" } : { type: "vote", target: null };
     case "batwara": {
       const order = [...h.filter((c) => !isStone(c)), ...h.filter(isStone)];
-      return { type: "batwara", left: order[0], right: order[1] };
+      // the Bhukamp player with cards to spare keeps Stones back from the pile too
+      return { type: "batwara", left: order[0], right: order[1], ...(ph.actor === seat && order.length > 3 ? { pile: order[2] } : {}) };
     }
     case "elim": {
       const others = living(s).map((p) => p.seat).filter((x) => x !== seat);
@@ -93,7 +94,7 @@ export function randomAction(s: GameState, seat: number, r: R, activity = 0.8, k
       if (cards.length && r() < activity) {
         const card = pick(r, cards);
         const rest = [...h]; rest.splice(rest.indexOf(card), 1); rest.splice(rest.indexOf(card), 1);
-        const pass = passFrom(r, rest, 3, keepStones);
+        const pass = card === "BATWARA" ? [] : passFrom(r, rest, 3, keepStones); // Bhukamp splits first
         if (!canPlay(s, seat, card)) throw new Error("bug: playable card not playable");
         const dead = s.players.filter((p) => !p.alive).map((p) => p.seat);
         const withCards = others.filter((x) => s.players[x].hand.length > 0);
@@ -109,7 +110,8 @@ export function randomAction(s: GameState, seat: number, r: R, activity = 0.8, k
     case "vote": return ph.debate ? { type: "ready" } : { type: "vote", target: r() < 0.25 ? null : pick(r, live) };
     case "batwara": {
       const two = sample(r, h, 2);
-      return { type: "batwara", left: two[0], right: two[1] };
+      const rest = [...h]; rest.splice(rest.indexOf(two[0]), 1); rest.splice(rest.indexOf(two[1]), 1);
+      return { type: "batwara", left: two[0], right: two[1], ...(ph.actor === seat && rest.length > 1 ? { pile: pick(r, rest) } : {}) };
     }
     case "elim": {
       if (ph.step === "dal_badal") { const [a, b] = sample(r, others, 2); return { type: "dal_badal", a, b }; }
