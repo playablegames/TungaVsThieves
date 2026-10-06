@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { act, chat, createRoom, getState, joinRoom, startGame, tick, HttpError } from "./game";
-import { defaultAction } from "@/engine/decisions";
+import { describe, expect, it, vi } from "vitest";
+import { act, addBot, chat, createRoom, removeBot, getState, joinRoom, startGame, tick, HttpError } from "./game";
+import { defaultAction, randomAction } from "@/engine/decisions";
 import { waitingOn } from "@/engine/engine";
 import { memoryStore } from "./store";
 
@@ -89,5 +89,50 @@ describe("room service (memory store)", () => {
     await memoryStore.update({ ...row }, row.version);
     await err(chat(code, tokens[2], "boo"), 403);
     expect((await getState(code, tokens[0], 0)).messages.map((m) => m.text)).toEqual(["hello"]);
+  });
+
+  it("only the host adds or removes bots, and only bot seats can be removed", async () => {
+    const { code, tokens } = await room(2);
+    await err(addBot(code, tokens[1]), 403);
+    await addBot(code, tokens[0]);
+    await addBot(code, tokens[0]);
+    let lobby = (await getState(code, tokens[0], 0)).lobby!;
+    expect(lobby.bots).toEqual([false, false, true, true]);
+    expect(new Set(lobby.names).size).toBe(4);
+    await err(removeBot(code, tokens[0], 1), 400);         // a human seat
+    await err(removeBot(code, tokens[1], 2), 403);
+    await removeBot(code, tokens[0], 2);
+    lobby = (await getState(code, tokens[0], 0)).lobby!;
+    expect(lobby.bots).toEqual([false, false, true]);
+  });
+
+  it("one human and a table of bots play whole games; bots never hold up a vote or time out", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      let a = 11; const rnd = () => { a = (a * 16807) % 2147483647; return a / 2147483647; };
+      for (let g = 0; g < 40; g++) {
+        const host = await createRoom("Solo");
+        for (let i = 0; i < 4 + (g % 9); i++) await addBot(host.code, host.token);
+        await startGame(host.code, host.token);
+        let row = (await memoryStore.get(host.code))!;
+        const me = row.lobby.findIndex((p) => !p.bot);
+        for (let k = 0; k < 5000 && row.status !== "over"; k++) {
+          const s = row.state!;
+          const waiting = waitingOn(s);
+          if (s.phase.kind === "vote" || s.phase.kind === "batwara") expect(waiting).toEqual([me]);
+          if (waiting.includes(me)) await act(host.code, host.token, randomAction(s, me, rnd));
+          else {
+            expect(row.deadline! - Date.now()).toBeLessThanOrEqual(2500);
+            vi.setSystemTime(row.deadline! + 1);
+            expect((await tick(host.code)).applied).toBe(true);
+          }
+          row = (await memoryStore.get(host.code))!;
+        }
+        expect(row.status).toBe("over");
+        expect(row.state!.events.some((e) => e.type === "timeout")).toBe(false);
+      }
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

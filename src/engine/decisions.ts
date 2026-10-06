@@ -67,6 +67,15 @@ const sample = <T,>(r: R, xs: T[], k: number): T[] => {
   return out;
 };
 
+/** A bot seat's move: the random policy, but it never votes against itself. Uses only what that seat knows. */
+export function botAction(s: GameState, seat: number, r: R = Math.random): Action {
+  if (s.phase.kind === "vote") {
+    const others = living(s).map((p) => p.seat).filter((x) => x !== seat);
+    return { type: "vote", target: r() < 0.2 || !others.length ? null : pick(r, others) };
+  }
+  return randomAction(s, seat, r, 0.8);
+}
+
 /** A uniformly-ish random LEGAL action. `activity` = chance of playing a pair when one is playable. */
 export function randomAction(s: GameState, seat: number, r: R, activity = 0.8): Action {
   const ph = s.phase;

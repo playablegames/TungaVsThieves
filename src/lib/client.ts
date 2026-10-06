@@ -32,7 +32,10 @@ export const api = {
     call<{ code: string; token: string }>(`/api/games/${code}/join`, { method: "POST", body: JSON.stringify({ name }) }),
   start: (code: string, token: string) => call(`/api/games/${code}/start`, { method: "POST", token }),
   act: (code: string, token: string, a: Action) => call(`/api/games/${code}/act`, { method: "POST", token, body: JSON.stringify(a) }),
-  tick: (code: string) => call(`/api/games/${code}/tick`, { method: "POST" }),
+  addBot: (code: string, token: string) => call(`/api/games/${code}/bots`, { method: "POST", token }),
+  removeBot: (code: string, token: string, index: number) =>
+    call(`/api/games/${code}/bots`, { method: "DELETE", token, body: JSON.stringify({ index }) }),
+  tick: (code: string) => call<{ applied: boolean }>(`/api/games/${code}/tick`, { method: "POST" }),
   chat: (code: string, token: string, text: string) =>
     call(`/api/games/${code}/chat`, { method: "POST", token, body: JSON.stringify({ text }) }),
   state: (code: string, token: string, since: number) => call<ClientState>(`/api/games/${code}/state?since=${since}`, { token }),
@@ -89,7 +92,11 @@ export function useGame(code: string) {
   useEffect(() => {
     if (!state?.deadline) return;
     const ms = state.deadline - (Date.now() + skew.current) + 300;
-    const t = setTimeout(() => api.tick(code).then(refresh).catch(() => {}), Math.max(0, ms));
+    let t: ReturnType<typeof setTimeout>;
+    let tries = 0;
+    // a nudge that lands a little early is refused, so try again rather than stall the table
+    const fire = () => api.tick(code).then((r) => (r.applied || ++tries > 10 ? refresh() : void (t = setTimeout(fire, 1000)))).catch(() => {});
+    t = setTimeout(fire, Math.max(0, ms));
     return () => clearTimeout(t);
   }, [code, state?.deadline, refresh]);
 

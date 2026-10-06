@@ -1,7 +1,7 @@
 // Room service: create / join / start / act / tick / view / chat. The engine is the only thing that changes state.
 import { randomBytes, randomInt } from "node:crypto";
 import { apply, start, waitingOn } from "@/engine/engine";
-import { defaultAction } from "@/engine/decisions";
+import { botAction, defaultAction } from "@/engine/decisions";
 import { MAX_PLAYERS, MIN_PLAYERS, ROLE_TABLE } from "@/engine/setup";
 import { RuleError, type Action, type GameState } from "@/engine/types";
 import { viewFor, type PlayerView } from "@/engine/view";
@@ -12,6 +12,11 @@ export class HttpError extends Error {
 }
 
 const DEFAULT_TIMERS: Timers = { turn: 60, vote: 45, elim: 45 };
+/** a bot's turn waits this long so the humans can follow what happened */
+const BOT_DELAY_MS = 2500;
+const BOT_NAMES = ["Raju", "Shyam", "Babu Rao", "Pappu", "Munna", "Circuit", "Chintu", "Bunty", "Golu", "Tinku",
+  "Gabbar", "Basanti", "Mogambo", "Jhumru", "Lallan", "Kallu", "Bholu", "Chhotu", "Guddu", "Sonu",
+  "Monu", "Titu", "Bablu", "Pinky", "Dolly", "Rinku", "Mintu", "Sweety", "Lucky", "Happy"];
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const newCode = () => Array.from({ length: 5 }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join("");
 const newToken = () => randomBytes(24).toString("base64url");
@@ -90,6 +95,29 @@ export async function joinRoom(code: string, name: unknown) {
   return { code: code.toUpperCase(), token };
 }
 
+export async function addBot(code: string, token: string | null) {
+  await mutate(code, (row) => {
+    if (row.hostToken !== token) throw new HttpError(403, "Only the host can add bots");
+    if (row.status !== "lobby") throw new HttpError(409, "This game has already started");
+    if (row.lobby.length >= MAX_PLAYERS) throw new HttpError(409, `The table is full (${MAX_PLAYERS})`);
+    const taken = new Set(row.lobby.map((p) => p.name.toLowerCase()));
+    const name = BOT_NAMES.map((n) => `${n} 🤖`).find((n) => !taken.has(n.toLowerCase())) ?? `Bot ${row.lobby.length + 1} 🤖`;
+    row.lobby.push({ name, token: newToken(), bot: true });
+    return row;
+  });
+}
+
+export async function removeBot(code: string, token: string | null, index: unknown) {
+  await mutate(code, (row) => {
+    if (row.hostToken !== token) throw new HttpError(403, "Only the host can remove bots");
+    if (row.status !== "lobby") throw new HttpError(409, "This game has already started");
+    const i = Number(index);
+    if (!row.lobby[i]?.bot) throw new HttpError(400, "That seat isn't a bot");
+    row.lobby.splice(i, 1);
+    return row;
+  });
+}
+
 export async function startGame(code: string, token: string | null) {
   await mutate(code, (row) => {
     if (row.hostToken !== token) throw new HttpError(403, "Only the host can start");
@@ -97,19 +125,33 @@ export async function startGame(code: string, token: string | null) {
     if (row.lobby.length < MIN_PLAYERS) throw new HttpError(409, `Tunga needs at least ${MIN_PLAYERS} players`);
     // shuffle seats so join order doesn't decide who goes first
     for (let i = row.lobby.length - 1; i > 0; i--) { const j = randomInt(i + 1); [row.lobby[i], row.lobby[j]] = [row.lobby[j], row.lobby[i]]; }
-    const state = start(row.lobby.map((p) => p.name), randomInt(2 ** 31));
-    row.state = state;
-    row.status = "playing";
-    row.deadline = deadlineFor(state, row.timers);
-    return row;
+    return commitState(row, start(row.lobby.map((p) => p.name), randomInt(2 ** 31)));
   });
 }
 
 // ------------------------------------------------------------------ play
+const isBot = (row: GameRow, seat: number) => Boolean(row.lobby[seat]?.bot);
+
+/** Bots answer votes and Batwara at once; their turns and eliminations wait BOT_DELAY_MS for a tick. */
+function runBots(row: GameRow, s: GameState): GameState {
+  for (let guard = 0; guard < 100; guard++) {
+    const k = s.phase.kind;
+    if (k !== "vote" && k !== "batwara") break;
+    const bots = waitingOn(s).filter((seat) => isBot(row, seat));
+    if (!bots.length) break;
+    for (const seat of bots) if (waitingOn(s).includes(seat)) s = apply(s, seat, botAction(s, seat));
+  }
+  return s;
+}
+
 function commitState(row: GameRow, state: GameState): GameRow {
+  state = runBots(row, state);
+  const waiting = waitingOn(state);
   row.state = state;
   row.status = state.phase.kind === "over" ? "over" : "playing";
-  row.deadline = deadlineFor(state, row.timers);
+  row.deadline = waiting.length && waiting.every((seat) => isBot(row, seat))
+    ? Date.now() + BOT_DELAY_MS
+    : deadlineFor(state, row.timers);
   return row;
 }
 
@@ -133,8 +175,9 @@ export async function tick(code: string) {
   await mutate(code, (r) => {
     if (!r.state || r.deadline === null || Date.now() < r.deadline) return r;
     let s = r.state;
-    for (const seat of waitingOn(s)) s = apply(s, seat, defaultAction(s, seat));
-    s.events.push({ n: s.events.length, type: "timeout", to: "all", msg: "Time ran out — the default was played for anyone still deciding." });
+    const waiting = waitingOn(s);
+    for (const seat of waiting) s = apply(s, seat, isBot(r, seat) ? botAction(s, seat) : defaultAction(s, seat));
+    if (waiting.some((seat) => !isBot(r, seat))) s.events.push({ n: s.events.length, type: "timeout", to: "all", msg: "Time ran out — the default was played for anyone still deciding." });
     return commitState(r, s);
   });
   return { applied: true };
@@ -146,7 +189,7 @@ export interface ClientState {
   version: number;
   status: GameRow["status"];
   you: { seat: number; name: string; host: boolean };
-  lobby: { names: string[]; roleTable: Record<number, [number, number, number]> } | null;
+  lobby: { names: string[]; bots: boolean[]; roleTable: Record<number, [number, number, number]> } | null;
   view: PlayerView | null;
   deadline: number | null;
   serverNow: number;
@@ -162,7 +205,7 @@ export async function getState(code: string, token: string | null, sinceMsg: num
     version: row.version,
     status: row.status,
     you: { seat, name: row.lobby[seat].name, host: row.hostToken === token },
-    lobby: row.status === "lobby" ? { names: row.lobby.map((p) => p.name), roleTable: ROLE_TABLE } : null,
+    lobby: row.status === "lobby" ? { names: row.lobby.map((p) => p.name), bots: row.lobby.map((p) => Boolean(p.bot)), roleTable: ROLE_TABLE } : null,
     view: row.state ? viewFor(row.state, seat) : null,
     deadline: row.deadline,
     serverNow: Date.now(),
@@ -187,5 +230,6 @@ export async function exportLog(code: string, token: string | null) {
   const row = await load(code);
   if (row.hostToken !== token) throw new HttpError(403, "Only the host can download the log");
   if (row.status !== "over") throw new HttpError(409, "Available when the game is over");
-  return { code: row.code, createdAt: row.createdAt, timers: row.timers, state: row.state, messages: await store.messages(row.code, 0) };
+  const bots = row.lobby.flatMap((p, seat) => (p.bot ? [seat] : []));
+  return { code: row.code, createdAt: row.createdAt, timers: row.timers, bots, state: row.state, messages: await store.messages(row.code, 0) };
 }

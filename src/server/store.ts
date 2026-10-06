@@ -11,7 +11,7 @@ export interface GameRow {
   version: number;
   status: "lobby" | "playing" | "over";
   hostToken: string;
-  lobby: { name: string; token: string }[];
+  lobby: { name: string; token: string; bot?: boolean }[];
   state: GameState | null;
   deadline: number | null;
   timers: Timers;

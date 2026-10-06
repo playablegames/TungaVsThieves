@@ -40,6 +40,7 @@ function Shell({ children }: { children: React.ReactNode }) {
 // ---------------------------------------------------------------- lobby
 function Lobby({ s, code, token, onError }: { s: ClientState; code: string; token: string; onError: (e: string) => void }) {
   const names = s.lobby!.names;
+  const bots = s.lobby!.bots;
   const row = s.lobby!.roleTable[names.length];
   const link = useHydrated() ? `${location.origin}/` : "";
   return (
@@ -51,11 +52,23 @@ function Lobby({ s, code, token, onError }: { s: ClientState; code: string; toke
       </div>
       <div className="rounded-xl bg-stone-900 p-4">
         <p className="mb-2 font-bold">{names.length} at the table</p>
-        <ul className="grid grid-cols-2 gap-2">{names.map((n, i) => <li key={i} className="rounded bg-stone-800 px-3 py-2">{n}{i === 0 ? " · host" : ""}</li>)}</ul>
+        <ul className="grid grid-cols-2 gap-2">{names.map((n, i) => (
+          <li key={i} className="flex items-center justify-between rounded bg-stone-800 px-3 py-2">
+            <span>{n}{i === 0 ? " · host" : ""}</span>
+            {s.you.host && bots[i] && (
+              <button aria-label={`Remove ${n}`} onClick={() => api.removeBot(code, token, i).catch((e) => onError(e.message))}
+                className="px-1 text-stone-400 hover:text-red-400">✕</button>
+            )}
+          </li>
+        ))}</ul>
         <p className="mt-3 text-sm text-stone-400">
           {row ? `${names.length} players: ${row[0]} Tunga · ${row[1]} Thieves · ${row[2]} rounds` : "Tunga needs 4 to 30 players."}
         </p>
       </div>
+      {s.you.host && names.length < 30 && (
+        <button onClick={() => api.addBot(code, token).catch((e) => onError(e.message))}
+          className="rounded-lg border border-stone-600 py-2 font-bold text-stone-200">+ Add a bot 🤖</button>
+      )}
       {s.you.host ? (
         <button disabled={!row} onClick={() => api.start(code, token).catch((e) => onError(e.message))}
           className="rounded-lg bg-amber-500 py-3 text-lg font-bold text-stone-950 disabled:opacity-40">Deal the roles</button>
