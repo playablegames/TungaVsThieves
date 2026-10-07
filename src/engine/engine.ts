@@ -125,7 +125,7 @@ function beginTurn(s: GameState, seat: number) {
   for (;;) {
     const w = winnerIfWipe(s);
     if (w) return finish(s, w, w === "V" ? "every thief is out" : "every villager is out");
-    if (s.round > s.rounds) return startFinalVote(s);
+    if (s.round > s.rounds) return startSurrender(s);
     s.turnSeat = seat;
     const p = P(s, seat);
     const picked = s.pile;
@@ -155,6 +155,31 @@ function advanceSeat(s: GameState, seat: number) {
 function endTurn(s: GameState) {
   const { seat } = advanceSeat(s, s.turnSeat);
   beginTurn(s, seat);
+}
+
+/** after the last round: the Stone holders decide whether to surrender their Stones to the village */
+function startSurrender(s: GameState) {
+  const holders = living(s).filter((p) => p.hand.some(isStone)).map((p) => p.seat);
+  emit(s, "surrender_open", "all", "The last round is over. Anyone holding a Stone may surrender it to the village.", { holders: holders.length });
+  s.phase = { kind: "surrender", holders, choices: {} };
+  if (!holders.length) resolveSurrender(s);
+}
+
+function resolveSurrender(s: GameState) {
+  const ph = s.phase as Extract<GameState["phase"], { kind: "surrender" }>;
+  for (const seat of ph.holders) {
+    if (!ph.choices[seat]) continue;
+    const p = P(s, seat);
+    const stones = p.hand.filter(isStone);
+    removeCards(p.hand, stones);
+    s.villagePot = [...(s.villagePot ?? []), ...stones];
+    emit(s, "surrender", "all", `${p.name} surrenders the ${names(stones)}.`, { seat, cards: stones });
+  }
+  const withVillage = (s.villagePot ?? []).filter(isStone).length + s.pile.filter(isStone).length;
+  emit(s, "surrender_result", "all", `${withVillage} Stone${withVillage === 1 ? "" : "s"} with the village.`, { count: withVillage });
+  if (withVillage >= 2) return finish(s, "V", "both Stones were surrendered to the village");
+  if (withVillage === 0) return finish(s, "T", "no Stone was surrendered");
+  startFinalVote(s);
 }
 
 function startFinalVote(s: GameState) {
@@ -191,6 +216,7 @@ export function waitingOn(s: GameState): number[] {
       ? living(s).map((p) => p.seat).filter((x) => !ph.ready.includes(x))
       : ph.voters.filter((v) => !(v in ph.ballots));
     case "batwara": return ph.givers.filter((g) => !(g in ph.picks));
+    case "surrender": return ph.holders.filter((h) => !(h in ph.choices));
     case "elim": return ph.step === "dal_pick" ? [ph.pickers![0]] : [ph.seat];
     default: return [];
   }
@@ -238,6 +264,12 @@ export function apply(prev: GameState, seat: number, action: Action): GameState 
     if (action.target !== null && !P(s, action.target).alive) throw new RuleError("Vote for a living player");
     ph.ballots[seat] = action.target;
     if (!s.voteUntilClock && waitingOn(s).length === 0) resolveVote(s);
+    return s;
+  }
+  if (ph.kind === "surrender") {
+    if (action.type !== "surrender") throw new RuleError("Surrender your Stone, or keep it");
+    ph.choices[seat] = Boolean(action.give);
+    if (waitingOn(s).length === 0) resolveSurrender(s);
     return s;
   }
   if (ph.kind === "batwara") {

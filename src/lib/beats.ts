@@ -40,7 +40,7 @@ const num = (d: D | undefined, k: string) => (typeof d?.[k] === "number" ? (d[k]
 /** Voice carries the table; the screen only takes over for the climaxes — and for what only you may see.
  * Every other play is one line in the centre ("last declaration"). */
 // Talashi is a big moment too (playtest 2026-10-07): the searched player's cards are laid out face up for everyone
-const STAGE = new Set(["faisla", "talashi", "ballots_open", "final_vote", "vote_result", "eliminated", "dal_badal", "to_village", "last_shot", "over"]);
+const STAGE = new Set(["surrender_open", "surrender", "surrender_result", "faisla", "talashi", "ballots_open", "final_vote", "vote_result", "eliminated", "dal_badal", "to_village", "last_shot", "over"]);
 
 /** One event → one beat, or null when the table needn't stop for it. `names[seat]` = player name. */
 export function beatFor(e: GameEvent, names: string[]): Beat | null {
@@ -120,6 +120,14 @@ function rawBeat(e: GameEvent, names: string[]): Beat | null {
       return { ...base, title: e.msg, tone: d?.side === "T" ? "lethal" : "vote", big: false, hold: 2200 };
     case "timeout":
       return { ...base, title: "Time ran out", detail: "The default was played for anyone still deciding.", tone: "neutral", big: false, hold: SMALL };
+    case "surrender_open":
+      return { ...base, title: "Surrender the Stones?", detail: "Two with the village — Tunga wins. None — Thieves win. One — the vote decides.", tone: "vote", big: true, hold: BIG };
+    case "surrender":
+      return { ...base, title: e.msg.replace(/\.$/, ""), cards: (d?.cards as Card[]) ?? [], tone: "vote", big: true, hold: BIG };
+    case "surrender_result": {
+      const k = num(d, "count") ?? 0;
+      return { ...base, title: `${k} Stone${k === 1 ? "" : "s"} with the village`, detail: k >= 2 ? "Tunga wins." : k === 0 ? "Thieves win." : "The mandatory vote decides the other.", tone: k === 0 ? "lethal" : "vote", big: true, hold: BIG };
+    }
     case "over":
       return { ...base, title: d?.winner === "V" ? "Tunga wins" : "Thieves win", detail: String(d?.reason ?? ""), tone: d?.winner === "V" ? "vote" : "lethal", big: true, hold: BIG };
     default:

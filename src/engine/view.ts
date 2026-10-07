@@ -46,6 +46,7 @@ function phaseLabel(s: GameState): string {
     case "turn": return `turn:${ph.seat}`;
     case "vote": return (ph.reason === "final" ? "final_" : "faisla_") + (ph.debate ? "debate" : "vote");
     case "batwara": return "batwara";
+    case "surrender": return "surrender";
     case "elim": return `elim:${ph.step}:${ph.seat}`;
     case "over": return "over";
   }

@@ -261,37 +261,69 @@ describe("THE END — Mandatory Vote, then everyone reveals", () => {
     }
     return n;
   }
-  it("after the last round the Mandatory Vote opens for every living voter", () => {
+  /** rig the end: the given seats hold the Stones (nobody else, not the leftover cards), then the holders decide */
+  function rigSurrender(n: GameState, holders: number[]): GameState {
+    for (const p of n.players) p.hand = p.hand.filter((c) => !c.startsWith("STONE"));
+    n.pile = n.pile.filter((c) => !c.startsWith("STONE"));
+    holders.forEach((seat, i) => n.players[seat].hand.push(i === 0 ? "STONE_1" : "STONE_2"));
+    n.phase = { kind: "surrender", holders: [...new Set(holders)], choices: {} };
+    return n;
+  }
+  it("after the last round the Stone holders decide — SURRENDER comes before any vote (designer 2026-10-07)", () => {
     const n = toFinal(start(NAMES(5), 11));
-    expect(n.phase).toMatchObject({ kind: "vote", reason: "final" });
+    expect(n.phase.kind).toBe("surrender");
+    const holders = n.players.filter((p) => p.alive && p.hand.some((c) => c.startsWith("STONE"))).map((p) => p.seat);
+    expect(waitingOn(n).sort()).toEqual(holders.sort());
   });
-  it("both Stones with villagers -> TUNGA; any Stone with a thief -> THIEVES", () => {
-    for (const [holder, winner] of [["V", "V"], ["T", "T"]] as const) {
-      let n = toFinal(start(NAMES(5), 13));
-      const v = n.players.find((p) => p.side === "V")!, t = n.players.find((p) => p.side === "T")!;
-      for (const p of n.players) p.hand = p.hand.filter((c) => !c.startsWith("STONE"));
-      (holder === "V" ? v : t).hand.push("STONE_1", "STONE_2");
+  it("both Stones surrendered -> TUNGA wins at once; none surrendered -> THIEVES win at once", () => {
+    let n = rigSurrender(toFinal(start(NAMES(5), 13)), [1, 2]);
+    n = apply(n, 1, { type: "surrender", give: true });
+    n = apply(n, 2, { type: "surrender", give: true });
+    expect(n.phase).toMatchObject({ kind: "over", winner: "V" });
+    let m = rigSurrender(toFinal(start(NAMES(5), 13)), [1, 2]);
+    m = apply(m, 1, { type: "surrender", give: false });
+    m = apply(m, 2, { type: "surrender", give: false });
+    expect(m.phase).toMatchObject({ kind: "over", winner: "T" });
+  });
+  it("one Stone surrendered -> the mandatory vote; the other Stone decides at the reveal (villager: TUNGA, thief: THIEVES)", () => {
+    for (const [keeperSide, winner] of [["V", "V"], ["T", "T"]] as const) {
+      let n = toFinal(start(NAMES(6), 17));
+      const giver = n.players.find((p) => p.alive && p.side === "V")!.seat;
+      const keeper = n.players.find((p) => p.alive && p.side === keeperSide && p.seat !== giver)!.seat;
+      n = rigSurrender(n, [giver, keeper]);
+      n = apply(n, giver, { type: "surrender", give: true });
+      n = apply(n, keeper, { type: "surrender", give: false });
+      expect(n.phase).toMatchObject({ kind: "vote", reason: "final" });
       for (const p of n.players.filter((x) => x.alive)) n = apply(n, p.seat, { type: "ready" });
       for (const p of n.players.filter((x) => x.alive)) n = apply(n, p.seat, { type: "vote", target: null });
       expect(n.phase).toMatchObject({ kind: "over", winner });
     }
   });
+  it("a Stone among the 3 cards left on the table counts as already with the village", () => {
+    let n = toFinal(start(NAMES(5), 19));
+    for (const p of n.players) p.hand = p.hand.filter((c) => !c.startsWith("STONE"));
+    n.pile = [...n.pile.filter((c) => !c.startsWith("STONE")), "STONE_1"];
+    const holder = n.players.find((p) => p.alive)!.seat;
+    n.players[holder].hand.push("STONE_2");
+    n.phase = { kind: "surrender", holders: [holder], choices: {} };
+    n = apply(n, holder, { type: "surrender", give: true });
+    expect(n.phase).toMatchObject({ kind: "over", winner: "V" });
+  });
   it("RULE 2026-10-07: whoever the Mandatory Vote puts out hands nothing on — the cards go to the village, Stones count for it", () => {
     let n = toFinal(start(NAMES(6), 21));
-    const thief = n.players.find((p) => p.side === "T" && p.alive)!;
     const villager = n.players.find((p) => p.side === "V" && p.alive)!;
-    for (const p of n.players) p.hand = p.hand.filter((c) => !c.startsWith("STONE"));
-    thief.hand.push("STONE_1"); villager.hand.push("STONE_2");
+    const thief = n.players.find((p) => p.side === "T" && p.alive)!;
+    n = rigSurrender(n, [villager.seat, thief.seat]);
+    n = apply(n, villager.seat, { type: "surrender", give: true });
+    n = apply(n, thief.seat, { type: "surrender", give: false });   // one with the village: the vote decides
     for (const p of n.players.filter((x) => x.alive)) n = apply(n, p.seat, { type: "ready" });
     for (const p of n.players.filter((x) => x.alive)) n = apply(n, p.seat, { type: "vote", target: thief.seat });
-    // the thief's last shot (skip it) — and then no hand-off step at all
     if (n.phase.kind === "elim" && n.phase.step === "dal_badal") n = apply(n, thief.seat, { type: "dal_badal", seats: n.players.filter((p) => p.alive).slice(0, 3).map((p) => p.seat) });
     while (n.phase.kind === "elim" && n.phase.step === "dal_pick") n = apply(n, waitingOn(n)[0], { type: "dal_pick", index: 0 });
     if (n.phase.kind === "elim") n = apply(n, thief.seat, { type: "shot", target: null });
     expect(n.events.some((e) => e.type === "handoff")).toBe(false);
     expect(n.events.some((e) => e.type === "to_village")).toBe(true);
     expect(n.phase).toMatchObject({ kind: "over" });
-    // the thief's Stone went to the village; the other Stone is with a villager — unless Dal Badal moved sides
     if (!n.events.some((e) => e.type === "dal_badal")) expect(n.phase).toMatchObject({ winner: "V" });
   });
 });

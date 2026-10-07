@@ -52,6 +52,14 @@ export type Phase =
       /** roles already picked, held aside until everyone has one */
       drawn?: { seat: number; role: string; side: Side }[];
     }
+  | {
+      /** SURRENDER (designer 2026-10-07): after the last round, everyone holding a Stone decides — together and in
+       *  secret — whether to give it up to the village. 2 with the village: Tunga wins; 0: Thieves win; 1: the
+       *  mandatory vote. A Stone among the 3 cards left on the table counts as with the village. */
+      kind: "surrender";
+      holders: number[];
+      choices: Record<number, boolean>;
+    }
   | { kind: "over"; winner: Side; reason: string };
 
 /** What happens when the elimination queue empties. */
@@ -105,6 +113,7 @@ export type Action =
       roles?: [string, string];
     }
   | { type: "ready" }
+  | { type: "surrender"; give: boolean }
   | { type: "vote"; target: number | null }
   | { type: "batwara"; left: Card; right: Card; pile?: Card }
   | { type: "dal_badal"; seats: number[] }

@@ -1,5 +1,6 @@
 // Room service: create / join / start / act / tick / view / chat. The engine is the only thing that changes state.
 import { iceServers } from "./turn";
+import { livekitConfigured, voicePasses } from "./livekit";
 import { randomBytes, randomInt } from "node:crypto";
 import { apply, closeVote, start, waitingOn } from "@/engine/engine";
 import { botAction, defaultAction } from "@/engine/decisions";
@@ -58,7 +59,7 @@ function deadlineFor(state: GameState, timers: Timers): number | null {
   if (k === "over") return null;
   const secs = k === "vote" && state.phase.debate
     ? debateSeconds(state.players.filter((p) => p.alive).length, timers.debate ?? DEFAULT_TIMERS.debate!)
-    : k === "vote" || k === "batwara" ? timers.vote : k === "elim" ? timers.elim : timers.turn;
+    : k === "vote" || k === "batwara" || k === "surrender" ? timers.vote : k === "elim" ? timers.elim : timers.turn;
   return Date.now() + secs * 1000;
 }
 
@@ -195,7 +196,7 @@ const AWAY_AFTER = 2; // consecutive timeouts before a stand-in takes the seat
 function runBots(row: GameRow, s: GameState): GameState {
   for (let guard = 0; guard < 100; guard++) {
     const k = s.phase.kind;
-    if (k !== "vote" && k !== "batwara") break;
+    if (k !== "vote" && k !== "batwara" && k !== "surrender") break;
     const bots = waitingOn(s).filter((seat) => isAuto(row, seat));
     if (!bots.length) break;
     for (const seat of bots) if (waitingOn(s).includes(seat)) s = apply(s, seat, autoAction(row, s, seat));
@@ -328,6 +329,8 @@ export interface ClientState {
   serverNow: number;
   messages: ChatMessage[];
   timers: Timers;
+  /** which voice the phones use: LiveKit when configured on the server, else the phone-to-phone mesh */
+  voice: "livekit" | "mesh";
 }
 
 export async function getState(code: string, token: string | null, sinceMsg: number): Promise<ClientState> {
@@ -348,6 +351,7 @@ export async function getState(code: string, token: string | null, sinceMsg: num
       return w && w.to === seat ? m : { ...m, text: redactWhisper(m.text) };
     }),
     timers: row.timers,
+    voice: livekitConfigured() ? "livekit" : "mesh",
   };
 }
 
@@ -392,7 +396,7 @@ export async function claim(code: string, token: string | null, body: { kind?: u
 
 /** DEVELOPMENT ONLY — screen checks: give the caller a chosen hand and, if a turn is on, the turn. Refuses to run
  *  anywhere but `next dev` (NODE_ENV is "production" on Vercel), so it can never touch a real game. */
-export async function debugRig(code: string, token: string | null, body: { hand?: unknown; out?: unknown }) {
+export async function debugRig(code: string, token: string | null, body: { hand?: unknown; out?: unknown; jump?: unknown }) {
   if (process.env.NODE_ENV !== "development") throw new HttpError(404, "Not found");
   await play(code, (row) => {
     const seat = seatOf(row, token);
@@ -418,6 +422,20 @@ export async function debugRig(code: string, token: string | null, body: { hand?
         if (i < 0) throw new HttpError(400, `No ${String(c)} left in the deck`);
         s.players[seat].hand.push(...s.deck.splice(i, 1));
       }
+    }
+    // jump to the end: the last round is over and the Stone holders decide (the caller holds one)
+    if (body.jump === "surrender") {
+      const mine = s.players[seat].hand;
+      if (!mine.some((c) => c.startsWith("STONE"))) {
+        const from = s.players.find((p) => p.hand.includes("STONE_1")) ?? null;
+        if (from) from.hand.splice(from.hand.indexOf("STONE_1"), 1); else s.pile.splice(s.pile.indexOf("STONE_1"), 1);
+        mine.push("STONE_1");
+      }
+      s.round = s.rounds + 1;
+      const holders = s.players.filter((p) => p.alive && p.hand.some((c) => c.startsWith("STONE"))).map((p) => p.seat);
+      s.events.push({ n: s.events.length, type: "surrender_open", to: "all", msg: "The last round is over.", data: { holders: holders.length } });
+      s.phase = { kind: "surrender", holders, choices: {} };
+      return commitState(row, s);
     }
     if (s.phase.kind === "turn" && s.phase.seat !== seat) {
       // the player whose turn it was had picked up 3: they go back to the deck, so everyone else holds 2 as in a real game
@@ -471,6 +489,15 @@ export async function whisper(code: string, token: string | null, body: { to?: u
   const seat = next.lobby.findIndex((p) => p.token === token);
   await store.addMessage(next.code, { seat, name: next.lobby[seat].name, text: stored, phase: next.state?.phase.kind ?? "playing" });
   await ping(next.code, next.version);
+}
+
+/** LiveKit passes for this seat (null when LiveKit isn't configured — the phones fall back to the mesh) */
+export async function livekitPasses(code: string, token: string | null) {
+  if (!livekitConfigured()) return null;
+  const row = await load(code);
+  const seat = seatOf(row, token);
+  const alive = row.state ? row.state.players[seat].alive || row.state.phase.kind === "over" : true;
+  return voicePasses(row.code, seat, row.lobby[seat].name, alive, token!);
 }
 
 /** TURN/STUN servers for table voice; seated players only. */

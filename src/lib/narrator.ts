@@ -24,6 +24,9 @@ function lineFor(b: Beat, names: string[]): string | null {
   switch (b.type) {
     case "faisla": return pick(["फ़ैसला! सब बोलो — चोर कौन है?", "फ़ैसले की घड़ी आ गई!", "अब होगा फ़ैसला!"]);
     case "ballots_open": return pick(["वोट करो!", "अब वोट का समय है!"]);
+    case "surrender_open": return "आख़िरी मौक़ा! जिसके पास पत्थर है, गाँव को सौंप दो।";
+    case "surrender": return pick(["एक पत्थर गाँव को मिला!", "पत्थर सौंप दिया गया!"]);
+    case "surrender_result": return null;
     case "final_vote": return "आख़िरी फ़ैसला! आज रात तय होगा, पत्थर किसके पास है।";
     case "talashi": return pick(["तलाशी! जेबें ख़ाली करो।", "तलाशी हो रही है!"]);
     case "kundli": return pick(["कुंडली खुल रही है…", "किसी की कुंडली पढ़ी जा रही है।"]);

@@ -9,6 +9,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { loadToken, realtime } from "./client";
+import { liveKitVoiceFor } from "./lkvoice";
 
 export interface VoicePeer {
   seat: number;
@@ -382,8 +383,9 @@ const OFF: VoiceSnap = { status: "unavailable", micOn: false, micBlocked: false,
  * Voice for one table. On by default: it joins as soon as the player is seated (a first visit asks for the mic).
  * `gone` = eliminated seats; `open` = lobby or game over, when everyone hears everyone.
  */
-export function useVoice(code: string, me: { seat: number; name: string } | null, open: boolean, gone: number[]) {
-  const v = voiceFor(code);
+export function useVoice(code: string, me: { seat: number; name: string } | null, open: boolean, gone: number[], mode: "livekit" | "mesh" = "mesh") {
+  // LiveKit when the server has it set up (it routes and enforces who hears whom); the phone-to-phone mesh otherwise
+  const v = mode === "livekit" ? liveKitVoiceFor(code) : voiceFor(code);
   const snap = useSyncExternalStore(v.subscribe, v.getSnapshot, () => OFF);
   const seated = me !== null;
 

@@ -12,6 +12,7 @@ export type Decision =
   | { kind: "gift"; candidates: number[] }
   | { kind: "shot"; candidates: number[]; roles: string[] }
   | { kind: "handoff"; candidates: number[] }
+  | { kind: "surrender"; stones: string[] }
   | null;
 
 export function decisionFor(s: GameState, seat: number): Decision {
@@ -25,6 +26,7 @@ export function decisionFor(s: GameState, seat: number): Decision {
     case "turn": return { kind: "turn", playable: playableCards(s, seat), passSize: passSize(s.players[seat].hand) };
     case "vote": return ph.debate ? { kind: "debate", reason: ph.reason, ready: [...ph.ready] } : { kind: "vote", reason: ph.reason, candidates: live };
     case "batwara": return { kind: "batwara", left: -1, right: -1, choosePile: ph.actor === seat && s.players[seat].hand.length > 3 };
+    case "surrender": return { kind: "surrender", stones: s.players[seat].hand.filter(isStone) };
     case "elim": {
       const others = live.filter((x) => x !== seat);
       if (ph.step === "dal_badal") return { kind: "dal_badal", candidates: others, count: Math.min(3, others.length) };
@@ -48,6 +50,7 @@ export function defaultAction(s: GameState, seat: number): Action {
   switch (ph.kind) {
     case "turn": return { type: "pass", pass: stonesLast(h, passSize(h)) };
     case "vote": return ph.debate ? { type: "ready" } : { type: "vote", target: null };
+    case "surrender": return { type: "surrender", give: false };
     case "batwara": {
       const order = [...h.filter((c) => !isStone(c)), ...h.filter(isStone)];
       // the Bhukamp player with cards to spare keeps Stones back from the pile too
@@ -80,6 +83,7 @@ export function botAction(s: GameState, seat: number, r: R = Math.random): Actio
     const others = living(s).map((p) => p.seat).filter((x) => x !== seat);
     return { type: "vote", target: r() < 0.2 || !others.length ? null : pick(r, others) };
   }
+  if (s.phase.kind === "surrender") return { type: "surrender", give: s.players[seat].side === "V" };
   return randomAction(s, seat, r, 0.8, true);
 }
 
@@ -114,6 +118,7 @@ export function randomAction(s: GameState, seat: number, r: R, activity = 0.8, k
       return { type: "pass", pass: passFrom(r, h, passSize(h), keepStones) };
     }
     case "vote": return ph.debate ? { type: "ready" } : { type: "vote", target: r() < 0.25 ? null : pick(r, live) };
+    case "surrender": return { type: "surrender", give: r() < 0.5 };
     case "batwara": {
       // a bot that keeps Stones splits from its other cards first (it must still give 2 if that is all it has)
       const two = passFrom(r, h, 2, keepStones);

@@ -37,6 +37,7 @@ export default function Game({ code }: { code: string }) {
     st ? { seat: st.you.seat, name: st.you.name } : null,
     st?.status !== "playing",
     st?.view?.players.filter((p) => !p.alive).map((p) => p.seat) ?? [],
+    st?.voice ?? "mesh",
   );
   // the role reveal opens the game on every phone, once
   const [revealed, setRevealed] = useState(() => revealSeen(code));
@@ -247,6 +248,7 @@ function status(v: PlayerView): string {
   if (p.startsWith("turn")) return mine ? "Your move — play a pair or pass" : `${name(v.turnSeat)} must play a pair or pass`;
   if (p.endsWith("_debate")) return `${p.startsWith("final") ? "Last debate" : "Faisla"} — the floor is open`;
   if (p.endsWith("_vote")) return mine ? "Your vote" : `Voting — waiting for ${list}`;
+  if (p === "surrender") return mine ? "Surrender your Stone?" : "The Stone holders are deciding…";
   if (p === "batwara") return mine ? "Bhukamp — pass one left, one right" : `Bhukamp — waiting for ${list}`;
   if (p.startsWith("elim:dal_pick")) return mine ? "Dal Badal — pick a role card" : `Dal Badal — ${list} picking a role card`;
   if (p.startsWith("elim")) {
@@ -313,7 +315,7 @@ function Table({ s, v, act, now, extend, code, token, voice, messages }: {
     const SOUND: Partial<Record<string, Sound>> = {
       faisla: "faisla", ballots_open: "drumroll", final_vote: "drumroll", talashi: "flip", kundli: "mystic", kundli_private: "mystic",
       hera_pheri: "steal", batwara: "quake", maya_jaal: "rewind", dal_badal: "swirl", eliminated: "gong", claim: "claim",
-      pass: "whoosh", last_shot: "arrow", to_village: "gong",
+      pass: "whoosh", last_shot: "arrow", to_village: "gong", surrender_open: "drumroll", surrender: "gong",
     };
     if (beat.type === "teer_kaman" || beat.type === "last_shot") play("arrow", beat.result === "hit");
     else if (SOUND[beat.type]) play(SOUND[beat.type]!);

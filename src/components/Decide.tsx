@@ -15,6 +15,7 @@ function Btn({ voice = "pass", className = "", ...p }: React.ButtonHTMLAttribute
   return <button type="button" {...p} className={`inline-flex min-h-12 items-center justify-center gap-2 whitespace-nowrap rounded-full px-5 font-[family-name:var(--font-engraved)] text-[14px] font-bold uppercase tracking-[0.08em] active:translate-y-px disabled:opacity-40 ${look} ${className}`} />;
 }
 import { HandRow } from "./Hand";
+import { CardIcon } from "./CardIcon";
 
 const TARGETED: ActionCard[] = ["KUNDLI", "TALASHI", "HERA_PHERI", "TEER_KAMAN", "MAYA_JAAL"];
 
@@ -62,6 +63,7 @@ export function Decide({ v, act }: { v: PlayerView; act: (a: Action) => void }) 
     case "turn": return <Turn v={v} playable={d.playable as ActionCard[]} passSize={d.passSize} act={act} ask={c.ask} />;
     case "debate": case "vote": return null;
     case "batwara": return <Bhukamp v={v} act={act} />;
+    case "surrender": return <Surrender stones={d.stones as Card[]} act={act} />;
     case "dal_badal": return <Swap options={others} count={d.count} ask={c.ask} name={name} />;
     case "dal_pick": return <DalPick count={d.count} act={act} />;
     case "gift": return <OneOf title="Dying power — give 1 vote" hint="They vote with one more from now on." options={others}
@@ -123,6 +125,22 @@ function Shot({ v, options, ask, act, name }: { v: PlayerView; options: PublicPl
       <Pickers options={options} sel={target} onPick={(t) => { setTarget(t); fire(t, roles); }} />
       <RolePicker roles={v.rolesInPlay} sel={roles} setSel={(r) => { setRoles(r); fire(target, r); }} />
       <Btn voice="ghost" onClick={() => act({ type: "shot", target: null })}>No shot</Btn>
+    </div>
+  );
+}
+
+/** SURRENDER: give your Stone(s) to the village, or keep it — everyone holding one decides at the same moment */
+function Surrender({ stones, act }: { stones: Card[]; act: (a: Action) => void }) {
+  return (
+    <div className="flex flex-col gap-3">
+      <Head title={stones.length > 1 ? "Surrender your Stones to the village?" : "Surrender your Stone to the village?"} />
+      <div className="flex justify-center gap-3 py-1">
+        {stones.map((c) => <CardIcon key={c} c={c} className="w-14 drop-shadow-[0_0_12px_rgba(240,163,46,.45)]" />)}
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <Btn voice="ghost" onClick={() => act({ type: "surrender", give: false })}>Keep it</Btn>
+        <Btn voice="vote" onClick={() => act({ type: "surrender", give: true })}>Surrender</Btn>
+      </div>
     </div>
   );
 }
