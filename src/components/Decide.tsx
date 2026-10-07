@@ -136,26 +136,24 @@ function Bhukamp({ v, act }: { v: PlayerView; act: (a: Action) => void }) {
   const R = v.players[living[(i + 1) % living.length]].name;
   const [pile, setPile] = useState<number | null>(null);
   const d = v.decision?.kind === "batwara" ? v.decision : null;
-  const mine = v.turnSeat === v.me.seat; // you played it: what's left after your split goes on with the 2 you draw
   const choosePile = Boolean(d?.choosePile);
   const next = v.players[living[(i + 1) % living.length]].name;
+  // the tap that completes the split passes it (designer: "directly do action")
   const tap = (k: number) => {
-    if (left === k) return setLeft(null);
-    if (right === k) return setRight(null);
-    if (pile === k) return setPile(null);
-    if (left === null) setLeft(k); else if (right === null) setRight(k); else if (choosePile && pile === null) setPile(k);
+    let l = left, r = right, p = pile;
+    if (l === k) l = null; else if (r === k) r = null; else if (p === k) p = null;
+    else if (l === null) l = k; else if (r === null) r = k; else if (choosePile && p === null) p = k;
+    setLeft(l); setRight(r); setPile(p);
+    if (l !== null && r !== null && (!choosePile || p !== null))
+      act({ type: "batwara", left: v.me.hand[l], right: v.me.hand[r], ...(choosePile ? { pile: v.me.hand[p!] } : {}) });
   };
-  const ready = left !== null && right !== null && (!choosePile || pile !== null);
   return (
     <div className="flex flex-col gap-3">
-      <Head title="Bhukamp — split your cards"
-        hint={`First tap goes left to ${L}, second goes right to ${R}.${choosePile ? ` Third tap: the card that goes to ${next} with the 2 you draw.` : mine ? ` Your last card goes to ${next} with the 2 you draw.` : ""} A Stone may move.`} />
+      <Head title={choosePile ? "Bhukamp — 1 left, 1 right, 1 on" : "Bhukamp — 1 left, 1 right"} />
       <div className="pt-2">
         <HandRow cards={v.me.hand} selected={[left, right, pile].filter((k): k is number => k !== null)}
-          labels={Object.fromEntries([[left, "LEFT"], [right, "RIGHT"], [pile, "NEXT"]].filter(([k]) => k !== null))} onTap={tap} />
+          labels={Object.fromEntries([[left, `← ${L}`], [right, `${R} →`], [pile, `→ ${next}`]].filter(([k]) => k !== null))} onTap={tap} />
       </div>
-      <Btn voice="gold" disabled={!ready}
-        onClick={() => act({ type: "batwara", left: v.me.hand[left!], right: v.me.hand[right!], ...(choosePile ? { pile: v.me.hand[pile!] } : {}) })}>Pass them</Btn>
     </div>
   );
 }

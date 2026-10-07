@@ -71,7 +71,7 @@ function rawBeat(e: GameEvent, names: string[]): Beat | null {
     case "hera_pheri_private":
       return { ...base, card: "HERA_PHERI", title: "What moved", detail: e.msg, tone: "lethal", big: false, hold: SMALL };
     case "batwara":
-      return { ...base, card: "BATWARA", title: `Bhukamp — ${nm(actor)} splits the table`, detail: "Everyone — them too: one card left, one card right. Then they draw 2 for the next player.", tone: "gold", big: true, hold: BIG };
+      return { ...base, card: "BATWARA", title: `Bhukamp — ${nm(actor)} splits the table`, detail: "Everyone passes one left, one right.", tone: "gold", big: true, hold: BIG };
     case "maya_jaal":
       return { ...base, card: "MAYA_JAAL", title: `${nm(target)} is back`, detail: `${nm(actor)} turns back time.`, tone: "relic", big: true, hold: BIG };
     case "teer_kaman": {
@@ -82,7 +82,7 @@ function rawBeat(e: GameEvent, names: string[]): Beat | null {
     case "vote_lost":
       return { ...base, title: `${nm(actor)} loses a vote for good`, tone: "lethal", big: false, hold: SMALL };
     case "faisla":
-      return { ...base, card: "FAISLA", title: `${nm(actor)} calls a Faisla`, detail: "The floor is open — accuse, defend, claim. Then everyone votes.", tone: "vote", big: true, hold: BIG };
+      return { ...base, card: "FAISLA", title: `${nm(actor)} calls a Faisla`, tone: "vote", big: true, hold: BIG };
     case "away":
     case "back":
       return { ...base, title: e.msg, tone: "neutral", big: false, hold: SMALL };
