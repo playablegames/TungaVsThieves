@@ -387,12 +387,23 @@ export async function claim(code: string, token: string | null, body: { kind?: u
 
 /** DEVELOPMENT ONLY — screen checks: give the caller a chosen hand and, if a turn is on, the turn. Refuses to run
  *  anywhere but `next dev` (NODE_ENV is "production" on Vercel), so it can never touch a real game. */
-export async function debugRig(code: string, token: string | null, body: { hand?: unknown }) {
+export async function debugRig(code: string, token: string | null, body: { hand?: unknown; out?: unknown }) {
   if (process.env.NODE_ENV !== "development") throw new HttpError(404, "Not found");
   await play(code, (row) => {
     const seat = seatOf(row, token);
     const s = row.state;
     if (!s) throw new HttpError(409, "Start the game first");
+    // put chosen players out (their role revealed, as after a vote) — Stones they hold move to the next player
+    if (Array.isArray(body.out)) for (const x of body.out as number[]) {
+      const p = s.players[x];
+      if (!p || x === seat || !p.alive) continue;
+      p.alive = false; p.revealedRole = p.role; p.votesAtDeath = p.votes; p.votes = 0; s.deadOrder.push(x);
+      const stones = p.hand.filter((c) => c.startsWith("STONE"));
+      s.deck.push(...p.hand.filter((c) => !c.startsWith("STONE")));
+      p.hand = [];
+      s.players[(x + 1) % s.players.length].hand.push(...stones);
+      s.events.push({ n: s.events.length, type: "eliminated", to: "all", msg: `${p.name} is OUT — ${p.role}.`, data: { seat: x, role: p.role, side: p.side, hand: [], killer: null } });
+    }
     if (Array.isArray(body.hand)) {
       // put the old cards back in the deck so the card count stays true
       s.deck.push(...s.players[seat].hand);
