@@ -4,6 +4,7 @@
 // sets state inside an effect.
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { ChatMessage } from "@/server/store";
+import { isReaction } from "./reactions";
 
 const SHOW_MS = 3400;
 const PREF = "tunga:botvoice";
@@ -30,7 +31,8 @@ class SpeechQueue {
   feed(messages: ChatMessage[]) {
     const top = messages.at(-1)?.id ?? 0;
     if (this.seen < 0) { this.seen = top; return; }
-    const fresh = messages.filter((m) => m.id > this.seen);
+    // reactions (thrown emojis) travel as messages too, but they are not speech
+    const fresh = messages.filter((m) => m.id > this.seen && !isReaction(m.text));
     if (!fresh.length) return;
     this.seen = top;
     this.queue.push(...fresh.map((m) => ({ seat: m.seat, name: m.name, text: m.text })));

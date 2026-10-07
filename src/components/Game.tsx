@@ -2,7 +2,7 @@
 /* Hallmark · genre: atmospheric · macrostructure: Workbench (app, portrait spotlight) · design-system: DESIGN.md · designed-as-app */
 // The table, phone-first and portrait: a status line everyone reads the same way (BGA's "${actplayer} must…"),
 // a seat strip where the spotlight glows, the table centre, and a dock with your role, your hand and your move.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { api, useGame, useHydrated } from "@/lib/client";
 import { CARD } from "@/lib/cards";
@@ -15,6 +15,11 @@ import { Stage } from "./Stage";
 import { Decide, PlayerChip } from "./Decide";
 import { HandRow, PlayedPair } from "./Hand";
 import { CardIcon } from "./CardIcon";
+import { Eject, thievesRemaining } from "./Eject";
+import { Confetti, ShareResult } from "./Share";
+import { buzz, duck, play, setSound, soundOn, unlockOnFirstTap, type Sound } from "@/lib/sfx";
+import { narrate, narratorOn, setNarrator } from "@/lib/narrator";
+import { REACTIONS, ThrowQueue, reactionText, type Throw } from "@/lib/reactions";
 import { RoleReveal, revealSeen } from "./RoleReveal";
 import { TimerRing } from "./ui";
 import { useVoice } from "@/lib/voice";
@@ -286,10 +291,58 @@ function Table({ s, v, act, now, extend, code, token, voice, messages }: {
   const voteShown = lastVote && !seen.some((b) => b.n > lastVote.n && (b.card || b.type === "pass")) ? lastVote : null;
   // open voting: every ballot counts on the table the moment it is cast (weighted by the voter's votes)
   const live = v.ballots ? liveTally(v) : null;
-  // your move: a short buzz and a tab-title flag, so a phone face-down on the table still tells you
+  const names = useMemo(() => v.players.map((p) => p.name), [v.players]);
+  const root = useRef<HTMLDivElement>(null);
+  const [throws] = useState(() => new ThrowQueue());
+  useEffect(() => { throws.feed(messages); }, [throws, messages]);
+  const flying = useSyncExternalStore(throws.subscribe, throws.getSnapshot, throws.getSnapshot);
+  const lastThrow = useRef(0);
+  const throwAt = (seat: number, emoji: string) => {
+    if (Date.now() - lastThrow.current < 1200) return; // one reaction at a time, no spamming the table
+    lastThrow.current = Date.now();
+    api.chat(code, token, reactionText(emoji, seat)).catch(() => {});
+  };
+  useEffect(() => { unlockOnFirstTap(); }, []);
+  // every big moment gets its sound, the narrator's line, a shake and a buzz (research 2026-10-07)
+  const beat = stage.current;
+  useEffect(() => {
+    if (!beat) return;
+    const SOUND: Partial<Record<string, Sound>> = {
+      faisla: "faisla", ballots_open: "drumroll", final_vote: "drumroll", talashi: "flip", kundli: "mystic", kundli_private: "mystic",
+      hera_pheri: "steal", batwara: "quake", maya_jaal: "rewind", dal_badal: "swirl", eliminated: "gong", claim: "claim",
+      pass: "whoosh", last_shot: "arrow", to_village: "gong",
+    };
+    if (beat.type === "teer_kaman" || beat.type === "last_shot") play("arrow", beat.result === "hit");
+    else if (SOUND[beat.type]) play(SOUND[beat.type]!);
+    narrate(beat, names);
+    const hard = beat.type === "eliminated" || beat.type === "batwara" || (beat.type === "teer_kaman" && beat.result === "hit");
+    if (hard && root.current) {
+      root.current.classList.remove("shake");
+      void root.current.offsetWidth; // restart the animation
+      root.current.classList.add("shake");
+      buzz(beat.type === "eliminated" ? [90, 60, 220] : [60, 40, 60]);
+    }
+  }, [beat, names]);
+  // talking? the effects step back so voices stay on top
+  const talkingNow = voice.speaking || Object.values(voice.peers).some((p) => p.speaking && !p.hushed);
+  useEffect(() => { duck(talkingNow); }, [talkingNow]);
+  // the clock running out on YOUR decision: a heartbeat every second for the last ten
+  useEffect(() => {
+    if (!myMove || !s.deadline) return;
+    const t = setInterval(() => {
+      const left = s.deadline! - now();
+      if (left > 0 && left <= 10_000) { play("heartbeat"); if (left <= 5000) buzz(25); }
+    }, 1000);
+    return () => clearInterval(t);
+  }, [myMove, s.deadline, now]);
+  // a vote lands: a note that climbs with every ballot
+  const liveTotal = Object.values(v.ballots ?? {}).filter((t) => t !== null).length;
+  useEffect(() => { if (liveTotal > 0) play("vote", liveTotal); }, [liveTotal]);
+  // your move: a chime, a short buzz and a tab-title flag, so a phone face-down on the table still tells you
   useEffect(() => {
     if (!myMove) return;
-    navigator.vibrate?.(60);
+    if (myMove !== "vote" && myMove !== "debate") play("yourMove");
+    buzz(60);
     const was = document.title;
     document.title = "● Your move — Tunga vs Thieves";
     return () => { document.title = was; };
@@ -298,8 +351,14 @@ function Table({ s, v, act, now, extend, code, token, voice, messages }: {
   if (s.status === "over") return (<><Stage stage={stage} skip={stage.skip} names={v.players.map((p) => p.name)} /><Final v={v} /></>);
 
   const living = v.players.filter((p) => p.alive);
+  const ejected = beat?.type === "eliminated" && beat.target !== undefined ? v.players[beat.target] : null;
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div ref={root} className="flex min-h-0 flex-1 flex-col">
+      {ejected && beat && (
+        <Eject key={beat.n} name={ejected.name.replace(/\s*🤖$/, "")} initials={initialsOf(names)[ejected.seat]} colour={SEAT_COLOURS[ejected.seat % SEAT_COLOURS.length]}
+          thief={beat.tone === "relic"} role={ejected.revealedRole ?? ""} onDone={stage.skip}
+          remaining={thievesRemaining(v.rolesInPlay, v.players.filter((p) => !p.alive).map((p) => p.revealedRole))} />
+      )}
       <div aria-hidden className="fixed inset-0 -z-10 bg-[radial-gradient(80%_45%_at_50%_32%,var(--color-ember-2)_0%,var(--color-ember)_60%,#120903_100%)]" />
 
       <header className="flex items-center gap-2 px-3 pt-2">
@@ -315,7 +374,7 @@ function Table({ s, v, act, now, extend, code, token, voice, messages }: {
       </header>
 
       <Ring v={v} voice={voice} talking={bots.current?.seat ?? null} actor={headline?.actor} target={headline?.target} pick={v.decision?.kind === "vote" ? v.decision.mine ?? null : null} tally={live ?? voteShown?.tally}
->
+        flying={flying} onThrow={v.me.alive ? throwAt : undefined}>
         {stage.current?.big
           ? <Stage stage={stage} skip={stage.skip} names={v.players.map((p) => p.name)} inline small={v.players.length > 8} />
           : <Centre v={v} last={headline} lastVote={voteShown} live={live} ticker={ticker} compact={Boolean(myMove && myMove !== "vote" && myMove !== "debate")} living={living.length} extend={extend}
@@ -341,6 +400,7 @@ function Table({ s, v, act, now, extend, code, token, voice, messages }: {
             <MicButton voice={voice} />
             <p className="flex-1 text-[14px] text-stock/80">Your mic. Tap a player&rsquo;s seat to mute them for you only.</p>
           </div>
+          <Toggles />
           <button type="button" onClick={() => bots.setVoice(!bots.voice)} aria-pressed={bots.voice}
             className="flex min-h-12 items-center gap-3 rounded-2xl border border-brass/40 px-4 text-left text-[14px] text-stock">
             <span className="text-[18px]" aria-hidden>{bots.voice ? "🔊" : "🔈"}</span>{bots.voice ? "Bots speak aloud" : "Bots speak as text only"}
@@ -350,6 +410,19 @@ function Table({ s, v, act, now, extend, code, token, voice, messages }: {
         </Sheet>
       )}
     </div>
+  );
+}
+
+/** menu switches for the game's sound and the narrator (remembered on this phone) */
+function Toggles() {
+  const [snd, setSnd] = useState(soundOn);
+  const [nar, setNar] = useState(narratorOn);
+  const row = "flex min-h-12 items-center gap-3 rounded-2xl border border-brass/40 px-4 text-left text-[14px] text-stock";
+  return (
+    <>
+      <button type="button" aria-pressed={snd} onClick={() => { setSound(!snd); setSnd(!snd); }} className={row}><span className="text-[18px]" aria-hidden>{snd ? "🥁" : "🔕"}</span>{snd ? "Game sounds on" : "Game sounds off"}</button>
+      <button type="button" aria-pressed={nar} onClick={() => { setNarrator(!nar); setNar(!nar); }} className={row}><span className="text-[18px]" aria-hidden>{nar ? "🎙️" : "🤐"}</span>{nar ? "Sutradhar (narrator) on" : "Sutradhar off"}</button>
+    </>
   );
 }
 
@@ -366,16 +439,40 @@ function RolePeek({ v }: { v: PlayerView }) {
 }
 
 /** Seats on an oval in turn order, you at the bottom, a thin brass line joining them. */
-function Ring({ v, voice, talking, actor, target, pick, tally, onPick, children }: {
-  v: PlayerView; voice: VoiceCtl; talking: number | null; actor?: number; target?: number; pick: number | null; tally?: Record<string, number>; onPick?: (seat: number) => void; children: React.ReactNode;
+function Ring({ v, voice, talking, actor, target, pick, tally, flying = [], onThrow, onPick, children }: {
+  v: PlayerView; voice: VoiceCtl; talking: number | null; actor?: number; target?: number; pick: number | null; tally?: Record<string, number>;
+  flying?: Throw[]; onThrow?: (seat: number, emoji: string) => void; onPick?: (seat: number) => void; children: React.ReactNode;
 }) {
   const n = v.players.length;
   const voteOpen = v.phase.endsWith("_vote");
   const size: SeatSize = n <= 8 ? "lg" : n <= 16 ? "md" : "sm";
   const ini = initialsOf(v.players.map((p) => p.name));
+  const [picker, setPicker] = useState<number | null>(null);
+  /** where a seat sits on the oval, in % of the table — you at the bottom */
+  const pos = (seat: number) => {
+    const a = Math.PI / 2 + (((seat - v.me.seat + n) % n) * 2 * Math.PI) / n;
+    return { x: 50 + 41 * Math.cos(a), y: 50 + 42 * Math.sin(a) };
+  };
+  // the spotlight beam: from the middle of the table to whoever must act
+  const lit = v.phase.startsWith("turn") ? v.turnSeat : v.phase === "batwara" ? null : v.waitingOn.length === 1 ? v.waitingOn[0] : null;
+  const beam = lit !== null ? (() => {
+    const t = pos(lit), dx = t.x - 50, dy = t.y - 50, len = Math.hypot(dx, dy) || 1, w = 7;
+    return `50,50 ${t.x + (-dy / len) * w},${t.y + (dx / len) * w} ${t.x - (-dy / len) * w},${t.y - (dx / len) * w}`;
+  })() : null;
+  const peerOf = (seat: number) => voice.peers[seat];
   return (
     <section className="relative mx-2 min-h-[440px] flex-1" aria-label="The table">
       <div className="absolute inset-x-[9%] inset-y-[8%] rounded-[50%] border border-brass/35" aria-hidden />
+      {beam && lit !== null && (
+        <svg aria-hidden viewBox="0 0 100 100" preserveAspectRatio="none" className="pointer-events-none absolute inset-0 h-full w-full">
+          <defs>
+            <linearGradient id="beam" gradientUnits="userSpaceOnUse" x1="50" y1="50" x2={pos(lit).x} y2={pos(lit).y}>
+              <stop offset="0" stopColor="#f0a32e" stopOpacity="0" /><stop offset="1" stopColor="#f0a32e" stopOpacity=".38" />
+            </linearGradient>
+          </defs>
+          <polygon key={lit} points={beam} fill="url(#beam)" className="stage-in beam-glow" />
+        </svg>
+      )}
       {Array.from({ length: n }, (_, k) => {
         const p = v.players[(v.me.seat + k) % n];
         const angle = Math.PI / 2 + (k * 2 * Math.PI) / n;
@@ -391,9 +488,27 @@ function Ring({ v, voice, talking, actor, target, pick, tally, onPick, children 
               speaking={me ? voice.speaking : Boolean(peer?.speaking && !peer.hushed) || talking === p.seat}
               micOff={me ? !voice.micOn || voice.micBlocked : Boolean(peer?.muted)}
               hushed={Boolean(peer?.hushed)}
-              onTap={onPick && p.alive ? () => onPick(p.seat) : !me && peer ? () => voice.hush(p.seat) : undefined} />
+              onTap={onPick && p.alive ? () => onPick(p.seat) : !me && (onThrow || peer) ? () => setPicker(picker === p.seat ? null : p.seat) : undefined} />
           </div>
         );
+      })}
+      {/* tap a seat: throw something at them (everyone sees it fly), or mute them for you */}
+      {picker !== null && (
+        <div className="pop absolute z-30 flex -translate-x-1/2 -translate-y-[130%] gap-1 rounded-full border border-brass/60 bg-ember/95 p-1 shadow-[0_8px_20px_rgba(0,0,0,.7)]"
+          style={{ left: "50%", top: `${Math.max(14, pos(picker).y)}%` }} role="menu" aria-label={`React to ${v.players[picker]?.name}`}>
+          {onThrow && REACTIONS.map((e) => (
+            <button key={e} type="button" role="menuitem" onClick={() => { onThrow(picker, e); setPicker(null); }} className="grid h-10 w-10 place-items-center rounded-full text-[22px] active:scale-90">{e}</button>
+          ))}
+          {peerOf(picker) && (
+            <button type="button" role="menuitem" aria-label={peerOf(picker)!.hushed ? "Unmute for me" : "Mute for me"} onClick={() => { voice.hush(picker); setPicker(null); }}
+              className="grid h-10 w-10 place-items-center rounded-full text-[20px]">{peerOf(picker)!.hushed ? "🔊" : "🔇"}</button>
+          )}
+        </div>
+      )}
+      {flying.map((t) => {
+        const f = pos(t.from), to = pos(t.to);
+        return <span key={t.id} aria-hidden className="throw z-40 text-[34px]"
+          style={{ ["--fx" as string]: `${f.x}%`, ["--fy" as string]: `${f.y}%`, ["--tx" as string]: `${to.x}%`, ["--ty" as string]: `${to.y}%` }}>{t.emoji}</span>;
       })}
       <div className="absolute left-1/2 top-1/2 max-h-[50%] w-[54%] max-w-[240px] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl [scrollbar-width:none]">{children}</div>
     </section>
@@ -425,7 +540,7 @@ function Seat({ p, me, size, initials, got, tag, spot, voted, picked, speaking, 
         {p.alive ? initials : "✕"}
         <span className="absolute -bottom-1 -right-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-ember px-1 text-[10px] font-bold tabular-nums text-stock ring-1 ring-brass/60" aria-hidden>{p.handSize}</span>
         {(micOff || hushed) && <span className="absolute -left-1 -top-1 grid h-4 w-4 place-items-center rounded-full bg-ember ring-1 ring-brass/50"><MicOff small crossed={hushed} /></span>}
-        {Boolean(got) && <span className="absolute -left-2 -top-2 z-10 grid h-6 min-w-6 place-items-center rounded-full bg-crimson px-1 text-[12px] font-black text-ink ring-2 ring-ember" aria-hidden>{got}</span>}
+        {Boolean(got) && <span key={got} className="pop absolute -left-2 -top-2 z-10 grid h-6 min-w-6 place-items-center rounded-full bg-crimson px-1 text-[12px] font-black text-ink ring-2 ring-ember" aria-hidden>{got}</span>}
         {voted && <span className="absolute -right-1 -top-1 grid h-5 w-5 place-items-center rounded-full bg-[#f0a32e] text-[11px] font-black text-card-ink" aria-hidden>✓</span>}
       </button>
       <span className={`relative z-10 -mt-1 truncate rounded-full border bg-ember font-medium ${z.tag} ${me ? "border-2 border-jade text-jade-soft" : spot ? "border-[#f0a32e] text-[#f3c66b]" : "border-brass/60 text-stock"}`}>{p.name}</span>
@@ -709,6 +824,8 @@ function Final({ v }: { v: PlayerView }) {
   const mine = reveal.find((r) => r.seat === v.me.seat)!;
   const won = mine.side === v.winner;
   const name = (seat: number) => v.players[seat]?.name ?? "?";
+  // the end lands with a fanfare (or a wah-wah) once
+  useEffect(() => { play(won ? "fanfare" : "sting"); buzz(won ? [60, 40, 60, 40, 160] : 200); }, [won]);
   // where each Stone ended: in a living player's hand, or with the village (the cards left on the table at the end,
   // and the cards of anyone the mandatory vote put out)
   const stoneAt = (c: Card) => {
@@ -781,7 +898,11 @@ function Final({ v }: { v: PlayerView }) {
         </div>
       </div>
 
-      <Link href="/" className={`${btn} mt-3 inline-flex items-center justify-center bg-[linear-gradient(180deg,var(--color-rust)_0%,var(--color-rust-deep)_100%)] text-stock`}>Play again</Link>
+      {won && <Confetti />}
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <ShareResult won={won} village={village} role={mine.role} thief={mine.side === "T"} caught={reveal.filter((r) => r.side === "T" && !v.players[r.seat].alive).length} />
+        <Link href="/" className={`${btn} inline-flex items-center justify-center bg-[linear-gradient(180deg,var(--color-rust)_0%,var(--color-rust-deep)_100%)] text-stock`}>Play again</Link>
+      </div>
       <div className="mt-2 flex justify-center gap-6 text-[13px] text-stock/60">
         <button type="button" onClick={() => setStory(true)} className="min-h-10 underline-offset-2 hover:underline">The whole story</button>
       </div>
