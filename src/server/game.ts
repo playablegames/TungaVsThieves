@@ -5,7 +5,7 @@ import { apply, closeVote, start, waitingOn } from "@/engine/engine";
 import { botAction, defaultAction } from "@/engine/decisions";
 import { botTalk, botVote } from "./botmind";
 import { MIN_PLAYERS, ROLE_TABLE, THIEF_ROLES } from "@/engine/setup";
-import { RuleError, type Action, type GameState } from "@/engine/types";
+import { RuleError, type Action, type Card, type GameState } from "@/engine/types";
 import { viewFor, type PlayerView } from "@/engine/view";
 import { holdFor } from "@/lib/beats";
 import { ping, store, type ChatMessage, type GameRow, type Timers } from "./store";
@@ -21,8 +21,8 @@ export const debateSeconds = (living: number, cap: number) => Math.min(cap, Math
 /** a bot's turn waits this long AFTER the table has watched the last beat */
 // playtest 2026-10-07: 1.2s made a table of bots a blur
 export const BOT_DELAY_MS = 3000;
-/** open voting: everyone has voted and nobody has changed their mind for this long — the vote closes */
-export const VOTE_SETTLE_MS = 10_000;
+/** open voting: everyone has voted and nobody has changed their mind for this long — the vote closes (designer: 5s) */
+export const VOTE_SETTLE_MS = 5_000;
 /** online tables seat at most this many (designer 2026-10-07): the seat ring and phone-to-phone voice are only proven
  *  this far. The engine plays 4-30; raise this once big tables have their own layout and a voice relay. */
 export const ONLINE_MAX_PLAYERS = 12;
@@ -382,6 +382,35 @@ export async function claim(code: string, token: string | null, body: { kind?: u
     s.events.push({ n: s.events.length, type: "claim", to: "all", msg, data: { seat, kind, target, role: role ?? null, side } });
     row.state = s;
     return row;
+  });
+}
+
+/** DEVELOPMENT ONLY — screen checks: give the caller a chosen hand and, if a turn is on, the turn. Refuses to run
+ *  anywhere but `next dev` (NODE_ENV is "production" on Vercel), so it can never touch a real game. */
+export async function debugRig(code: string, token: string | null, body: { hand?: unknown }) {
+  if (process.env.NODE_ENV !== "development") throw new HttpError(404, "Not found");
+  await play(code, (row) => {
+    const seat = seatOf(row, token);
+    const s = row.state;
+    if (!s) throw new HttpError(409, "Start the game first");
+    if (Array.isArray(body.hand)) {
+      // put the old cards back in the deck so the card count stays true
+      s.deck.push(...s.players[seat].hand);
+      s.players[seat].hand = [];
+      for (const c of body.hand as Card[]) {
+        const i = s.deck.indexOf(c);
+        if (i < 0) throw new HttpError(400, `No ${String(c)} left in the deck`);
+        s.players[seat].hand.push(...s.deck.splice(i, 1));
+      }
+    }
+    if (s.phase.kind === "turn" && s.phase.seat !== seat) {
+      // the player whose turn it was had picked up 3: they go back to the deck, so everyone else holds 2 as in a real game
+      const was = s.players[s.phase.seat];
+      was.hand.sort((a, b) => Number(b.startsWith("STONE")) - Number(a.startsWith("STONE"))); // Stones never go to the deck
+      s.deck.push(...was.hand.splice(2));
+      s.phase = { kind: "turn", seat }; s.turnSeat = seat;
+    }
+    return commitState(row, s);
   });
 }
 

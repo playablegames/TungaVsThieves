@@ -39,7 +39,8 @@ const num = (d: D | undefined, k: string) => (typeof d?.[k] === "number" ? (d[k]
 
 /** Voice carries the table; the screen only takes over for the climaxes — and for what only you may see.
  * Every other play is one line in the centre ("last declaration"). */
-const STAGE = new Set(["faisla", "ballots_open", "final_vote", "vote_result", "eliminated", "dal_badal", "to_village", "last_shot", "over"]);
+// Talashi is a big moment too (playtest 2026-10-07): the searched player's cards are laid out face up for everyone
+const STAGE = new Set(["faisla", "talashi", "ballots_open", "final_vote", "vote_result", "eliminated", "dal_badal", "to_village", "last_shot", "over"]);
 
 /** One event → one beat, or null when the table needn't stop for it. `names[seat]` = player name. */
 export function beatFor(e: GameEvent, names: string[]): Beat | null {
@@ -60,11 +61,11 @@ function rawBeat(e: GameEvent, names: string[]): Beat | null {
     case "pass":
       return { ...base, title: `${nm(actor)} plays nothing`, detail: "Three cards go on face down.", tone: "neutral", big: false, hold: SMALL };
     case "kundli":
-      return { ...base, card: "KUNDLI", title: `${nm(actor)} reads ${nm(target)}'s Kundli`, detail: "Only they saw it. They may tell you — or lie.", tone: "relic", big: true, hold: BIG };
+      return { ...base, card: "KUNDLI", title: `${nm(actor)} reads ${nm(target)}'s Kundli`, tone: "relic", big: true, hold: BIG };
     case "kundli_private":
-      return { ...base, card: "KUNDLI", title: `${nm(target)} is ${String(d?.role)}`, detail: d?.side === "T" ? "A thief. Only you know." : "A villager. Only you know.", tone: "relic", big: true, hold: BIG };
+      return { ...base, card: "KUNDLI", title: `${nm(target)} is ${String(d?.role)}`, detail: d?.side === "T" ? "A thief." : "A villager.", tone: "relic", big: true, hold: BIG };
     case "talashi":
-      return { ...base, card: "TALASHI", title: `Talashi on ${nm(target)}`, detail: "Every card, face up — never the role.", cards: (d?.hand as Card[]) ?? [], tone: "relic", big: true, hold: BIG + 800 };
+      return { ...base, card: "TALASHI", title: `Talashi on ${nm(target)}`, cards: (d?.hand as Card[]) ?? [], tone: "relic", big: true, hold: BIG + 800 };
     case "hera_pheri":
       return { ...base, card: "HERA_PHERI", title: `${nm(actor)} steals from ${nm(target)}`, detail: `${num(d, "k") ?? 2} cards, face down. ${nm(target)} draws back up.`, tone: "lethal", big: true, hold: BIG };
     case "hera_pheri_private":

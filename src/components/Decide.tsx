@@ -1,48 +1,35 @@
 "use client";
 // The action dock: what YOU can do right now, one step at a time. Irreversible moves go through a 5-second
 // timed confirm instead of undo (BGA: undo is impossible once hidden information is out).
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { Action, ActionCard, Card } from "@/engine/types";
 import type { PlayerView, PublicPlayer } from "@/engine/view";
 import { CARD } from "@/lib/cards";
-import { Btn } from "./ui";
+import type { Voice } from "@/lib/cards";
+
+/** buttons in the table's brass style (screen check 2026-10-07): "ghost" is the quiet one, everything else the rust pill */
+function Btn({ voice = "pass", className = "", ...p }: React.ButtonHTMLAttributes<HTMLButtonElement> & { voice?: Voice | "pass" | "ghost" }) {
+  const look = voice === "ghost" || voice === "pass"
+    ? "border-2 border-brass/60 bg-black/30 text-stock"
+    : "border-2 border-brass/80 bg-[linear-gradient(180deg,var(--color-rust)_0%,var(--color-rust-deep)_100%)] text-stock";
+  return <button type="button" {...p} className={`inline-flex min-h-12 items-center justify-center gap-2 whitespace-nowrap rounded-full px-5 font-[family-name:var(--font-engraved)] text-[14px] font-bold uppercase tracking-[0.08em] active:translate-y-px disabled:opacity-40 ${look} ${className}`} />;
+}
 import { HandRow } from "./Hand";
 
 const TARGETED: ActionCard[] = ["KUNDLI", "TALASHI", "HERA_PHERI", "TEER_KAMAN", "MAYA_JAAL"];
-const CONFIRM_MS = 5000;
 
 type Ask = (label: string, action: Action) => void;
 
-/** Hold an irreversible action for 5 seconds with Cancel / Now — the table still sees it the moment it lands. */
-function useTimedConfirm(act: (a: Action) => void) {
-  const [pending, setPending] = useState<{ label: string; action: Action; until: number } | null>(null);
-  const [left, setLeft] = useState(CONFIRM_MS);
-  useEffect(() => {
-    if (!pending) return;
-    const t = setInterval(() => {
-      const ms = pending.until - Date.now();
-      if (ms <= 0) { setPending(null); act(pending.action); } else setLeft(ms);
-    }, 200);
-    return () => clearInterval(t);
-  }, [pending, act]);
-  const ask: Ask = (label, action) => { setLeft(CONFIRM_MS); setPending({ label, action, until: Date.now() + CONFIRM_MS }); };
-  return { pending, left, ask, cancel: () => setPending(null), now: () => { if (pending) { setPending(null); act(pending.action); } } };
-}
-
-function Head({ title, hint }: { title: string; hint?: string }) {
-  return (
-    <div>
-      <h2 className="font-display text-[22px] font-black leading-tight">{title}</h2>
-      {hint && <p className="mt-0.5 text-[14px] leading-snug text-ink-2">{hint}</p>}
-    </div>
-  );
+/** one short title per step — no descriptions (designer: "too much text") */
+function Head({ title }: { title: string; hint?: string }) {
+  return <h2 className="font-display text-[20px] font-bold leading-tight text-stock">{title}</h2>;
 }
 
 export function PlayerChip({ p, selected, onClick, me }: { p: PublicPlayer; selected?: boolean; onClick?: () => void; me?: boolean }) {
   return (
     <button type="button" onClick={onClick} aria-pressed={selected}
-      className={`flex min-h-12 items-center gap-2 rounded-full py-1.5 pl-1.5 pr-4 text-left text-[14px] font-bold ${selected ? "bg-jade text-card-ink" : "bg-raise text-ink"}`}>
-      <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-[13px] font-extrabold ${selected ? "bg-card-ink text-jade" : "bg-raise-2"}`}>{p.name.slice(0, 1)}</span>
+      className={`flex min-h-12 items-center gap-2 rounded-xl border-2 py-1.5 pl-1.5 pr-3 text-left text-[14px] font-semibold active:translate-y-px ${selected ? "border-[#f0a32e] bg-[#3a240c] text-[#f3c66b] shadow-[0_0_12px_2px_rgba(240,163,46,.3)]" : "border-brass/35 bg-black/30 text-stock"}`}>
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#2a1a0c] text-[13px] font-bold text-stock ring-1 ring-brass/50">{p.name.slice(0, 1)}</span>
       <span className="truncate">{p.name}{me ? " (you)" : ""}</span>
     </button>
   );
@@ -58,7 +45,7 @@ function RolePicker({ roles, sel, setSel }: { roles: string[]; sel: string[]; se
     <div className="flex flex-wrap gap-2" role="group" aria-label="Name two roles">
       {roles.map((r) => (
         <button key={r} type="button" onClick={() => toggle(r)} aria-pressed={sel.includes(r)}
-          className={`min-h-11 rounded-full px-4 text-[14px] font-bold ${sel.includes(r) ? "bg-crimson text-ink" : "bg-raise text-ink"}`}>{r}</button>
+          className={`min-h-11 rounded-full border-2 px-4 text-[14px] font-semibold ${sel.includes(r) ? "border-crimson bg-crimson-deep text-ink" : "border-brass/35 bg-black/30 text-stock"}`}>{r}</button>
       ))}
     </div>
   );
@@ -66,20 +53,7 @@ function RolePicker({ roles, sel, setSel }: { roles: string[]; sel: string[]; se
 
 /** The tray: your move when it needs your cards or a pick. Debate and voting happen on the centre stage. */
 export function Decide({ v, act }: { v: PlayerView; act: (a: Action) => void }) {
-  const c = useTimedConfirm(act);
-  if (c.pending) {
-    const left = Math.ceil(c.left / 1000);
-    return (
-      <div className="flex flex-col gap-3" role="status">
-        <Head title={c.pending.label} hint={`Goes to the table in ${left}s.`} />
-        <div className="h-1.5 overflow-hidden rounded-full bg-raise"><div className="h-full bg-jade transition-[width] duration-200" style={{ width: `${(c.left / CONFIRM_MS) * 100}%` }} /></div>
-        <div className="grid grid-cols-2 gap-2">
-          <Btn voice="ghost" onClick={c.cancel}>Cancel</Btn>
-          <Btn voice="relic" onClick={c.now}>Now</Btn>
-        </div>
-      </div>
-    );
-  }
+  const c: { ask: Ask } = { ask: (_label, action) => act(action) };
   const d = v.decision!;
   const living = v.players.filter((p) => p.alive);
   const others = living.filter((p) => p.seat !== v.me.seat);
@@ -103,23 +77,23 @@ function OneOf({ title, hint, options, go, skip, act }: { title: string; hint: s
   return (
     <div className="flex flex-col gap-3">
       <Head title={title} hint={hint} />
-      <Pickers options={options} sel={sel} onPick={setSel} />
-      <div className="grid grid-cols-2 gap-2">
-        {skip ? <Btn voice="ghost" onClick={() => act(skip.action)}>{skip.label}</Btn> : <span />}
-        <Btn voice="vote" disabled={sel === null} onClick={() => go(sel!)}>Confirm</Btn>
-      </div>
+      <Pickers options={options} sel={sel} onPick={(x) => { setSel(x); go(x); }} />
+      {skip && <Btn voice="ghost" onClick={() => act(skip.action)}>{skip.label}</Btn>}
     </div>
   );
 }
 
 function Swap({ options, count, ask, name }: { options: PublicPlayer[]; count: number; ask: Ask; name: (s: number) => string }) {
   const [sel, setSel] = useState<number[]>([]);
-  const toggle = (s: number) => setSel((x) => (x.includes(s) ? x.filter((y) => y !== s) : x.length < count ? [...x, s] : x));
+  const toggle = (s: number) => {
+    const next = sel.includes(s) ? sel.filter((y) => y !== s) : sel.length < count ? [...sel, s] : sel;
+    setSel(next);
+    if (next.length === count) ask(`Shuffle ${next.map(name).join(", ")}`, { type: "dal_badal", seats: next });
+  };
   return (
     <div className="flex flex-col gap-3">
-      <Head title={`Dal Badal — shuffle ${count} roles`} hint={`Pick ${count} players. Their role cards are shuffled face down and each picks one back. They see their new role in secret; the table sees only who was in it.`} />
+      <Head title={`Dal Badal — pick ${count}`} hint={`Pick ${count} players. Their role cards are shuffled face down and each picks one back. They see their new role in secret; the table sees only who was in it.`} />
       <div className="grid grid-cols-2 gap-2">{options.map((p) => <PlayerChip key={p.seat} p={p} selected={sel.includes(p.seat)} onClick={() => toggle(p.seat)} />)}</div>
-      <Btn voice="lethal" disabled={sel.length !== count} onClick={() => ask(`Shuffle ${sel.map(name).join(", ")}`, { type: "dal_badal", seats: sel })}>Shuffle</Btn>
     </div>
   );
 }
@@ -142,16 +116,13 @@ function DalPick({ count, act }: { count: number; act: (a: Action) => void }) {
 function Shot({ v, options, ask, act, name }: { v: PlayerView; options: PublicPlayer[]; ask: Ask; act: (a: Action) => void; name: (s: number) => string }) {
   const [target, setTarget] = useState<number | null>(null);
   const [roles, setRoles] = useState<string[]>([]);
+  const fire = (t: number | null, r: string[]) => { if (t !== null && r.length === 2) ask(`Shoot ${name(t)}`, { type: "shot", target: t, roles: r as [string, string] }); };
   return (
     <div className="flex flex-col gap-3">
-      <Head title="Your last shot" hint="Point at one player, name two roles. Either is theirs: they're out with you." />
-      <Pickers options={options} sel={target} onPick={setTarget} />
-      <RolePicker roles={v.rolesInPlay} sel={roles} setSel={setRoles} />
-      <div className="grid grid-cols-2 gap-2">
-        <Btn voice="ghost" onClick={() => act({ type: "shot", target: null })}>No shot</Btn>
-        <Btn voice="lethal" disabled={target === null || roles.length !== 2}
-          onClick={() => ask(`Shoot ${name(target!)}: ${roles.join(" or ")}`, { type: "shot", target, roles: roles as [string, string] })}>Shoot</Btn>
-      </div>
+      <Head title="Last shot — who, and 2 roles" hint="Point at one player, name two roles. Either is theirs: they're out with you." />
+      <Pickers options={options} sel={target} onPick={(t) => { setTarget(t); fire(t, roles); }} />
+      <RolePicker roles={v.rolesInPlay} sel={roles} setSel={(r) => { setRoles(r); fire(target, r); }} />
+      <Btn voice="ghost" onClick={() => act({ type: "shot", target: null })}>No shot</Btn>
     </div>
   );
 }
@@ -205,14 +176,9 @@ function Turn({ v, playable, passSize, act, ask }: { v: PlayerView; playable: Ac
   const hand = v.me.hand;
   const pairIdx = useMemo(() => (!card || card === "NONE" ? [] : hand.map((c, i) => (c === card ? i : -1)).filter((i) => i >= 0).slice(0, 2)), [card, hand]);
   const reset = () => { setCard(null); setPass([]); setTarget(null); setRoles([]); };
-  const togglePass = (i: number) => setPass((p) => (p.includes(i) ? p.filter((x) => x !== i) : p.length < passSize ? [...p, i] : p));
   const others = v.players.filter((p) => p.alive && p.seat !== v.me.seat);
   const targets = card === "MAYA_JAAL" ? v.players.filter((p) => !p.alive) : card === "HERA_PHERI" ? others.filter((p) => p.handSize > 0) : others;
   const needsTarget = card && card !== "NONE" && TARGETED.includes(card);
-  const ready = card && pass.length === passSize && (!needsTarget || target !== null) && (card !== "TEER_KAMAN" || roles.length === 2);
-  const name = (s: number) => v.players[s]?.name ?? "?";
-  const living = v.players.filter((p) => p.alive).map((p) => p.seat);
-  const next = name(living[(living.indexOf(v.me.seat) + 1) % living.length]);
   /** the cards left once this pair is out — when exactly passSize remain, they go on by themselves */
   const restAfter = (c: ActionCard) => {
     const pair = hand.map((h, i) => (h === c ? i : -1)).filter((i) => i >= 0).slice(0, 2);
@@ -225,7 +191,7 @@ function Turn({ v, playable, passSize, act, ask }: { v: PlayerView; playable: Ac
     // Bhukamp splits first: nothing is passed when it is declared — the split screen comes next
     if (c === "BATWARA") { ask(`Declaring ${CARD[c].name} — then everyone splits, you too`, { type: "play", card: c, pass: [] }); return; }
     if (rest.length === passSize && !TARGETED.includes(c)) {
-      ask(`Declaring ${CARD[c].name} · ${rest.map((i) => CARD[hand[i]].name).join(", ")} go to ${next}`, { type: "play", card: c, pass: rest.map((i) => hand[i]) });
+      ask(CARD[c].name, { type: "play", card: c, pass: rest.map((i) => hand[i]) });
       return;
     }
     setCard(c);
@@ -253,33 +219,42 @@ function Turn({ v, playable, passSize, act, ask }: { v: PlayerView; playable: Ac
             {playable.length ? `Or pass ${passSize}` : `Pass ${passSize} cards`}
           </button>
         </div>
-        {!playable.length && <p className="text-center text-[12px] text-stock/60">No pair to play — tap a card to read it.</p>}
         {blocked.map((c) => <p key={c} className="text-center text-[12px] text-stock/60">{CARD[c].name} ×2 — {whyNot(v, c, hand, passSize)}</p>)}
       </div>
     );
   }
   const playing = card !== "NONE";
-  const label = !playing ? "" : `${CARD[card].name}${target !== null ? ` on ${name(target)}` : ""}${card === "TEER_KAMAN" && roles.length === 2 ? `: ${roles.join(" or ")}` : ""}${auto ? ` · ${pass.map((i) => CARD[hand[i]].name).join(", ")} go to ${next}` : ""}`;
+  /** play the move the moment it is complete */
+  const fire = (p: number[], t: number | null, r: string[]) => {
+    if (!card || p.length !== passSize) return;
+    if (card === "NONE") { act({ type: "pass", pass: p.map((i) => hand[i]) }); reset(); return; }
+    if (needsTarget && t === null) return;
+    if (card === "TEER_KAMAN" && r.length !== 2) return;
+    ask(card, { type: "play", card, pass: p.map((i) => hand[i]), target: t ?? undefined, roles: card === "TEER_KAMAN" ? (r as [string, string]) : undefined });
+    reset();
+  };
+  const ASK: Partial<Record<ActionCard, string>> = {
+    TALASHI: "Search who?", KUNDLI: "Read whose role?", HERA_PHERI: "Steal from who?", MAYA_JAAL: "Bring back who?", TEER_KAMAN: "Shoot who? Name 2 roles",
+  };
+  const title = !playing ? `Pick ${passSize} to pass` : !auto ? `Pick ${passSize} to pass${needsTarget ? `, then ${ASK[card]?.toLowerCase()}` : ""}` : ASK[card] ?? CARD[card].name;
   return (
     <div className="flex flex-col gap-3">
-      <Head title={playing ? `Declare ${CARD[card].name}` : `Pass ${passSize} cards`}
-        hint={playing
-          ? `${auto ? `Your other ${passSize} cards go face down to ${next} as you declare.` : `Choose ${passSize} cards to pass face down to ${next} — a Stone only if you must.`} ${CARD[card].text}`
-          : `Face down to ${next}. A Stone may go — whoever is next picks it up.`} />
-      <div className="pt-2">
+      <div className="flex items-center justify-between gap-3">
+        <Head title={title} />
+        <button type="button" onClick={reset} className="min-h-10 shrink-0 text-[13px] text-stock/60 underline">Back</button>
+      </div>
+      {!auto && (
         <HandRow cards={hand} dim={pairIdx} selected={pass}
           labels={Object.fromEntries([...pairIdx.map((i) => [i, "PLAY"]), ...pass.map((i) => [i, "PASS"])])}
-          onTap={auto ? undefined : (i) => { if (!pairIdx.includes(i)) togglePass(i); }} />
-      </div>
-      {!auto && <p className="text-[13px] text-ink-2">{pass.length} of {passSize} chosen to pass</p>}
-      {needsTarget && <Pickers options={targets} sel={target} onPick={setTarget} />}
-      {card === "TEER_KAMAN" && <RolePicker roles={v.rolesInPlay} sel={roles} setSel={setRoles} />}
-      <div className="grid grid-cols-2 gap-2">
-        <Btn voice="ghost" onClick={reset}>Back</Btn>
-        {playing
-          ? <Btn voice={CARD[card].voice} disabled={!ready} onClick={() => { ask(`Declaring ${label}`, { type: "play", card, pass: pass.map((i) => hand[i]), target: target ?? undefined, roles: card === "TEER_KAMAN" ? (roles as [string, string]) : undefined }); reset(); }}>Declare</Btn>
-          : <Btn voice="pass" disabled={!ready} onClick={() => { act({ type: "pass", pass: pass.map((i) => hand[i]) }); reset(); }}>Pass</Btn>}
-      </div>
+          onTap={(i) => {
+            if (pairIdx.includes(i)) return;
+            const next = pass.includes(i) ? pass.filter((x) => x !== i) : pass.length < passSize ? [...pass, i] : pass;
+            setPass(next);
+            fire(next, target, roles);
+          }} />
+      )}
+      {needsTarget && <Pickers options={targets} sel={target} onPick={(t) => { setTarget(t); fire(pass, t, roles); }} />}
+      {card === "TEER_KAMAN" && <RolePicker roles={v.rolesInPlay} sel={roles} setSel={(r) => { setRoles(r); fire(pass, target, r); }} />}
     </div>
   );
 }

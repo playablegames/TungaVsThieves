@@ -39,7 +39,7 @@ export default function Game({ code }: { code: string }) {
     return (
       <Centered>
         <p>You aren&rsquo;t at table <b>{code}</b> on this phone.</p>
-        <Link href={`/?code=${code}`} className="mt-4 inline-flex min-h-12 items-center rounded-full bg-marigold px-6 font-extrabold uppercase tracking-wide text-card-ink">Join this table</Link>
+        <Link href={`/?code=${code}`} className="mt-5 inline-flex min-h-12 items-center rounded-full border-2 border-brass/80 bg-[linear-gradient(180deg,var(--color-rust)_0%,var(--color-rust-deep)_100%)] px-6 font-[family-name:var(--font-engraved)] font-bold uppercase tracking-[0.1em] text-stock">Join this table</Link>
       </Centered>
     );
   if (!g.state) return <Centered>{g.error ?? "Connecting…"}</Centered>;
@@ -47,7 +47,7 @@ export default function Game({ code }: { code: string }) {
   return (
     <main className={`mx-auto flex h-dvh w-full max-w-md flex-col overflow-y-auto ${s.status === "lobby" ? "landscape:max-w-5xl" : ""}`}>
       {s.you.away && s.status === "playing" && (
-        <button onClick={g.reclaim} className="m-3 mb-0 rounded-xl bg-marigold p-3 text-left font-bold text-card-ink">
+        <button onClick={g.reclaim} className="m-3 mb-0 rounded-xl border-2 border-brass/80 bg-[#3a240c] p-3 text-left font-bold text-[#f3c66b]">
           A stand-in is playing safe for you. Tap — I&rsquo;m back.
         </button>
       )}
@@ -64,7 +64,7 @@ export default function Game({ code }: { code: string }) {
 }
 
 function Centered({ children }: { children: React.ReactNode }) {
-  return <main className="mx-auto grid min-h-dvh max-w-md place-items-center p-6 text-center text-ink-2"><div>{children}</div></main>;
+  return <main className="mx-auto grid min-h-dvh max-w-md place-items-center p-6 text-center font-display text-[17px] text-stock/80"><div>{children}</div></main>;
 }
 
 // ---------------------------------------------------------------- lobby
@@ -301,7 +301,6 @@ function Table({ s, v, act, now, extend, code, token, voice, messages }: {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div aria-hidden className="fixed inset-0 -z-10 bg-[radial-gradient(80%_45%_at_50%_32%,var(--color-ember-2)_0%,var(--color-ember)_60%,#120903_100%)]" />
-      <Stage stage={stage} skip={stage.skip} names={v.players.map((p) => p.name)} />
 
       <header className="flex items-center gap-2 px-3 pt-2">
         <button type="button" onClick={() => setMenu(true)} aria-label="Menu" className="grid h-11 w-11 place-items-center text-stock">
@@ -315,10 +314,12 @@ function Table({ s, v, act, now, extend, code, token, voice, messages }: {
         <TimerRing deadline={s.deadline} now={now} size={52} brass />
       </header>
 
-      <Ring v={v} voice={voice} talking={bots.current?.seat ?? null} pick={v.decision?.kind === "vote" ? v.decision.mine ?? null : null} tally={live ?? voteShown?.tally}
+      <Ring v={v} voice={voice} talking={bots.current?.seat ?? null} actor={headline?.actor} target={headline?.target} pick={v.decision?.kind === "vote" ? v.decision.mine ?? null : null} tally={live ?? voteShown?.tally}
 >
-        <Centre v={v} last={headline} lastVote={voteShown} live={live} ticker={ticker} compact={Boolean(myMove && myMove !== "vote" && myMove !== "debate")} living={living.length} extend={extend}
-          ready={() => act({ type: "ready" })} />
+        {stage.current?.big
+          ? <Stage stage={stage} skip={stage.skip} names={v.players.map((p) => p.name)} inline small={v.players.length > 8} />
+          : <Centre v={v} last={headline} lastVote={voteShown} live={live} ticker={ticker} compact={Boolean(myMove && myMove !== "vote" && myMove !== "debate")} living={living.length} extend={extend}
+          ready={() => act({ type: "ready" })} />}
       </Ring>
       <div className="mx-3 flex min-h-11 items-center" aria-live="polite">
         {bots.current ? (
@@ -365,8 +366,8 @@ function RolePeek({ v }: { v: PlayerView }) {
 }
 
 /** Seats on an oval in turn order, you at the bottom, a thin brass line joining them. */
-function Ring({ v, voice, talking, pick, tally, onPick, children }: {
-  v: PlayerView; voice: VoiceCtl; talking: number | null; pick: number | null; tally?: Record<string, number>; onPick?: (seat: number) => void; children: React.ReactNode;
+function Ring({ v, voice, talking, actor, target, pick, tally, onPick, children }: {
+  v: PlayerView; voice: VoiceCtl; talking: number | null; actor?: number; target?: number; pick: number | null; tally?: Record<string, number>; onPick?: (seat: number) => void; children: React.ReactNode;
 }) {
   const n = v.players.length;
   const voteOpen = v.phase.endsWith("_vote");
@@ -383,7 +384,7 @@ function Ring({ v, voice, talking, pick, tally, onPick, children }: {
         return (
           <div key={p.seat} className="absolute z-10 -translate-x-1/2 -translate-y-1/2"
             style={{ left: `${50 + 41 * Math.cos(angle)}%`, top: `${50 + 42 * Math.sin(angle)}%` }}>
-            <Seat p={p} me={me} size={size} initials={ini[p.seat]} got={tally?.[p.seat]}
+            <Seat p={p} me={me} size={size} initials={ini[p.seat]} got={tally?.[p.seat]} tag={p.seat === actor ? "played" : p.seat === target ? "target" : undefined}
               spot={!voteOpen && v.waitingOn.includes(p.seat)}
               voted={voteOpen && p.alive && !v.waitingOn.includes(p.seat)}
               picked={pick === p.seat}
@@ -394,7 +395,7 @@ function Ring({ v, voice, talking, pick, tally, onPick, children }: {
           </div>
         );
       })}
-      <div className="absolute left-1/2 top-1/2 w-[54%] max-w-[240px] -translate-x-1/2 -translate-y-1/2">{children}</div>
+      <div className="absolute left-1/2 top-1/2 max-h-[50%] w-[54%] max-w-[240px] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl [scrollbar-width:none]">{children}</div>
     </section>
   );
 }
@@ -406,18 +407,20 @@ const SEAT: Record<SeatSize, { disc: string; tag: string; w: string }> = {
   sm: { disc: "h-9 w-9 text-[14px]", tag: "px-1.5 py-px text-[10px] max-w-[60px]", w: "w-[60px]" },
 };
 
-function Seat({ p, me, size, initials, got, spot, voted, picked, speaking, micOff, hushed, onTap }: {
-  p: PublicPlayer; me: boolean; size: SeatSize; initials: string; got?: number; spot: boolean; voted: boolean; picked: boolean;
+function Seat({ p, me, size, initials, got, tag, spot, voted, picked, speaking, micOff, hushed, onTap }: {
+  p: PublicPlayer; me: boolean; size: SeatSize; initials: string; got?: number; tag?: "played" | "target"; spot: boolean; voted: boolean; picked: boolean;
   speaking: boolean; micOff: boolean; hushed: boolean; onTap?: () => void;
 }) {
   const z = SEAT[size];
   const label = `${p.name}${me ? " (you)" : ""}${got ? `, got ${got} vote${got === 1 ? "" : "s"}` : ""}: ${p.handSize} cards, ${p.votes} vote${p.votes === 1 ? "" : "s"}${p.alive ? "" : `, out — was ${p.revealedRole}`}${spot ? ", their move" : ""}${speaking ? ", talking" : ""}${voted ? ", has voted" : ""}`;
   return (
     <div className={`relative flex flex-col items-center text-center ${z.w} ${p.alive ? "" : "opacity-45 grayscale"}`}>
+      {/* the play in the centre panel, on the ring: who played it, and at whom (12-player playtest: "who did what to whom") */}
+      {tag && <span className={`absolute -top-3.5 z-20 rounded-full px-1.5 text-[9px] font-black uppercase tracking-wide ${tag === "played" ? "bg-[#f0a32e] text-card-ink" : "bg-crimson text-ink"}`}>{tag}</span>}
       <button type="button" disabled={!onTap} onClick={onTap} aria-label={label} aria-pressed={onTap ? picked : undefined}
         className={`relative grid select-none place-items-center rounded-full font-medium text-card-ink ${z.disc}
           ${me ? "outline-[3px] outline-offset-2 outline-jade" : ""} ${spot ? "outline-[3px] outline-offset-[3px] outline-[#f0a32e] shadow-[0_0_18px_4px_rgba(240,163,46,.45)]" : ""}
-          ${speaking ? "speaking" : ""} ${picked ? "ring-4 ring-jade" : ""}`}
+          ${speaking ? "speaking" : ""} ${picked ? "ring-4 ring-jade" : ""} ${tag === "target" ? "ring-[3px] ring-crimson" : ""}`}
         style={{ background: SEAT_COLOURS[p.seat % SEAT_COLOURS.length] }}>
         {p.alive ? initials : "✕"}
         <span className="absolute -bottom-1 -right-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-ember px-1 text-[10px] font-bold tabular-nums text-stock ring-1 ring-brass/60" aria-hidden>{p.handSize}</span>
@@ -442,7 +445,7 @@ function Ballot({ v, mine, live, act }: { v: PlayerView; mine: number | null | u
   const living = v.players.filter((p) => p.alive);
   const cast = (target: number | null) => { if (target !== mine) act({ type: "vote", target }); };
   return (
-    <section className="sticky bottom-0 z-20 flex flex-col gap-2 bg-[linear-gradient(180deg,transparent_0%,var(--color-ember)_12%)] px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3">
+    <section className="sticky bottom-0 z-20 flex flex-col gap-2 rounded-t-3xl border-t border-brass/30 bg-ember px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-14px_30px_-6px_rgba(0,0,0,.75)]">
       <h2 className="text-center font-display text-[24px] font-bold leading-tight text-stock">Who goes out?</h2>
       <p className="-mt-1 text-center text-[12px] text-stock/60">{mine === undefined ? "Tap a player to vote." : "Tap another player to change your vote."}</p>
       <ul className="grid max-h-[38dvh] grid-cols-3 gap-2 overflow-y-auto pt-2" role="radiogroup" aria-label="Your vote">
@@ -541,9 +544,14 @@ function Centre({ v, last, lastVote, live, ticker, compact, living, extend, read
               {/* designer's mockup 2026-10-07: who played · the card in gold ×2 · the pair · what it did · what follows */}
               <p className="font-display text-[14px] leading-tight text-stock/75">{name(last.actor)} played</p>
               <p className="mt-0.5 font-display text-[clamp(18px,5.5vw,24px)] font-bold uppercase leading-none tracking-wide text-[#f3c66b]">{CARD[last.card].name} <span className="text-[0.75em]">×2</span></p>
-              <div className="mt-2"><PlayedPair c={last.card} /></div>
+              {v.players.length <= 8 && <div className="mt-2"><PlayedPair c={last.card} /></div>}
               <Divider />
-              <p className="font-display text-[14px] leading-snug text-stock/90">{last.title}{last.cards?.length ? `: ${last.cards.map((c) => CARD[c].name).join(", ")}` : ""}</p>
+              <p className="font-display text-[14px] leading-snug text-stock/90">{last.title}</p>
+              {last.cards && last.cards.length > 0 && (
+                <ul className="mt-1.5 flex flex-wrap justify-center gap-1">
+                  {last.cards.map((c, i) => <li key={i} className="flex items-center gap-1 rounded-full border border-brass/40 bg-black/30 py-0.5 pl-0.5 pr-2 text-[11px] text-stock"><CardIcon c={c} className="w-4" />{CARD[c].name}</li>)}
+                </ul>
+              )}
             </>
           ) : <p className="font-display text-[17px] font-bold leading-snug text-stock">{last.title}</p>}
           {lastVote?.tally && (last.type === "vote_result" || last.n > lastVote.n) && <Tally v={v} tally={lastVote.tally} ballots={lastVote.ballots ?? {}} />}
@@ -659,7 +667,7 @@ function Tray({ v, act, live, onClaim }: { v: PlayerView; act: (a: Action) => vo
   if (d?.kind === "vote") return <Ballot v={v} mine={d.mine} live={live ?? {}} act={act} />;
   const inTray = d && d.kind !== "debate";
   return (
-    <section className="sticky bottom-0 z-20 flex flex-col gap-2 bg-[linear-gradient(180deg,transparent_0%,var(--color-ember)_18%)] px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3">
+    <section className="sticky bottom-0 z-20 flex flex-col gap-2 rounded-t-3xl border-t border-brass/30 bg-ember px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-14px_30px_-6px_rgba(0,0,0,.75)]">
       <div className="flex items-center gap-3" aria-hidden>
         <span className="h-px flex-1 bg-brass/40" /><Ornament /><span className="h-px flex-1 bg-brass/40" />
       </div>
@@ -813,8 +821,8 @@ function MicButton({ voice }: { voice: VoiceCtl }) {
 /** Voice is on by default — this only shows when the browser needs a tap, or the mic was refused. */
 function VoiceBanner({ voice }: { voice: VoiceCtl }) {
   if (voice.status === "needs-tap")
-    return <button onClick={voice.unlock} className="m-3 mb-0 rounded-xl bg-jade p-3 text-left font-bold text-card-ink">Tap to hear the table 🔊</button>;
+    return <button onClick={voice.unlock} className="m-3 mb-0 rounded-xl border-2 border-jade bg-jade-deep/60 p-3 text-left font-bold text-jade-soft">Tap to hear the table 🔊</button>;
   if (voice.micBlocked && voice.status === "on")
-    return <p className="m-3 mb-0 rounded-xl bg-raise p-3 text-[13px] text-ink-2">Your mic is blocked, so you&rsquo;re listening only. Allow the microphone for this site, then tap the mic button.</p>;
+    return <p className="m-3 mb-0 rounded-xl border border-brass/40 bg-black/30 p-3 text-[13px] text-stock/75">Mic blocked — you&rsquo;re listening only. Allow the microphone, then tap the mic.</p>;
   return null;
 }

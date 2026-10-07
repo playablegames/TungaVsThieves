@@ -10,10 +10,11 @@ const jakarta = Plus_Jakarta_Sans({ variable: "--font-jakarta", subsets: ["latin
 
 export const metadata: Metadata = {
   title: "Tunga vs Thieves",
-  description: "Two Serpent Stones, hidden roles — play Tunga vs Thieves on your phone with your group.",
+  description: "Two ancient Stones, hidden thieves — play Tunga vs Thieves on your phones with your group, voice built in.",
+  openGraph: { title: "Tunga vs Thieves", description: "Two ancient Stones are hidden among the players. Find the thieves before they walk off with one.", type: "website" },
 };
 
-export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: "#11131c" };
+export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: "#1f1007" };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (

@@ -41,7 +41,7 @@
 
 html, body { overflow-x: clip; }
 body {
-  background: radial-gradient(130% 70% at 50% 0%, var(--color-paper-2) 0%, var(--color-paper) 70%) fixed;
+  background: radial-gradient(90% 55% at 50% 30%, var(--color-ember-2) 0%, var(--color-ember) 65%, #120903 100%) fixed;
   color: var(--color-ink);
   font-family: var(--font-sans);
 }

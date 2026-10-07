@@ -40,8 +40,9 @@ describe("Table Stage beats", () => {
       if (b.private) continue;
       (b.big ? big : small).add(b.type);
     }
-    for (const t of ["faisla", "vote_result", "eliminated", "over"]) expect(big).toContain(t);
-    for (const t of ["teer_kaman", "talashi", "kundli", "hera_pheri", "pass"]) { expect(small).toContain(t); expect(big).not.toContain(t); }
+    // Talashi is big since the 2026-10-07 playtest: the searched hand is laid out for everyone
+    for (const t of ["faisla", "talashi", "vote_result", "eliminated", "over"]) expect(big).toContain(t);
+    for (const t of ["teer_kaman", "kundli", "hera_pheri", "pass"]) { expect(small).toContain(t); expect(big).not.toContain(t); }
   });
 
   it("analytics never become beats; private beats only reach the seats allowed to see them", () => {
