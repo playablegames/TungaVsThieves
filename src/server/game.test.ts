@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { act, addBot, chat, createRoom, debateSeconds, extendDebate, reclaim, removeBot, sweep, getState, joinRoom, startGame, tick, HttpError, INTRO_MS, BOT_DELAY_MS, VOTE_SETTLE_MS, ONLINE_MAX_PLAYERS } from "./game";
+import { act, addBot, chat, createRoom, debateSeconds, extendDebate, reclaim, removeBot, sweep, getState, joinRoom, startGame, tick, HttpError, INTRO_MS, BOT_DELAY_MS, VOTE_SETTLE_MS, ONLINE_MAX_PLAYERS, whisper, exportLog } from "./game";
+import { botVote } from "./botmind";
 import { HOLD_CAP } from "@/lib/beats";
 import { defaultAction, randomAction } from "@/engine/decisions";
 import { waitingOn } from "@/engine/engine";
@@ -251,5 +252,60 @@ describe("online cap (designer 2026-10-07)", () => {
     for (let i = 1; i < ONLINE_MAX_PLAYERS; i++) await addBot(host.code, host.token);
     await err(addBot(host.code, host.token), 409);
     await err(joinRoom(host.code, "Late"), 409);
+  });
+});
+
+describe("whispers (designer 2026-10-07)", () => {
+  it("only the two players ever get what was whispered; everyone sees who to whom; once per round", async () => {
+    const { code, tokens } = await room(5);
+    await startGame(code, tokens[0]);
+    const row = (await memoryStore.get(code))!;
+    const seatOfTok = (t: string) => row.lobby.findIndex((p) => p.token === t);
+    const [a, b, c] = [tokens[0], tokens[1], tokens[2]];
+    await whisper(code, a, { to: seatOfTok(b), kind: "t", text: "Trust me 🙏" });
+    const secret = "Trust me";
+    const forB = await getState(code, b, 0), forC = await getState(code, c, 0), forA = await getState(code, a, 0);
+    expect(JSON.stringify(forB.messages)).toContain(secret);
+    expect(JSON.stringify(forA.messages)).toContain(secret);
+    expect(JSON.stringify(forC.messages)).not.toContain(secret);      // a third player sees only who to whom
+    expect(forC.view!.events.some((e) => e.type === "whisper")).toBe(true);
+    await err(whisper(code, a, { to: seatOfTok(c), kind: "t", text: "again" }), 409); // once per round
+  });
+
+  it("a voice note is private too, size-capped, and the host's log never carries any whisper", async () => {
+    const { code, tokens } = await room(4);
+    await startGame(code, tokens[0]);
+    const row = (await memoryStore.get(code))!;
+    const to = row.lobby.findIndex((p) => p.token === tokens[2]);
+    const audio = "data:audio/mp4;base64," + "A".repeat(2000);
+    await whisper(code, tokens[1], { to, kind: "v", audio });
+    expect(JSON.stringify((await getState(code, tokens[3], 0)).messages)).not.toContain("AAAA");
+    expect(JSON.stringify((await getState(code, tokens[2], 0)).messages)).toContain("AAAA");
+    await err(whisper(code, tokens[3], { to, kind: "v", audio: "data:audio/mp4;base64," + "A".repeat(300_000) }), 400);
+    const r = (await memoryStore.get(code))!;
+    r.state!.phase = { kind: "over", winner: "V", reason: "test" }; r.status = "over";
+    await memoryStore.update({ ...r, version: r.version + 1 }, r.version);
+    expect(JSON.stringify(await exportLog(code, tokens[0]))).not.toContain("AAAA");
+  });
+
+  it("a villager bot acts on a Kundli read whispered to it", async () => {
+    let hits = 0, tries = 0;
+    for (let g = 0; g < 30; g++) {
+      const host = await createRoom("Host");
+      for (let i = 0; i < 5; i++) await addBot(host.code, host.token);
+      await startGame(host.code, host.token);
+      const row = (await memoryStore.get(host.code))!;
+      const s = row.state!;
+      const me = row.lobby.findIndex((p) => !p.bot);
+      const thief = s.players.find((p) => p.side === "T" && p.seat !== me);
+      const bot = s.players.find((p) => p.side === "V" && p.seat !== me);
+      if (!thief || !bot) continue;
+      await whisper(host.code, host.token, { to: bot.seat, kind: "k", about: thief.seat, role: thief.role });
+      const after = (await memoryStore.get(host.code))!.state!;
+      tries++;
+      if (botVote(after, bot.seat, after.seed, () => 0.5) === thief.seat) hits++;
+    }
+    expect(tries).toBeGreaterThan(10);
+    expect(hits / tries).toBeGreaterThan(0.7);
   });
 });

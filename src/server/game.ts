@@ -8,6 +8,7 @@ import { MIN_PLAYERS, ROLE_TABLE, THIEF_ROLES } from "@/engine/setup";
 import { RuleError, type Action, type Card, type GameState } from "@/engine/types";
 import { viewFor, type PlayerView } from "@/engine/view";
 import { holdFor } from "@/lib/beats";
+import { WHISPER_MAX_AUDIO, encodeWhisper, isWhisper, redactWhisper, decodeWhisper, type WhisperBody } from "@/lib/whisper";
 import { ping, store, type ChatMessage, type GameRow, type Timers } from "./store";
 
 export class HttpError extends Error {
@@ -341,7 +342,11 @@ export async function getState(code: string, token: string | null, sinceMsg: num
     view: row.state ? viewFor(row.state, seat) : null,
     deadline: row.deadline,
     serverNow: Date.now(),
-    messages: await store.messages(row.code, sinceMsg),
+    messages: (await store.messages(row.code, sinceMsg)).map((m) => {
+      if (!isWhisper(m.text) || m.seat === seat) return m;
+      const w = decodeWhisper(m.seat, m.text);
+      return w && w.to === seat ? m : { ...m, text: redactWhisper(m.text) };
+    }),
     timers: row.timers,
   };
 }
@@ -425,6 +430,49 @@ export async function debugRig(code: string, token: string | null, body: { hand?
   });
 }
 
+/** A whisper (designer 2026-10-07): a voice note or a quick line to ONE living player, once per round. The table gets a
+ *  public event — "Yh whispered to Shyam" — and only the two of them ever receive what was said. A Kundli read sent
+ *  as a whisper also reaches a bot's mind (a private event to the receiver), so bots act on what they're told. */
+export async function whisper(code: string, token: string | null, body: { to?: unknown; kind?: unknown; text?: unknown; audio?: unknown; about?: unknown; role?: unknown }) {
+  let stored = "";
+  const next = await play(code, (row) => {
+    const s = row.state;
+    if (!s || s.phase.kind === "over") throw new HttpError(409, "No game in progress");
+    const seat = seatOf(row, token);
+    if (!s.players[seat].alive) throw new HttpError(403, "Eliminated players stay silent");
+    const to = Number(body.to);
+    if (!s.players[to]?.alive || to === seat) throw new HttpError(400, "Whisper to another living player");
+    if (s.events.some((e) => e.type === "whisper" && e.data?.seat === seat && e.data?.round === s.round)) throw new HttpError(409, "One whisper per round");
+    let b: WhisperBody;
+    if (body.kind === "v") {
+      const audio = String(body.audio ?? "");
+      if (!audio.startsWith("data:audio/") || audio.length > WHISPER_MAX_AUDIO) throw new HttpError(400, "That voice note is too long");
+      b = { kind: "v", audio };
+    } else if (body.kind === "k") {
+      const about = Number(body.about), role = String(body.role ?? "");
+      if (!s.players[about] || !s.rolesInPlay.includes(role)) throw new HttpError(400, "Name a player and a role in this game");
+      b = { kind: "k", about, role };
+    } else {
+      const text = String(body.text ?? "").replace(/\s+/g, " ").trim().slice(0, 80);
+      if (!text) throw new HttpError(400, "Say something");
+      b = { kind: "t", text };
+    }
+    const me = s.players[seat].name, them = s.players[to].name;
+    s.events.push({ n: s.events.length, type: "whisper", to: "all", msg: `${me} whispered to ${them}.`, data: { seat, target: to, round: s.round } });
+    if (b.kind === "k") {
+      const side = THIEF_ROLES.includes(b.role) ? "T" : "V";
+      s.events.push({ n: s.events.length, type: "whisper_private", to: [seat, to], msg: `${me} whispers: "I read ${s.players[b.about].name}'s Kundli — ${b.role}."`,
+        data: { seat, target: b.about, role: b.role, side, kind: "kundli", to } });
+    }
+    stored = encodeWhisper(to, b);
+    row.state = s;
+    return row;
+  });
+  const seat = next.lobby.findIndex((p) => p.token === token);
+  await store.addMessage(next.code, { seat, name: next.lobby[seat].name, text: stored, phase: next.state?.phase.kind ?? "playing" });
+  await ping(next.code, next.version);
+}
+
 /** TURN/STUN servers for table voice; seated players only. */
 export async function voiceServers(code: string, token: string | null) {
   seatOf(await load(code), token);
@@ -437,5 +485,5 @@ export async function exportLog(code: string, token: string | null) {
   if (row.hostToken !== token) throw new HttpError(403, "Only the host can download the log");
   if (row.status !== "over") throw new HttpError(409, "Available when the game is over");
   const bots = row.lobby.flatMap((p, seat) => (p.bot ? [seat] : []));
-  return { code: row.code, createdAt: row.createdAt, timers: row.timers, bots, state: row.state, messages: await store.messages(row.code, 0) };
+  return { code: row.code, createdAt: row.createdAt, timers: row.timers, bots, state: row.state, messages: (await store.messages(row.code, 0)).map((m) => (isWhisper(m.text) ? { ...m, text: redactWhisper(m.text) } : m)) };
 }

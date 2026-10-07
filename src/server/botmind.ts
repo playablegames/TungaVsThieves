@@ -112,6 +112,14 @@ export function mindOf(s: GameState, seat: number, seed: number): Mind {
         add(target, saysThief ? pts : -pts / 2, saysThief ? `${name(actor)} ne ${d?.kind === "kundli" ? "Kundli dekh ke" : ""} chor bataya` : null);
         break;
       }
+      case "whisper_private": {
+        if (actor === null || target === null || actor === seat || num(d, "to") !== seat || thief) break;
+        const k = known.get(actor);
+        if (k?.side === "T") break;
+        if (target === seat) { if (d?.side === "T") add(actor, 4, "mujhe jhootha chor bola"); break; }
+        add(target, d?.side === "T" ? 5 : -2.5, d?.side === "T" ? `${name(actor)} ne kaan mein bataya — chor hai` : null);
+        break;
+      }
       case "vote_result":
         ballots = (d?.ballots as Record<string, number | null>) ?? {};
         for (const [voter, t] of Object.entries(ballots)) if (t === seat) { suspected = true; add(Number(voter), 2, "mujhe vote kiya"); }
@@ -269,6 +277,10 @@ export function botTalk(s: GameState, from: number, bots: number[], seed: number
         }
         break;
       }
+      // someone whispered to a bot: it reacts out loud — without giving away what was said
+      case "whisper":
+        if (isBot(target) && living(target) && r() < 0.6) say(target, pick(r, [`${nm(actor)} ne kaan mein kuch kaha… 🤔`, "Psst? Theek hai, samajh gaya.", `Hmm, ${nm(actor)}, dekhte hain.`]));
+        break;
       case "final_vote":
         for (const b of bots.filter(living).sort(() => r() - 0.5).slice(0, 3)) say(b, debateLine(mind(b), true, r));
         break;

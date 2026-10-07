@@ -130,6 +130,8 @@ const SOUNDS = {
   fanfare: (c: Ctx) => { [523, 659, 784, 1047].forEach((f, k) => tone(c, { f, at: k * 0.13, dur: k === 3 ? 0.9 : 0.2, vol: 0.28, type: "triangle" })); dhol(c, 0.52, true); },
   /** you lost — wah wah */
   sting: (c: Ctx) => { [[392, 370], [370, 349], [349, 262]].forEach(([f, f2], k) => tone(c, { f, f2, at: k * 0.32, dur: k === 2 ? 0.9 : 0.3, vol: 0.25, type: "sawtooth" })); },
+  /** a whisper arrives — "shhh" */
+  shh: (c: Ctx) => hiss(c, { dur: 0.7, vol: 0.25, from: 5500, to: 3500, q: 0.6 }),
   /** a claim out loud */
   claim: (c: Ctx) => tone(c, { f: 740, f2: 880, dur: 0.18, vol: 0.2, type: "triangle" }),
 } as const;

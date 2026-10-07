@@ -112,6 +112,10 @@ function rawBeat(e: GameEvent, names: string[]): Beat | null {
       return { ...base, title: `${nm(actor)} hands everything to ${nm(target)}`, cards: (d?.cards as Card[]) ?? [], tone: "neutral", big: true, hold: BIG - 600 };
     case "to_village":
       return { ...base, title: `${nm(actor)}'s cards go to the village`, detail: "The mandatory vote is the village's — nothing is handed to anyone. A Stone here counts for Tunga.", cards: (d?.cards as Card[]) ?? [], tone: "vote", big: true, hold: BIG };
+    case "whisper":
+      return { ...base, title: e.msg, tone: "neutral", big: false, hold: 900 };
+    case "whisper_private":
+      return { ...base, title: e.msg, tone: "relic", big: false, hold: 900 };
     case "claim":
       return { ...base, title: e.msg, tone: d?.side === "T" ? "lethal" : "vote", big: false, hold: 2200 };
     case "timeout":

@@ -39,6 +39,8 @@ export const api = {
     call(`/api/games/${code}/name`, { method: "POST", token, body: JSON.stringify({ index, name }) }),
   claim: (code: string, token: string, body: { kind: "kundli" | "accuse" | "trust"; target: number; role?: string }) =>
     call(`/api/games/${code}/claim`, { method: "POST", token, body: JSON.stringify(body) }),
+  whisper: (code: string, token: string, body: { to: number; kind: "v"; audio: string } | { to: number; kind: "t"; text: string } | { to: number; kind: "k"; about: number; role: string }) =>
+    call(`/api/games/${code}/whisper`, { method: "POST", token, body: JSON.stringify(body) }),
   reclaim: (code: string, token: string) => call(`/api/games/${code}/reclaim`, { method: "POST", token }),
   extend: (code: string, token: string) => call(`/api/games/${code}/extend`, { method: "POST", token }),
   tick: (code: string) => call<{ applied: boolean }>(`/api/games/${code}/tick`, { method: "POST" }),

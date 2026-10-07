@@ -17,6 +17,7 @@ import { HandRow, PlayedPair } from "./Hand";
 import { CardIcon } from "./CardIcon";
 import { Eject, thievesRemaining } from "./Eject";
 import { Confetti, ShareResult } from "./Share";
+import { WhisperBubble, WhisperSheet, whisperedThisRound } from "./Whisper";
 import { buzz, duck, play, setSound, soundOn, unlockOnFirstTap, type Sound } from "@/lib/sfx";
 import { narrate, narratorOn, setNarrator } from "@/lib/narrator";
 import { REACTIONS, ThrowQueue, reactionText, type Throw } from "@/lib/reactions";
@@ -294,7 +295,9 @@ function Table({ s, v, act, now, extend, code, token, voice, messages }: {
   const names = useMemo(() => v.players.map((p) => p.name), [v.players]);
   const root = useRef<HTMLDivElement>(null);
   const [throws] = useState(() => new ThrowQueue());
-  useEffect(() => { throws.feed(messages); }, [throws, messages]);
+  useEffect(() => { throws.feed(messages, v.me.seat); }, [throws, messages, v.me.seat]);
+  const inbox = useSyncExternalStore(throws.subscribe, throws.getInbox, throws.getInbox);
+  const [whisperTo, setWhisperTo] = useState<number | null>(null);
   const flying = useSyncExternalStore(throws.subscribe, throws.getSnapshot, throws.getSnapshot);
   const lastThrow = useRef(0);
   const throwAt = (seat: number, emoji: string) => {
@@ -374,7 +377,8 @@ function Table({ s, v, act, now, extend, code, token, voice, messages }: {
       </header>
 
       <Ring v={v} voice={voice} talking={bots.current?.seat ?? null} actor={headline?.actor} target={headline?.target} pick={v.decision?.kind === "vote" ? v.decision.mine ?? null : null} tally={live ?? voteShown?.tally}
-        flying={flying} onThrow={v.me.alive ? throwAt : undefined}>
+        flying={flying} onThrow={v.me.alive ? throwAt : undefined}
+        onWhisper={v.me.alive && !whisperedThisRound(v) ? setWhisperTo : undefined}>
         {stage.current?.big
           ? <Stage stage={stage} skip={stage.skip} names={v.players.map((p) => p.name)} inline small={v.players.length > 8} />
           : <Centre v={v} last={headline} lastVote={voteShown} live={live} ticker={ticker} compact={Boolean(myMove && myMove !== "vote" && myMove !== "debate")} living={living.length} extend={extend}
@@ -390,6 +394,8 @@ function Table({ s, v, act, now, extend, code, token, voice, messages }: {
         ) : null}
       </div>
       <Tray v={v} act={act} live={live} onClaim={v.me.alive ? () => setSheet("claim") : undefined} />
+      {whisperTo !== null && <WhisperSheet v={v} code={code} token={token} to={whisperTo} onClose={() => setWhisperTo(null)} />}
+      {inbox[0] && <WhisperBubble key={inbox[0].id} w={inbox[0]} names={names} onDone={() => throws.dismiss(inbox[0].id)} />}
       {sheet === "claim" && <Claim v={v} code={code} token={token} onClose={() => setSheet(null)} />}
       {sheet === "history" && <Sheet title="What happened" onClose={() => setSheet(null)}><Story v={v} /></Sheet>}
 
@@ -439,9 +445,9 @@ function RolePeek({ v }: { v: PlayerView }) {
 }
 
 /** Seats on an oval in turn order, you at the bottom, a thin brass line joining them. */
-function Ring({ v, voice, talking, actor, target, pick, tally, flying = [], onThrow, onPick, children }: {
+function Ring({ v, voice, talking, actor, target, pick, tally, flying = [], onThrow, onWhisper, onPick, children }: {
   v: PlayerView; voice: VoiceCtl; talking: number | null; actor?: number; target?: number; pick: number | null; tally?: Record<string, number>;
-  flying?: Throw[]; onThrow?: (seat: number, emoji: string) => void; onPick?: (seat: number) => void; children: React.ReactNode;
+  flying?: Throw[]; onThrow?: (seat: number, emoji: string) => void; onWhisper?: (seat: number) => void; onPick?: (seat: number) => void; children: React.ReactNode;
 }) {
   const n = v.players.length;
   const voteOpen = v.phase.endsWith("_vote");
@@ -488,7 +494,7 @@ function Ring({ v, voice, talking, actor, target, pick, tally, flying = [], onTh
               speaking={me ? voice.speaking : Boolean(peer?.speaking && !peer.hushed) || talking === p.seat}
               micOff={me ? !voice.micOn || voice.micBlocked : Boolean(peer?.muted)}
               hushed={Boolean(peer?.hushed)}
-              onTap={onPick && p.alive ? () => onPick(p.seat) : !me && (onThrow || peer) ? () => setPicker(picker === p.seat ? null : p.seat) : undefined} />
+              onTap={onPick && p.alive ? () => onPick(p.seat) : !me && (onThrow || onWhisper || peer) ? () => setPicker(picker === p.seat ? null : p.seat) : undefined} />
           </div>
         );
       })}
@@ -499,6 +505,10 @@ function Ring({ v, voice, talking, actor, target, pick, tally, flying = [], onTh
           {onThrow && REACTIONS.map((e) => (
             <button key={e} type="button" role="menuitem" onClick={() => { onThrow(picker, e); setPicker(null); }} className="grid h-10 w-10 place-items-center rounded-full text-[22px] active:scale-90">{e}</button>
           ))}
+          {onWhisper && v.players[picker]?.alive && (
+            <button type="button" role="menuitem" aria-label={`Whisper to ${v.players[picker]?.name}`} onClick={() => { onWhisper(picker); setPicker(null); }}
+              className="grid h-10 w-10 place-items-center rounded-full bg-jade-deep/60 text-[20px] ring-1 ring-jade/60">🤫</button>
+          )}
           {peerOf(picker) && (
             <button type="button" role="menuitem" aria-label={peerOf(picker)!.hushed ? "Unmute for me" : "Mute for me"} onClick={() => { voice.hush(picker); setPicker(null); }}
               className="grid h-10 w-10 place-items-center rounded-full text-[20px]">{peerOf(picker)!.hushed ? "🔊" : "🔇"}</button>
@@ -610,7 +620,7 @@ function nextUp(v: PlayerView): string | null {
   return null;
 }
 
-const TICKER = new Set(["pass", "away", "back", "floor_extended", "timeout", "vote_lost", "gift"]);
+const TICKER = new Set(["pass", "away", "back", "floor_extended", "timeout", "vote_lost", "gift", "whisper", "whisper_private"]);
 
 function Centre({ v, last, lastVote, live, ticker, compact, living, extend, ready }: {
   v: PlayerView; last: Beat | null; lastVote: Beat | null; live: Record<string, number> | null; ticker: Beat | null; compact: boolean; living: number;
