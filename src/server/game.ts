@@ -1,10 +1,10 @@
 // Room service: create / join / start / act / tick / view / chat. The engine is the only thing that changes state.
 import { iceServers } from "./turn";
 import { randomBytes, randomInt } from "node:crypto";
-import { apply, start, waitingOn } from "@/engine/engine";
+import { apply, closeVote, start, waitingOn } from "@/engine/engine";
 import { botAction, defaultAction } from "@/engine/decisions";
 import { botTalk, botVote } from "./botmind";
-import { MAX_PLAYERS, MIN_PLAYERS, ROLE_TABLE } from "@/engine/setup";
+import { MIN_PLAYERS, ROLE_TABLE, THIEF_ROLES } from "@/engine/setup";
 import { RuleError, type Action, type GameState } from "@/engine/types";
 import { viewFor, type PlayerView } from "@/engine/view";
 import { holdFor } from "@/lib/beats";
@@ -19,7 +19,15 @@ const EXTEND_SECONDS = 30;
 /** the open floor scales with who is still talking: 45s for a small table, up to the debate cap (90s) at 15+ */
 export const debateSeconds = (living: number, cap: number) => Math.min(cap, Math.max(45, 5 * living + 15));
 /** a bot's turn waits this long AFTER the table has watched the last beat */
-const BOT_DELAY_MS = 1200;
+// playtest 2026-10-07: 1.2s made a table of bots a blur
+export const BOT_DELAY_MS = 3000;
+/** open voting: everyone has voted and nobody has changed their mind for this long — the vote closes */
+export const VOTE_SETTLE_MS = 10_000;
+/** online tables seat at most this many (designer 2026-10-07): the seat ring and phone-to-phone voice are only proven
+ *  this far. The engine plays 4-30; raise this once big tables have their own layout and a voice relay. */
+export const ONLINE_MAX_PLAYERS = 12;
+/** the intro every phone shows when the game starts (RoleReveal.tsx): role 15s, the Stones 10s, the deal 8.4s (DealIntro.tsx) */
+export const INTRO_MS = 34_000;
 const BOT_NAMES = ["Raju", "Shyam", "Babu Rao", "Pappu", "Munna", "Circuit", "Chintu", "Bunty", "Golu", "Tinku",
   "Gabbar", "Basanti", "Mogambo", "Jhumru", "Lallan", "Kallu", "Bholu", "Chhotu", "Guddu", "Sonu",
   "Monu", "Titu", "Bablu", "Pinky", "Dolly", "Rinku", "Mintu", "Sweety", "Lucky", "Happy"];
@@ -107,7 +115,7 @@ export async function joinRoom(code: string, name: unknown) {
   const token = newToken();
   await mutate(code, (row) => {
     if (row.status !== "lobby") throw new HttpError(409, "This game has already started");
-    if (row.lobby.length >= MAX_PLAYERS) throw new HttpError(409, `The table is full (${MAX_PLAYERS})`);
+    if (row.lobby.length >= ONLINE_MAX_PLAYERS) throw new HttpError(409, `The table is full (${ONLINE_MAX_PLAYERS})`);
     if (row.lobby.some((p) => p.name.toLowerCase() === n.toLowerCase())) throw new HttpError(409, "That name is taken at this table");
     row.lobby.push({ name: n, token });
     return row;
@@ -119,10 +127,25 @@ export async function addBot(code: string, token: string | null) {
   await mutate(code, (row) => {
     if (row.hostToken !== token) throw new HttpError(403, "Only the host can add bots");
     if (row.status !== "lobby") throw new HttpError(409, "This game has already started");
-    if (row.lobby.length >= MAX_PLAYERS) throw new HttpError(409, `The table is full (${MAX_PLAYERS})`);
+    if (row.lobby.length >= ONLINE_MAX_PLAYERS) throw new HttpError(409, `The table is full (${ONLINE_MAX_PLAYERS})`);
     const taken = new Set(row.lobby.map((p) => p.name.toLowerCase()));
     const name = BOT_NAMES.map((n) => `${n} 🤖`).find((n) => !taken.has(n.toLowerCase())) ?? `Bot ${row.lobby.length + 1} 🤖`;
     row.lobby.push({ name, token: newToken(), bot: true });
+    return row;
+  });
+}
+
+/** The pencil in the lobby: you can rename yourself, and the host can rename a bot. */
+export async function renameSeat(code: string, token: string | null, index: unknown, name: unknown) {
+  const n = cleanName(name);
+  await mutate(code, (row) => {
+    if (row.status !== "lobby") throw new HttpError(409, "This game has already started");
+    const i = Number(index);
+    const p = row.lobby[i];
+    if (!p) throw new HttpError(400, "No such seat");
+    if (p.token !== token && !(p.bot && row.hostToken === token)) throw new HttpError(403, "You can only rename yourself");
+    if (row.lobby.some((q, j) => j !== i && q.name.toLowerCase() === n.toLowerCase())) throw new HttpError(409, "That name is taken at this table");
+    p.name = n;
     return row;
   });
 }
@@ -145,7 +168,12 @@ export async function startGame(code: string, token: string | null) {
     if (row.lobby.length < MIN_PLAYERS) throw new HttpError(409, `Tunga needs at least ${MIN_PLAYERS} players`);
     // shuffle seats so join order doesn't decide who goes first
     for (let i = row.lobby.length - 1; i > 0; i--) { const j = randomInt(i + 1); [row.lobby[i], row.lobby[j]] = [row.lobby[j], row.lobby[i]]; }
-    return commitState(row, start(row.lobby.map((p) => p.name), randomInt(2 ** 31)));
+    const first = start(row.lobby.map((p) => p.name), randomInt(2 ** 31));
+    first.voteUntilClock = true; // open voting: change your vote until the clock runs out
+    const next = commitState(row, first);
+    // every phone opens on the intro (role, then the Stones), so the first clock waits for it
+    if (next.deadline !== null) next.deadline += INTRO_MS;
+    return next;
   });
 }
 
@@ -176,6 +204,10 @@ function runBots(row: GameRow, s: GameState): GameState {
 
 function commitState(row: GameRow, state: GameState): GameRow {
   const before = row.state?.events.length ?? 0;
+  // open voting: a ballot (or a changed one) never restarts the clock — the vote runs until its deadline
+  const ballotsWereOpen = row.state?.phase.kind === "vote" && !row.state.phase.debate;
+  const prevBallots = row.state?.phase.kind === "vote" ? JSON.stringify(row.state.phase.ballots) : null;
+  const prevDeadline = row.deadline;
   state = runBots(row, state);
   // the Table Stage: no clock runs while every phone is still showing what just happened
   const hold = holdFor(state.events.slice(before), row.lobby.map((p) => p.name));
@@ -186,6 +218,17 @@ function commitState(row: GameRow, state: GameState): GameRow {
     ? Date.now() + BOT_DELAY_MS
     : deadlineFor(state, row.timers);
   row.deadline = base === null ? null : base + hold;
+  if (state.voteUntilClock && state.phase.kind === "vote" && !state.phase.debate && row.deadline !== null) {
+    // the clock the ballot opened with; a ballot (or a changed one) never extends it
+    if (!ballotsWereOpen || state.voteClockEnd === undefined) state.voteClockEnd = row.deadline;
+    row.deadline = state.voteClockEnd;
+    // (designer 2026-10-07) once everyone has voted, it closes after VOTE_SETTLE_MS with no change; a change restarts the wait
+    if (waiting.length === 0) {
+      // the same vote sent again is not a change: it doesn't restart the wait
+      const changed = !ballotsWereOpen || JSON.stringify(state.phase.ballots) !== prevBallots || prevDeadline === null;
+      row.deadline = Math.min(state.voteClockEnd, changed ? Date.now() + VOTE_SETTLE_MS : prevDeadline!);
+    }
+  } else if (state.voteClockEnd !== undefined) delete state.voteClockEnd;
   return row;
 }
 
@@ -240,6 +283,8 @@ export async function tick(code: string) {
         s.events.push({ n: s.events.length, type: "away", to: "all", msg: `${p.name} has gone quiet — a stand-in plays safe for them until they're back.`, data: { seat } });
       }
     }
+    // open voting: time is up — the vote stands as it is now
+    if (s.voteUntilClock && s.phase.kind === "vote" && !s.phase.debate) s = closeVote(s);
     if (!floorClosing && waiting.some((seat) => !isAuto(r, seat))) s.events.push({ n: s.events.length, type: "timeout", to: "all", msg: "Time ran out — the default was played for anyone still deciding." });
     return commitState(r, s);
   });
@@ -276,7 +321,7 @@ export interface ClientState {
   version: number;
   status: GameRow["status"];
   you: { seat: number; name: string; host: boolean; away: boolean };
-  lobby: { names: string[]; bots: boolean[]; roleTable: Record<number, [number, number, number]> } | null;
+  lobby: { names: string[]; bots: boolean[]; roleTable: Record<number, [number, number, number]>; max: number } | null;
   view: PlayerView | null;
   deadline: number | null;
   serverNow: number;
@@ -292,7 +337,7 @@ export async function getState(code: string, token: string | null, sinceMsg: num
     version: row.version,
     status: row.status,
     you: { seat, name: row.lobby[seat].name, host: row.hostToken === token, away: Boolean(row.lobby[seat].away) },
-    lobby: row.status === "lobby" ? { names: row.lobby.map((p) => p.name), bots: row.lobby.map((p) => Boolean(p.bot)), roleTable: ROLE_TABLE } : null,
+    lobby: row.status === "lobby" ? { names: row.lobby.map((p) => p.name), bots: row.lobby.map((p) => Boolean(p.bot)), roleTable: ROLE_TABLE, max: ONLINE_MAX_PLAYERS } : null,
     view: row.state ? viewFor(row.state, seat) : null,
     deadline: row.deadline,
     serverNow: Date.now(),
@@ -310,6 +355,34 @@ export async function chat(code: string, token: string | null, text: unknown) {
   if (s && s.phase.kind !== "over" && !s.players[seat].alive) throw new HttpError(403, "Eliminated players stay silent");
   await store.addMessage(row.code, { seat, name: row.lobby[seat].name, text: t, phase: s ? s.phase.kind : "lobby" });
   await ping(row.code, row.version);
+}
+
+/** A claim out loud — "I read X's Kundli: Lootera", "X is a thief", "X is with the village". A public event the
+ *  whole table (and every bot) reads; it changes nothing in the game itself, and a claim may be a lie. */
+export type ClaimKind = "kundli" | "accuse" | "trust";
+export async function claim(code: string, token: string | null, body: { kind?: unknown; target?: unknown; role?: unknown }) {
+  await play(code, (row) => {
+    const s = row.state;
+    if (!s || s.phase.kind === "over") throw new HttpError(409, "No game in progress");
+    const seat = seatOf(row, token);
+    if (!s.players[seat].alive) throw new HttpError(403, "Eliminated players stay silent");
+    const kind = String(body.kind) as ClaimKind;
+    if (!["kundli", "accuse", "trust"].includes(kind)) throw new HttpError(400, "Unknown claim");
+    const target = Number(body.target);
+    if (!s.players[target]?.alive || target === seat) throw new HttpError(400, "Pick another living player");
+    let role: string | undefined;
+    if (kind === "kundli") {
+      role = String(body.role ?? "");
+      if (!s.rolesInPlay.includes(role)) throw new HttpError(400, "Name a role in this game");
+    }
+    const side = kind === "accuse" ? "T" : kind === "trust" ? "V" : THIEF_ROLES.includes(role!) ? "T" : "V";
+    const me = s.players[seat].name, them = s.players[target].name;
+    const msg = kind === "kundli" ? `${me}: "I read ${them}'s Kundli — ${role}, ${side === "T" ? "a thief" : "a villager"}."`
+      : kind === "accuse" ? `${me}: "${them} is a thief."` : `${me}: "${them} is with the village."`;
+    s.events.push({ n: s.events.length, type: "claim", to: "all", msg, data: { seat, kind, target, role: role ?? null, side } });
+    row.state = s;
+    return row;
+  });
 }
 
 /** TURN/STUN servers for table voice; seated players only. */

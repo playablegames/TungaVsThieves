@@ -72,7 +72,8 @@ export function mindOf(s: GameState, seat: number, seed: number): Mind {
   };
   const known = new Map<number, { side: Side; how: "kundli" | "swap" }>();
   let mySide: Side | null = null;
-  let swapPartner: number | null = null;
+  // no partner since the 3-way shuffle (2026-10-07): a shuffle tells you only your own new role
+  const swapPartner: number | null = null;
   let suspected = false;
   let ballots: Record<string, number | null> = {};
   for (const e of v.events) {
@@ -83,18 +84,10 @@ export function mindOf(s: GameState, seat: number, seed: number): Mind {
       case "role": mySide = d?.side as Side; break;
       case "kundli_private": known.set(target!, { side: d?.side as Side, how: "kundli" }); break;
       case "dal_badal": {
-        const A = num(d, "a"), B = num(d, "b");
-        if (A === null || B === null) break;
-        // what was known about A now describes B, and the other way round
-        const ka = known.get(A), kb = known.get(B);
-        known.delete(A); known.delete(B);
-        if (ka) known.set(B, ka);
-        if (kb) known.set(A, kb);
-        // part of the swap (this comes before my new "role" line): my partner now holds the role I just had
-        if ((A === seat || B === seat) && mySide) {
-          swapPartner = A === seat ? B : A;
-          known.set(swapPartner, { side: mySide, how: "swap" });
-        }
+        // (2026-10-07) up to 3 roles shuffled and picked back blind: nothing anyone knew about those seats holds now,
+        // and being in the shuffle tells you only your own new role
+        for (const x of (d?.seats as number[]) ?? []) known.delete(x);
+        void swapPartner; void mySide;
         break;
       }
       case "hera_pheri": if (target === seat) add(actor, 2, "mere cards uthaye"); break;
@@ -104,6 +97,21 @@ export function mindOf(s: GameState, seat: number, seed: number): Mind {
         if (target === seat) add(actor, 1, "meri talashi li");
         if (stonesIn(d?.hand) && target !== seat) add(target, thief ? 0.5 : 1.5, "Stone uske haath mein dikha");
         break;
+      // a claim out loud: a villager weighs it by who said it; a thief only cares when it is aimed at itself
+      case "claim": {
+        if (actor === null || target === null || actor === seat) break;
+        const saysThief = d?.side === "T";
+        const k = known.get(actor);
+        if (target === seat) { if (saysThief) add(actor, 4, thief ? "mujh pe ilzaam lagaya" : "mujhe jhootha chor bola"); break; }
+        if (thief) break;
+        const sure = known.get(target);
+        if (sure && sure.side === "V" && saysThief) { add(actor, 3, `${name(target)} ko chor bola, woh gaon wala hai`); break; }
+        if (k?.side === "T") break; // a thief I know is talking: ignore it
+        const strong = k?.side === "V" ? 3 : 1; // a villager I know is believed outright
+        const pts = (d?.kind === "kundli" ? 4 : 2) * strong;
+        add(target, saysThief ? pts : -pts / 2, saysThief ? `${name(actor)} ne ${d?.kind === "kundli" ? "Kundli dekh ke" : ""} chor bataya` : null);
+        break;
+      }
       case "vote_result":
         ballots = (d?.ballots as Record<string, number | null>) ?? {};
         for (const [voter, t] of Object.entries(ballots)) if (t === seat) { suspected = true; add(Number(voter), 2, "mujhe vote kiya"); }
@@ -248,6 +256,19 @@ export function botTalk(s: GameState, from: number, bots: number[], seed: number
         for (const b of talkers) say(b, b === actor ? `Maine Faisla bulaya. ${debateLine(mind(b), false, r)}` : debateLine(mind(b), false, r));
         break;
       }
+      // someone made a claim: the one it is aimed at answers; a villager bot may back a thief claim
+      case "claim": {
+        const saysThief = d?.side === "T";
+        if (isBot(target) && living(target) && saysThief) {
+          say(target, side(target) === "V"
+            ? pick(r, ["Jhooth! Main gaon wala hoon.", `Galat, ${nm(actor)}. Main chor nahi hoon.`])
+            : pick(r, [`${nm(actor)} jhooth bol raha hai — usi pe nazar rakho!`, "Mujhe fasaya ja raha hai."]));
+        } else if (saysThief && r() < 0.6) {
+          const b = someBot([actor, target]);
+          if (b !== null && side(b) === "V") say(b, d?.kind === "kundli" ? `Kundli ki baat hai — ${nm(target)}, ab bolo?` : `Hmm, ${nm(target)} pe mujhe bhi shak hai.`);
+        }
+        break;
+      }
       case "final_vote":
         for (const b of bots.filter(living).sort(() => r() - 0.5).slice(0, 3)) say(b, debateLine(mind(b), true, r));
         break;
@@ -320,22 +341,10 @@ export function botTalk(s: GameState, from: number, bots: number[], seed: number
       // S16 dying powers aimed at a bot
       case "gift": if (target !== null) say(target, `Shukriya ${nm(actor)}! Is vote ka sahi istemaal karunga.`); break;
       case "dal_badal": {
-        // both swapped players now know each other's role: the partner holds exactly the role you just had
-        const A = num(d, "a"), B = num(d, "b");
-        for (const [me, other] of [[A, B], [B, A]] as const) {
-          if (!isBot(me) || other === null) continue;
-          const nowThief = side(me) === "T", partnerThief = side(other) === "T"; // partner's side = my old side
-          say(me, nowThief && !partnerThief
-            // now a thief, and the partner (a villager now) knows it: discredit them first
-            ? pick(r, [`${nm(other)} ab mere baare mein jhooth bolega — bharosa mat karna.`, `Dal Badal ho gaya… ${nm(other)} ki baaton mein mat aana.`])
-            : !nowThief && partnerThief
-              // now a villager, and certain the partner is a thief
-              ? pick(r, [`Dal Badal ke baad mujhe pakka pata hai — ${nm(other)} CHOR hai!`, `${nm(other)} ka sach mujhe pata hai ab. Woh chor hai, vote karo!`])
-              : !nowThief
-                // two villagers: vouch for each other
-                ? `${nm(other)} aur main dono gaon wale hain — Dal Badal ne bata diya.`
-                // two thieves: they found each other — give nothing away
-                : pick(r, ["Kuch nahi badla, sab theek hai.", "Chalo, khel jaari rakho."]));
+        // in the shuffle: everyone claims the village, whatever card they drew
+        for (const me of (d?.seats as number[]) ?? []) {
+          if (!isBot(me)) continue;
+          say(me, pick(r, ["Naya role mila… main ab bhi gaon ke saath hoon.", "Kuch nahi badla, sab theek hai.", "Dal Badal se darr nahi lagta. Main gaon wala hoon."]));
         }
         break;
       }

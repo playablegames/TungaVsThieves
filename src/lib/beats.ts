@@ -16,14 +16,19 @@ export interface Beat {
   target?: number;        // seat it hit (arrow to)
   result?: "hit" | "miss" | "out" | "saved" | "none";
   cards?: Card[];         // cards shown face up (Talashi, an eliminated hand)
+  tally?: Record<string, number>;          // vote_result: votes per seat
+  ballots?: Record<string, number | null>; // vote_result: who voted whom (null = abstained)
   tone: Tone;
   big: boolean;           // big beats take the stage; small ones are a ticker line
   hold: number;           // ms the table watches it before the next beat / before any clock runs
   private: boolean;       // only this phone sees it (Kundli truth, what Hera Pheri took)
 }
 
-const BIG = 2600;
-const SMALL = 1100;
+// playtest 2026-10-07 ("the game is running too fast"): every beat held ~50% longer
+const BIG = 3800;
+const SMALL = 1800;
+/** the most the server holds a clock for the beats of one move */
+export const HOLD_CAP = 14000;
 
 /** events the stage never shows: bookkeeping, analytics, and things the end screen tells better */
 const SKIP = new Set(["setup", "role", "pickup", "pickup_private", "conduit", "reshuffle", "batwara_done",
@@ -34,7 +39,7 @@ const num = (d: D | undefined, k: string) => (typeof d?.[k] === "number" ? (d[k]
 
 /** Voice carries the table; the screen only takes over for the climaxes — and for what only you may see.
  * Every other play is one line in the centre ("last declaration"). */
-const STAGE = new Set(["faisla", "ballots_open", "final_vote", "vote_result", "eliminated", "dal_badal", "last_shot", "over"]);
+const STAGE = new Set(["faisla", "ballots_open", "final_vote", "vote_result", "eliminated", "dal_badal", "to_village", "last_shot", "over"]);
 
 /** One event → one beat, or null when the table needn't stop for it. `names[seat]` = player name. */
 export function beatFor(e: GameEvent, names: string[]): Beat | null {
@@ -83,17 +88,17 @@ function rawBeat(e: GameEvent, names: string[]): Beat | null {
     case "floor_extended":
       return { ...base, title: "30 more seconds", detail: "The host keeps the floor open.", tone: "vote", big: false, hold: 1100 };
     case "ballots_open":
-      return { ...base, title: "The floor closes", detail: "Vote now — the seals stay hidden until everyone has voted.", tone: "vote", big: true, hold: 1600 };
+      return { ...base, title: "The floor closes", detail: "Vote now — every vote shows on the table as it is cast.", tone: "vote", big: true, hold: 1600 };
     case "final_vote":
       return { ...base, title: "The last round is over", detail: "Mandatory vote — talk, then vote.", tone: "vote", big: true, hold: BIG };
     case "vote_result": {
       const out = num(d, "out");
-      return { ...base, target: out, title: out === undefined || d?.out === null ? "Nobody is out" : `${nm(out)} is voted out`, detail: out === undefined || d?.out === null ? "The vote was tied or empty." : undefined, result: d?.out === null ? "none" : "out", tone: "vote", big: true, hold: BIG };
+      return { ...base, target: out, title: out === undefined || d?.out === null ? "Nobody is out" : `${nm(out)} is voted out`, detail: out === undefined || d?.out === null ? "The vote was tied or empty." : undefined, result: d?.out === null ? "none" : "out", tally: (d?.tally as Record<string, number>) ?? {}, ballots: (d?.ballots as Record<string, number | null>) ?? {}, tone: "vote", big: true, hold: BIG + 1500 };
     }
     case "eliminated":
       return { ...base, actor: num(d, "killer") ?? undefined, target: actor, title: `${nm(actor)} was ${String(d?.role)}`, detail: d?.side === "T" ? "A thief." : "A villager.", cards: (d?.hand as Card[]) ?? [], result: "out", tone: d?.side === "T" ? "relic" : "lethal", big: true, hold: BIG + 800 };
     case "dal_badal":
-      return { ...base, title: `Dal Badal — ${nm(num(d, "a"))} and ${nm(num(d, "b"))} swap roles`, detail: "They know their new side. You don't.", tone: "lethal", big: true, hold: BIG };
+      return { ...base, title: `Dal Badal — ${((d?.seats as number[]) ?? []).map((x) => nm(x)).join(", ")} shuffle roles`, detail: "Each picks one back, face down. They know their new side. You don't.", tone: "lethal", big: true, hold: BIG };
     case "gift":
       return { ...base, title: target === undefined || d?.target === null ? `${nm(actor)} gives the vote to nobody` : `${nm(actor)} gives a vote to ${nm(target)}`, tone: "vote", big: false, hold: SMALL };
     case "last_shot": {
@@ -104,6 +109,10 @@ function rawBeat(e: GameEvent, names: string[]): Beat | null {
     }
     case "handoff":
       return { ...base, title: `${nm(actor)} hands everything to ${nm(target)}`, cards: (d?.cards as Card[]) ?? [], tone: "neutral", big: true, hold: BIG - 600 };
+    case "to_village":
+      return { ...base, title: `${nm(actor)}'s cards go to the village`, detail: "The mandatory vote is the village's — nothing is handed to anyone. A Stone here counts for Tunga.", cards: (d?.cards as Card[]) ?? [], tone: "vote", big: true, hold: BIG };
+    case "claim":
+      return { ...base, title: e.msg, tone: d?.side === "T" ? "lethal" : "vote", big: false, hold: 2200 };
     case "timeout":
       return { ...base, title: "Time ran out", detail: "The default was played for anyone still deciding.", tone: "neutral", big: false, hold: SMALL };
     case "over":
@@ -124,5 +133,5 @@ export function beatsFor(events: GameEvent[], names: string[]): Beat[] {
 /** How long the table needs to watch these events — the server holds every clock this long (capped). */
 export function holdFor(events: GameEvent[], names: string[]): number {
   const total = beatsFor(events.filter((e) => e.to === "all"), names).reduce((t, b) => t + b.hold, 0);
-  return Math.min(total, 9000);
+  return Math.min(total, HOLD_CAP);
 }

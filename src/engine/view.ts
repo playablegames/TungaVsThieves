@@ -25,6 +25,9 @@ export interface PublicView {
   rolesInPlay: string[];
   winner: Side | null;
   overReason: string | null;
+  /** OPEN VOTING (designer 2026-10-07): while ballots are open, who has voted for whom so far — the tally keeps
+   *  updating on every phone until voting closes. null outside a vote. */
+  ballots: Record<string, number | null> | null;
   /** at the end every hand and role is shown */
   finalReveal: { seat: number; role: string; side: Side; hand: Card[] }[] | null;
   events: GameEvent[];
@@ -62,6 +65,7 @@ export function publicView(s: GameState): PublicView {
     pileSize: s.pile.length,
     deckSize: s.deck.length,
     rolesInPlay: s.rolesInPlay,
+    ballots: s.phase.kind === "vote" && !s.phase.debate ? { ...s.phase.ballots } : null,
     winner: over ? over.winner : null,
     overReason: over ? over.reason : null,
     finalReveal: over ? s.players.map((p) => ({ seat: p.seat, role: p.role, side: p.side, hand: [...p.hand] })) : null,

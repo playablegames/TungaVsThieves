@@ -1,6 +1,6 @@
 // Unit tests written from Tunga_vs_Thieves_Rulebook_v15.md, one block per rule.
 import { describe, expect, it } from "vitest";
-import { apply, canPlay, start, waitingOn } from "../engine";
+import { apply, canPlay, closeVote, start, waitingOn } from "../engine";
 import { ROLE_TABLE, createGame } from "../setup";
 import { RuleError, type Card, type GameState } from "../types";
 import { viewFor } from "../view";
@@ -208,18 +208,36 @@ describe("ELIMINATION — reveal, Dal Badal, dying power, hand-off", () => {
     expect(n.players[0].alive).toBe(false);
     expect(n.players[0].hand).toHaveLength(0); // and he never drew the 2
   });
-  it("DAL BADAL: a thief dying with it swaps two living players' roles; both see the new role; thief count unchanged", () => {
+  it("DAL BADAL (2026-10-07): the dying thief picks 3; their roles are shuffled; each picks one back face down, in seat order", () => {
     const s = rig(6, { sides: ["V", "T", "V", "V", "T", "V"], hands: [[TK, TK, F, K, M], [DB, B], [F], [T], [K], [B]] });
     let n = kill(s, 1);
     expect(n.phase).toMatchObject({ kind: "elim", seat: 1, step: "dal_badal" });
-    const r2 = role(n, 2), r4 = role(n, 4);
-    n = apply(n, 1, { type: "dal_badal", a: 2, b: 4 });
-    expect(role(n, 2)).toBe(r4);
-    expect(n.players[2].side).toBe("T");
-    expect(n.players.filter((p) => p.side === "T")).toHaveLength(2);
-    expect(n.events.filter((e) => e.type === "role" && Array.isArray(e.to) && e.to[0] === 2).length).toBeGreaterThan(1);
+    expect(() => apply(n, 1, { type: "dal_badal", seats: [2, 4] })).toThrow(); // 3 when 3 or more are alive
+    const before = [5, 2, 4].map((x) => role(n, x)).sort();
+    n = apply(n, 1, { type: "dal_badal", seats: [5, 2, 4] });
     expect(n.players[1].hand).not.toContain(DB);
-    void r2;
+    // picking goes round from the seat after the dying thief: 2, then 4, then 5 takes what is left
+    expect(n.phase).toMatchObject({ kind: "elim", seat: 1, step: "dal_pick", pickers: [2, 4, 5] });
+    expect(waitingOn(n)).toEqual([2]);
+    n = apply(n, 2, { type: "dal_pick", index: 2 });
+    expect(waitingOn(n)).toEqual([4]);
+    expect(() => apply(n, 4, { type: "dal_pick", index: 2 })).toThrow(); // only 2 cards are left
+    n = apply(n, 4, { type: "dal_pick", index: 0 });
+    // the last one got the remaining card without being asked; the dying thief goes on to the last shot
+    expect(n.phase).toMatchObject({ kind: "elim", seat: 1, step: "dying" });
+    expect([5, 2, 4].map((x) => role(n, x)).sort()).toEqual(before);
+    expect(n.players.filter((p) => p.side === "T")).toHaveLength(2);
+    // each of the 3 learns the new role in secret; the table only sees who was in it
+    for (const x of [2, 4, 5]) expect(n.events.some((e) => e.type === "role" && Array.isArray(e.to) && e.to[0] === x && e.data?.swapped)).toBe(true);
+    const pub = n.events.find((e) => e.type === "dal_badal")!;
+    expect(pub.to).toBe("all");
+    expect(JSON.stringify(pub)).not.toMatch(/Kisaan|Sarpanch|Baba|Teacher|Police|Chor|Lootera|Mastikhor/);
+  });
+  it("DAL BADAL with only 2 left alive shuffles those 2", () => {
+    const s = rig(4, { sides: ["V", "T", "V", "T"], hands: [[TK, TK, F, K, M], [DB, B], [F], [T]] });
+    let n = kill(s, 1);
+    n = apply(n, 1, { type: "dal_badal", seats: [0, 2, 3].filter((x) => n.players[x].alive).slice(0, Math.min(3, n.players.filter((p) => p.alive).length)) });
+    expect(n.phase).toMatchObject({ step: "dal_pick" });
   });
   it("a villager dying with Dal Badal just hands it on", () => {
     const s = rig(6, { sides: ["T", "V", "V", "V", "T", "V"], hands: [[TK, TK, F, K, M], [DB, B], [F], [T], [K], [B]] });
@@ -257,5 +275,47 @@ describe("THE END — Mandatory Vote, then everyone reveals", () => {
       for (const p of n.players.filter((x) => x.alive)) n = apply(n, p.seat, { type: "vote", target: null });
       expect(n.phase).toMatchObject({ kind: "over", winner });
     }
+  });
+  it("RULE 2026-10-07: whoever the Mandatory Vote puts out hands nothing on — the cards go to the village, Stones count for it", () => {
+    let n = toFinal(start(NAMES(6), 21));
+    const thief = n.players.find((p) => p.side === "T" && p.alive)!;
+    const villager = n.players.find((p) => p.side === "V" && p.alive)!;
+    for (const p of n.players) p.hand = p.hand.filter((c) => !c.startsWith("STONE"));
+    thief.hand.push("STONE_1"); villager.hand.push("STONE_2");
+    for (const p of n.players.filter((x) => x.alive)) n = apply(n, p.seat, { type: "ready" });
+    for (const p of n.players.filter((x) => x.alive)) n = apply(n, p.seat, { type: "vote", target: thief.seat });
+    // the thief's last shot (skip it) — and then no hand-off step at all
+    if (n.phase.kind === "elim" && n.phase.step === "dal_badal") n = apply(n, thief.seat, { type: "dal_badal", seats: n.players.filter((p) => p.alive).slice(0, 3).map((p) => p.seat) });
+    while (n.phase.kind === "elim" && n.phase.step === "dal_pick") n = apply(n, waitingOn(n)[0], { type: "dal_pick", index: 0 });
+    if (n.phase.kind === "elim") n = apply(n, thief.seat, { type: "shot", target: null });
+    expect(n.events.some((e) => e.type === "handoff")).toBe(false);
+    expect(n.events.some((e) => e.type === "to_village")).toBe(true);
+    expect(n.phase).toMatchObject({ kind: "over" });
+    // the thief's Stone went to the village; the other Stone is with a villager — unless Dal Badal moved sides
+    if (!n.events.some((e) => e.type === "dal_badal")) expect(n.phase).toMatchObject({ winner: "V" });
+  });
+});
+
+describe("OPEN VOTING (2026-10-07) — change your vote until the clock runs out", () => {
+  it("a voter may vote again; nothing resolves until closeVote; the last vote counts", () => {
+    let n = start(NAMES(5), 31);
+    n.voteUntilClock = true;
+    // jump straight to an open Faisla ballot
+    n.phase = { kind: "vote", reason: "faisla", caller: 0, voters: [0, 1, 2, 3, 4], ballots: {}, debate: false, ready: [] };
+    n.after = null;
+    for (const x of [0, 1, 2, 3, 4]) n = apply(n, x, { type: "vote", target: 4 });
+    expect(n.phase.kind).toBe("vote"); // everyone voted, still open
+    n = apply(n, 0, { type: "vote", target: 3 });
+    n = apply(n, 1, { type: "vote", target: 3 });
+    n = apply(n, 2, { type: "vote", target: 3 }); // three changed their minds
+    n = closeVote(n);
+    const result = n.events.filter((e) => e.type === "vote_result").at(-1)!;
+    expect(result.data!.out).toBe(3);
+  });
+  it("off (engine default): the vote closes the moment everyone has voted, and nobody can vote twice", () => {
+    let n = start(NAMES(5), 31);
+    n.phase = { kind: "vote", reason: "faisla", caller: 0, voters: [0, 1, 2, 3, 4], ballots: {}, debate: false, ready: [] };
+    n = apply(n, 0, { type: "vote", target: 4 });
+    expect(() => apply(n, 0, { type: "vote", target: 3 })).toThrow();
   });
 });

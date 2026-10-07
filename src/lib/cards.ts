@@ -12,9 +12,16 @@ export const CARD: Record<Card, { name: string; sub: string; text: string; voice
   BATWARA: { name: "Bhukamp", sub: "Split your cards", text: "Everyone — you too — passes 1 card left and 1 right. Then draw 2: they and your last card go to the next player.", voice: "gold" },
   MAYA_JAAL: { name: "Mayajaal", sub: "Turn back time", text: "Revive any one eliminated player. They draw 2 fresh. Draw 2.", voice: "relic" },
   TEER_KAMAN: { name: "Teer Kaman", sub: "Eliminate a player", text: "Pick a player, name two roles. Either is theirs: they're out. Miss: you lose a vote for good. Draw 2.", voice: "lethal" },
-  DAL_BADAL: { name: "Dal Badal", sub: "Villagers pass · Thieves hold", text: "Never played. A thief eliminated holding it swaps two living players' roles.", voice: "neutral" },
+  DAL_BADAL: { name: "Dal Badal", sub: "Villagers pass · Thieves hold", text: "Never played. A thief eliminated holding it picks 3 living players: their role cards are shuffled, and each picks one back face down.", voice: "neutral" },
   STONE_1: { name: "Bhadra Stone", sub: "Villagers need both · Thieves need one", text: "Can be passed, never discarded.", voice: "bhadra" },
   STONE_2: { name: "Tunga Stone", sub: "Villagers need both · Thieves need one", text: "Can be passed, never discarded.", voice: "tunga" },
+};
+
+/** the one line a card tile has room for (Your Cards); long-press shows the full printed text */
+export const SHORT: Record<Card, string> = {
+  FAISLA: "Everyone votes", TALASHI: "Show their cards", KUNDLI: "See a role", HERA_PHERI: "Steal 2 cards",
+  BATWARA: "Split the cards", MAYA_JAAL: "Revive a player", TEER_KAMAN: "Shoot a role", DAL_BADAL: "Never played",
+  STONE_1: "Pass it on", STONE_2: "Pass it on",
 };
 
 export const isStoneCard = (c: Card) => c === "STONE_1" || c === "STONE_2";

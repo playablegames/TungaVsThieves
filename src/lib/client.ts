@@ -35,6 +35,10 @@ export const api = {
   addBot: (code: string, token: string) => call(`/api/games/${code}/bots`, { method: "POST", token }),
   removeBot: (code: string, token: string, index: number) =>
     call(`/api/games/${code}/bots`, { method: "DELETE", token, body: JSON.stringify({ index }) }),
+  rename: (code: string, token: string, index: number, name: string) =>
+    call(`/api/games/${code}/name`, { method: "POST", token, body: JSON.stringify({ index, name }) }),
+  claim: (code: string, token: string, body: { kind: "kundli" | "accuse" | "trust"; target: number; role?: string }) =>
+    call(`/api/games/${code}/claim`, { method: "POST", token, body: JSON.stringify(body) }),
   reclaim: (code: string, token: string) => call(`/api/games/${code}/reclaim`, { method: "POST", token }),
   extend: (code: string, token: string) => call(`/api/games/${code}/extend`, { method: "POST", token }),
   tick: (code: string) => call<{ applied: boolean }>(`/api/games/${code}/tick`, { method: "POST" }),

@@ -1,19 +1,23 @@
 // What a seat may do now, the timeout default, and a random legal move (for fuzzing / bots).
 import { isStone, type Action, type Card, type GameState } from "./types";
-import { canPlay, living, passSize, playableCards, waitingOn } from "./engine";
+import { canPlay, canRevote, living, passSize, playableCards, waitingOn } from "./engine";
 
 export type Decision =
   | { kind: "turn"; playable: string[]; passSize: number }
   | { kind: "debate"; reason: "faisla" | "final"; ready: number[] }
-  | { kind: "vote"; reason: "faisla" | "final"; candidates: number[] }
+  | { kind: "vote"; reason: "faisla" | "final"; candidates: number[]; /** open voting: your vote so far (null = abstained; absent = not yet) */ mine?: number | null }
   | { kind: "batwara"; left: number; right: number; /** you played it and more than one card is left after your split */ choosePile: boolean }
-  | { kind: "dal_badal"; candidates: number[] }
+  | { kind: "dal_badal"; candidates: number[]; count: number }
+  | { kind: "dal_pick"; count: number }
   | { kind: "gift"; candidates: number[] }
   | { kind: "shot"; candidates: number[]; roles: string[] }
   | { kind: "handoff"; candidates: number[] }
   | null;
 
 export function decisionFor(s: GameState, seat: number): Decision {
+  const ph0 = s.phase;
+  if (ph0.kind === "vote" && canRevote(s, seat))
+    return { kind: "vote", reason: ph0.reason, candidates: living(s).map((p) => p.seat), ...(seat in ph0.ballots ? { mine: ph0.ballots[seat] } : {}) };
   if (!waitingOn(s).includes(seat)) return null;
   const ph = s.phase;
   const live = living(s).map((p) => p.seat);
@@ -23,7 +27,8 @@ export function decisionFor(s: GameState, seat: number): Decision {
     case "batwara": return { kind: "batwara", left: -1, right: -1, choosePile: ph.actor === seat && s.players[seat].hand.length > 3 };
     case "elim": {
       const others = live.filter((x) => x !== seat);
-      if (ph.step === "dal_badal") return { kind: "dal_badal", candidates: others };
+      if (ph.step === "dal_badal") return { kind: "dal_badal", candidates: others, count: Math.min(3, others.length) };
+      if (ph.step === "dal_pick") return { kind: "dal_pick", count: ph.pool!.length };
       if (ph.step === "handoff") return { kind: "handoff", candidates: others };
       return s.players[seat].side === "V"
         ? { kind: "gift", candidates: others }
@@ -50,7 +55,8 @@ export function defaultAction(s: GameState, seat: number): Action {
     }
     case "elim": {
       const others = living(s).map((p) => p.seat).filter((x) => x !== seat);
-      if (ph.step === "dal_badal") return { type: "dal_badal", a: others[0], b: others[1] };
+      if (ph.step === "dal_badal") return { type: "dal_badal", seats: others.slice(0, 3) };
+      if (ph.step === "dal_pick") return { type: "dal_pick", index: 0 };
       if (ph.step === "handoff") return { type: "handoff", target: others[0] };
       return s.players[seat].side === "V" ? { type: "gift", target: null } : { type: "shot", target: null };
     }
@@ -109,12 +115,15 @@ export function randomAction(s: GameState, seat: number, r: R, activity = 0.8, k
     }
     case "vote": return ph.debate ? { type: "ready" } : { type: "vote", target: r() < 0.25 ? null : pick(r, live) };
     case "batwara": {
-      const two = sample(r, h, 2);
+      // a bot that keeps Stones splits from its other cards first (it must still give 2 if that is all it has)
+      const two = passFrom(r, h, 2, keepStones);
       const rest = [...h]; rest.splice(rest.indexOf(two[0]), 1); rest.splice(rest.indexOf(two[1]), 1);
-      return { type: "batwara", left: two[0], right: two[1], ...(ph.actor === seat && rest.length > 1 ? { pile: pick(r, rest) } : {}) };
+      const pileFrom = keepStones && rest.some((c) => !isStone(c)) ? rest.filter((c) => !isStone(c)) : rest;
+      return { type: "batwara", left: two[0], right: two[1], ...(ph.actor === seat && rest.length > 1 ? { pile: pick(r, pileFrom) } : {}) };
     }
     case "elim": {
-      if (ph.step === "dal_badal") { const [a, b] = sample(r, others, 2); return { type: "dal_badal", a, b }; }
+      if (ph.step === "dal_badal") return { type: "dal_badal", seats: sample(r, others, Math.min(3, others.length)) };
+      if (ph.step === "dal_pick") return { type: "dal_pick", index: Math.floor(r() * ph.pool!.length) };
       if (ph.step === "handoff") return { type: "handoff", target: pick(r, others) };
       if (me.side === "V") return { type: "gift", target: r() < 0.2 ? null : pick(r, others) };
       return r() < 0.2 ? { type: "shot", target: null }

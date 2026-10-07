@@ -91,8 +91,8 @@ function checkPass(hand: Card[], pass: Card[]) {
 }
 
 // ---------------------------------------------------------------- flow
-export function start(names: string[], seed: number): GameState {
-  const s = createGame(names, seed);
+export function start(names: string[], seed: number, table?: Parameters<typeof createGame>[2]): GameState {
+  const s = createGame(names, seed, table);
   emit(s, "setup", "all", `${names.length} players · ${s.rounds} rounds · roles in play: ${s.rolesInPlay.join(", ")}`,
     { rounds: s.rounds, rolesInPlay: s.rolesInPlay });
   for (const p of s.players) emit(s, "role", [p.seat], `You are ${p.role} (${p.side === "V" ? "Tunga" : "Thief"}).`, { role: p.role, side: p.side });
@@ -164,12 +164,21 @@ function startFinalVote(s: GameState) {
   if (voters.length === 0) resolveVote(s);
 }
 
+/** House rules the balance probe can switch off to compare (scripts/balance.mts). The game always plays them ON. */
+export const RULES = {
+  /** 2026-10-07: whoever the MANDATORY vote puts out hands nothing to anyone — their cards go to the village,
+   *  and a Stone among them counts as with the villagers at the reveal. The mandatory vote is the village's tool. */
+  finalVoteToVillage: true,
+};
+
 function finalReveal(s: GameState) {
   const holders = living(s).filter((p) => p.hand.some(isStone));
   for (const p of s.players) emit(s, "reveal", "all", `${p.name} (${p.role}) shows: ${names(p.hand)}`, { seat: p.seat, hand: p.hand, role: p.role });
-  const villagerStones = holders.filter((p) => p.side === "V").reduce((k, p) => k + p.hand.filter(isStone).length, 0);
+  // (designer 2026-10-07) the 3 cards left on the table at the end, and the cards of anyone the mandatory vote put
+  // out, belong to the village — so the only way the thieves win is a living thief holding a Stone
+  const villagerStones = holders.filter((p) => p.side === "V").reduce((k, p) => k + p.hand.filter(isStone).length, 0)
+    + (s.villagePot ?? []).filter(isStone).length + s.pile.filter(isStone).length;
   if (villagerStones === 2) finish(s, "V", "both Stones are with villagers");
-  else if (s.pile.some(isStone)) finish(s, "T", "a Stone was left in the pile, not with a villager");
   else finish(s, "T", "a thief holds a Stone");
 }
 
@@ -182,9 +191,24 @@ export function waitingOn(s: GameState): number[] {
       ? living(s).map((p) => p.seat).filter((x) => !ph.ready.includes(x))
       : ph.voters.filter((v) => !(v in ph.ballots));
     case "batwara": return ph.givers.filter((g) => !(g in ph.picks));
-    case "elim": return [ph.seat];
+    case "elim": return ph.step === "dal_pick" ? [ph.pickers![0]] : [ph.seat];
     default: return [];
   }
+}
+
+/** open voting: a voter who has already voted may change it while the ballots are open */
+export function canRevote(s: GameState, seat: number): boolean {
+  const ph = s.phase;
+  return Boolean(s.voteUntilClock) && ph.kind === "vote" && !ph.debate && ph.voters.includes(seat);
+}
+
+/** open voting: the clock ran out — the vote stands as it is now (anyone who never voted abstains) */
+export function closeVote(prev: GameState): GameState {
+  if (prev.phase.kind !== "vote" || prev.phase.debate) return prev;
+  const { events, ...rest } = prev;
+  const s: GameState = { ...structuredClone(rest), events: [...events] };
+  resolveVote(s);
+  return s;
 }
 
 // ---------------------------------------------------------------- apply
@@ -192,7 +216,7 @@ export function apply(prev: GameState, seat: number, action: Action): GameState 
   // events are append-only and never mutated, so share them instead of deep-copying a growing log
   const { events, ...rest } = prev;
   const s: GameState = { ...structuredClone(rest), events: [...events] };
-  if (!waitingOn(s).includes(seat)) throw new RuleError("It is not your decision right now");
+  if (!waitingOn(s).includes(seat) && !(action.type === "vote" && canRevote(s, seat))) throw new RuleError("It is not your decision right now");
   const ph = s.phase;
 
   if (ph.kind === "turn") {
@@ -213,7 +237,7 @@ export function apply(prev: GameState, seat: number, action: Action): GameState 
     if (action.type !== "vote") throw new RuleError("Vote now");
     if (action.target !== null && !P(s, action.target).alive) throw new RuleError("Vote for a living player");
     ph.ballots[seat] = action.target;
-    if (waitingOn(s).length === 0) resolveVote(s);
+    if (!s.voteUntilClock && waitingOn(s).length === 0) resolveVote(s);
     return s;
   }
   if (ph.kind === "batwara") {
@@ -457,19 +481,40 @@ function doElimStep(s: GameState, seat: number, a: Action): GameState {
   const p = P(s, seat);
   const live = living(s);
 
+  // Dal Badal (rule 2026-10-07): the dying thief points at 3 living players (2 if only 2 are left). Their role cards
+  // are shuffled face down; from the seat after the thief, each picks one — the last takes what is left. Each sees
+  // only their own new role; the table sees only who was in the shuffle.
   if (ph.step === "dal_badal") {
-    if (a.type !== "dal_badal") throw new RuleError("Use Dal Badal: swap two living players' roles");
-    if (a.a === a.b || !P(s, a.a).alive || !P(s, a.b).alive) throw new RuleError("Pick two different living players");
-    const A = P(s, a.a), B = P(s, a.b);
-    [A.role, B.role] = [B.role, A.role];
-    [A.side, B.side] = [B.side, A.side];
+    if (a.type !== "dal_badal") throw new RuleError("Use Dal Badal: pick living players to shuffle roles");
+    const k = Math.min(3, live.length);
+    const seats = [...new Set(a.seats)];
+    if (seats.length !== k || seats.some((x) => !P(s, x)?.alive)) throw new RuleError(`Pick ${k} different living players`);
+    const n = s.players.length;
+    const pickers = seats.sort((x, y) => ((x - seat + n) % n) - ((y - seat + n) % n));
+    const pool = shuffle(s, pickers.map((x) => ({ role: P(s, x).role, side: P(s, x).side })));
     removeCards(p.hand, ["DAL_BADAL"]);
     discard(s, ["DAL_BADAL"]);
-    emit(s, "dal_badal", "all", `DAL BADAL — ${p.name} swaps the roles of ${A.name} and ${B.name}.`, { seat, a: A.seat, b: B.seat });
-    for (const x of [A, B]) emit(s, "role", [x.seat], `Your role is now ${x.role} (${x.side === "V" ? "Tunga" : "Thief"}).`, { role: x.role, side: x.side, swapped: true });
+    emit(s, "dal_badal", "all", `DAL BADAL — ${p.name} shuffles the roles of ${pickers.map((x) => P(s, x).name).join(", ")}. Each picks one back, face down.`, { seat, seats: pickers });
+    s.phase = { kind: "elim", seat, step: "dal_pick", pool, pickers };
+    return s;
+  }
+
+  if (ph.step === "dal_pick") {
+    if (a.type !== "dal_pick") throw new RuleError("Pick one of the face-down role cards");
+    const pool = ph.pool!, pickers = ph.pickers!;
+    if (!Number.isInteger(a.index) || a.index < 0 || a.index >= pool.length) throw new RuleError("Pick one of the cards on the table");
+    // picks are held aside until the last card is taken, so no two players ever hold the same role mid-shuffle
+    const drawn = [...(ph.drawn ?? [])];
+    const take = (x: number, i: number) => { const [r] = pool.splice(i, 1); drawn.push({ seat: x, ...r }); };
+    take(pickers.shift()!, a.index);
+    if (pickers.length === 1) take(pickers.shift()!, 0); // the last one takes what is left
+    if (pickers.length) { s.phase = { kind: "elim", seat: ph.seat, step: "dal_pick", pool, pickers, drawn }; return s; }
+    // everyone has a role again: each learns theirs in secret
+    for (const d of drawn) { const x = P(s, d.seat); x.role = d.role; x.side = d.side; }
+    for (const d of drawn) emit(s, "role", [d.seat], `Dal Badal: your role is now ${d.role} (${d.side === "V" ? "Tunga" : "Thief"}).`, { role: d.role, side: d.side, swapped: true });
     const w = winnerIfWipe(s);
     if (w) { s.elimQueue = []; finish(s, w, w === "V" ? "every thief is out" : "every villager is out"); return s; }
-    s.phase = { kind: "elim", seat, step: "dying" };
+    s.phase = { kind: "elim", seat: ph.seat, step: "dying" };
     return s;
   }
 
@@ -496,6 +541,13 @@ function doElimStep(s: GameState, seat: number, a: Action): GameState {
       } else emit(s, "last_shot", "all", `${p.name} takes no last shot.`, { seat, target: null });
     }
     if (p.hand.length === 0 || living(s).length === 0) return finishElim(s);
+    // put out by the mandatory vote: no hand-off — everything goes to the village
+    if (RULES.finalVoteToVillage && s.after?.kind === "finalReveal") {
+      const cards = p.hand.splice(0);
+      s.villagePot = [...(s.villagePot ?? []), ...cards];
+      emit(s, "to_village", "all", `${p.name}'s cards go to the village: ${names(cards)}.`, { seat, cards });
+      return finishElim(s);
+    }
     s.phase = { kind: "elim", seat, step: "handoff" };
     return s;
   }

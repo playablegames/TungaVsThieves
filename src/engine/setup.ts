@@ -2,13 +2,15 @@
 import { ACTION_CARDS, type Card, type GameState, type Player } from "./types";
 import { shuffle } from "./rng";
 
-/** players -> [villagers, thieves, rounds]. Confirmed at 4,000 games/count (confirm_dp.py, 2026-10-06). */
+/** players -> [villagers, thieves, rounds]. Thieves cut to about one in four (designer 2026-10-07: "catching thieves
+ *  should be easier"). 4-16 measured with scripts/balance.mts (Tunga 52-72%, 1,000 bot games each); 17-30 follow the
+ *  same ratio. Rounds unchanged. */
 export const ROLE_TABLE: Record<number, [number, number, number]> = {
-  4: [3, 1, 2], 5: [3, 2, 3], 6: [4, 2, 2], 7: [4, 3, 3], 8: [5, 3, 2], 9: [5, 4, 3],
-  10: [6, 4, 3], 11: [7, 4, 2], 12: [7, 5, 3], 13: [8, 5, 2], 14: [8, 6, 3], 15: [9, 6, 3],
-  16: [10, 6, 2], 17: [11, 6, 2], 18: [10, 8, 3], 19: [12, 7, 2], 20: [11, 9, 3], 21: [13, 8, 2],
-  22: [14, 8, 2], 23: [14, 9, 2], 24: [14, 10, 3], 25: [15, 10, 2], 26: [16, 10, 2], 27: [16, 11, 3],
-  28: [17, 11, 2], 29: [18, 11, 2], 30: [19, 11, 2],
+  4: [3, 1, 2], 5: [3, 2, 3], 6: [4, 2, 2], 7: [5, 2, 3], 8: [6, 2, 2], 9: [6, 3, 3],
+  10: [7, 3, 3], 11: [8, 3, 2], 12: [9, 3, 3], 13: [9, 4, 2], 14: [10, 4, 3], 15: [11, 4, 3],
+  16: [12, 4, 2], 17: [13, 4, 2], 18: [13, 5, 3], 19: [14, 5, 2], 20: [15, 5, 3], 21: [16, 5, 2],
+  22: [16, 6, 2], 23: [17, 6, 2], 24: [18, 6, 3], 25: [19, 6, 2], 26: [19, 7, 2], 27: [20, 7, 3],
+  28: [21, 7, 2], 29: [22, 7, 2], 30: [22, 8, 2],
 };
 export const MIN_PLAYERS = 4;
 export const MAX_PLAYERS = 30;
@@ -18,7 +20,7 @@ export const VILLAGER_ROLES = [
   "Kisaan", "Sarpanch", "Baba", "Teacher", "Police",
   "Vaidya", "Pehelwan",
   "NRI", "Dafliwala", "Deewani", "Lohar", "Sonar", "Mali", "Kumhar", "Pujari", "Guruji",
-  "Darzi", "Nai", "Halwai", "Dhobi", "Chaiwala",
+  "Darzi", "Nai", "Halwai", "Dhobi", "Chaiwala", "Mochi", "Bunkar", "Gwala",
 ];
 export const THIEF_ROLES = [
   "Chor", "Lootera", "Mastikhor",
@@ -35,10 +37,11 @@ export function newDeck(): Card[] {
   return d;
 }
 
-export function createGame(names: string[], seed: number): GameState {
+/** `table` lets the balance probe try other role tables (scripts/balance.mts); the game always uses ROLE_TABLE */
+export function createGame(names: string[], seed: number, table: Record<number, [number, number, number]> = ROLE_TABLE): GameState {
   const n = names.length;
   if (n < MIN_PLAYERS || n > MAX_PLAYERS) throw new Error(`Tunga plays ${MIN_PLAYERS}-${MAX_PLAYERS} players`);
-  const [nv, nt, rounds] = ROLE_TABLE[n];
+  const [nv, nt, rounds] = table[n];
   const st = { rng: seed >>> 0 };
 
   const roles = shuffle(st, [
@@ -75,6 +78,7 @@ export function createGame(names: string[], seed: number): GameState {
     phase: { kind: "turn", seat: 0 },
     elimQueue: [],
     after: null,
+    villagePot: [],
     deadOrder: [],
     rolesInPlay: roles.map((r) => r.role).sort(),
     events: [],

@@ -45,7 +45,13 @@ export type Phase =
       /** pile = the Bhukamp player's own card for the next player, when more than one is left after the split */
       picks: Record<number, { left: Card; right: Card; pile?: Card }>;
     }
-  | { kind: "elim"; seat: number; step: "dal_badal" | "dying" | "handoff" }
+  | {
+      kind: "elim"; seat: number; step: "dal_badal" | "dal_pick" | "dying" | "handoff";
+      /** Dal Badal (2026-10-07): the shuffled role cards still face down, and who picks next, in seat order */
+      pool?: { role: string; side: Side }[]; pickers?: number[];
+      /** roles already picked, held aside until everyone has one */
+      drawn?: { seat: number; role: string; side: Side }[];
+    }
   | { kind: "over"; winner: Side; reason: string };
 
 /** What happens when the elimination queue empties. */
@@ -76,6 +82,14 @@ export interface GameState {
   phase: Phase;
   elimQueue: { seat: number; killer: number | null }[];
   after: Continuation | null;
+  /** cards of players put out in the MANDATORY vote: they belong to the village, Stones included (rule 2026-10-07).
+   *  Optional so games saved before the rule still load. */
+  villagePot?: Card[];
+  /** OPEN VOTING (designer 2026-10-07): ballots stay open until the clock runs out — anyone may change their vote,
+   *  and only closeVote() resolves it. The online game turns this on; engine tests and bot probes leave it off. */
+  voteUntilClock?: boolean;
+  /** server bookkeeping for open voting: when the open ballot's own clock runs out (epoch ms) */
+  voteClockEnd?: number;
   deadOrder: number[];
   rolesInPlay: string[];
   events: GameEvent[];
@@ -93,7 +107,8 @@ export type Action =
   | { type: "ready" }
   | { type: "vote"; target: number | null }
   | { type: "batwara"; left: Card; right: Card; pile?: Card }
-  | { type: "dal_badal"; a: number; b: number }
+  | { type: "dal_badal"; seats: number[] }
+  | { type: "dal_pick"; index: number }
   | { type: "gift"; target: number | null }
   | { type: "shot"; target: number | null; roles?: [string, string] }
   | { type: "handoff"; target: number };

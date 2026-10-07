@@ -5,7 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 import type { Action, ActionCard, Card } from "@/engine/types";
 import type { PlayerView, PublicPlayer } from "@/engine/view";
 import { CARD } from "@/lib/cards";
-import { Btn, CardFace } from "./ui";
+import { Btn } from "./ui";
+import { HandRow } from "./Hand";
 
 const TARGETED: ActionCard[] = ["KUNDLI", "TALASHI", "HERA_PHERI", "TEER_KAMAN", "MAYA_JAAL"];
 const CONFIRM_MS = 5000;
@@ -87,7 +88,8 @@ export function Decide({ v, act }: { v: PlayerView; act: (a: Action) => void }) 
     case "turn": return <Turn v={v} playable={d.playable as ActionCard[]} passSize={d.passSize} act={act} ask={c.ask} />;
     case "debate": case "vote": return null;
     case "batwara": return <Bhukamp v={v} act={act} />;
-    case "dal_badal": return <Swap options={others} ask={c.ask} name={name} />;
+    case "dal_badal": return <Swap options={others} count={d.count} ask={c.ask} name={name} />;
+    case "dal_pick": return <DalPick count={d.count} act={act} />;
     case "gift": return <OneOf title="Dying power — give 1 vote" hint="They vote with one more from now on." options={others}
       go={(s) => c.ask(`Give your vote to ${name(s)}`, { type: "gift", target: s })} skip={{ label: "Give it to nobody", action: { type: "gift", target: null } }} act={act} />;
     case "shot": return <Shot v={v} options={others} ask={c.ask} act={act} name={name} />;
@@ -110,14 +112,29 @@ function OneOf({ title, hint, options, go, skip, act }: { title: string; hint: s
   );
 }
 
-function Swap({ options, ask, name }: { options: PublicPlayer[]; ask: Ask; name: (s: number) => string }) {
+function Swap({ options, count, ask, name }: { options: PublicPlayer[]; count: number; ask: Ask; name: (s: number) => string }) {
   const [sel, setSel] = useState<number[]>([]);
-  const toggle = (s: number) => setSel((x) => (x.includes(s) ? x.filter((y) => y !== s) : x.length < 2 ? [...x, s] : x));
+  const toggle = (s: number) => setSel((x) => (x.includes(s) ? x.filter((y) => y !== s) : x.length < count ? [...x, s] : x));
   return (
     <div className="flex flex-col gap-3">
-      <Head title="Dal Badal — swap two roles" hint="Both see their new role in secret. The table sees who was swapped, nothing more." />
+      <Head title={`Dal Badal — shuffle ${count} roles`} hint={`Pick ${count} players. Their role cards are shuffled face down and each picks one back. They see their new role in secret; the table sees only who was in it.`} />
       <div className="grid grid-cols-2 gap-2">{options.map((p) => <PlayerChip key={p.seat} p={p} selected={sel.includes(p.seat)} onClick={() => toggle(p.seat)} />)}</div>
-      <Btn voice="lethal" disabled={sel.length !== 2} onClick={() => ask(`Swap ${name(sel[0])} and ${name(sel[1])}`, { type: "dal_badal", a: sel[0], b: sel[1] })}>Swap</Btn>
+      <Btn voice="lethal" disabled={sel.length !== count} onClick={() => ask(`Shuffle ${sel.map(name).join(", ")}`, { type: "dal_badal", seats: sel })}>Shuffle</Btn>
+    </div>
+  );
+}
+
+/** your turn to draw a role back from the Dal Badal shuffle: the cards lie face down — any one */
+function DalPick({ count, act }: { count: number; act: (a: Action) => void }) {
+  return (
+    <div className="flex flex-col gap-3">
+      <Head title="Dal Badal — pick a role card" hint="Your role card went into a shuffle. Take one back, face down. It could be your own." />
+      <div className="flex justify-center gap-3 py-2">
+        {Array.from({ length: count }, (_, i) => (
+          <button key={i} type="button" onClick={() => act({ type: "dal_pick", index: i })} aria-label={`Face-down role card ${i + 1}`}
+            className="aspect-[5/8] w-20 rounded-lg border-2 border-[#b8863b] bg-[repeating-linear-gradient(45deg,#2a1a0c_0_6px,#3a240c_6px_12px)] shadow-[0_8px_18px_-6px_rgba(0,0,0,.9)] active:translate-y-px" />
+        ))}
+      </div>
     </div>
   );
 }
@@ -162,14 +179,22 @@ function Bhukamp({ v, act }: { v: PlayerView; act: (a: Action) => void }) {
     <div className="flex flex-col gap-3">
       <Head title="Bhukamp — split your cards"
         hint={`First tap goes left to ${L}, second goes right to ${R}.${choosePile ? ` Third tap: the card that goes to ${next} with the 2 you draw.` : mine ? ` Your last card goes to ${next} with the 2 you draw.` : ""} A Stone may move.`} />
-      <div className="flex flex-wrap gap-2 pt-2">
-        {v.me.hand.map((c, k) => <CardFace key={k} c={c} size="sm" selected={k === left || k === right || k === pile}
-          label={k === left ? "LEFT" : k === right ? "RIGHT" : k === pile ? "NEXT" : undefined} onClick={() => tap(k)} />)}
+      <div className="pt-2">
+        <HandRow cards={v.me.hand} selected={[left, right, pile].filter((k): k is number => k !== null)}
+          labels={Object.fromEntries([[left, "LEFT"], [right, "RIGHT"], [pile, "NEXT"]].filter(([k]) => k !== null))} onTap={tap} />
       </div>
       <Btn voice="gold" disabled={!ready}
         onClick={() => act({ type: "batwara", left: v.me.hand[left!], right: v.me.hand[right!], ...(choosePile ? { pile: v.me.hand[pile!] } : {}) })}>Pass them</Btn>
     </div>
   );
+}
+
+/** why a pair in your hand can't be played right now (engine canPlay, in words) */
+function whyNot(v: PlayerView, c: ActionCard, hand: Card[], passSize: number): string {
+  if (hand.length - 2 < 3) return `needs ${passSize} other cards left to pass`;
+  if (c === "MAYA_JAAL") return "nobody is out yet to bring back";
+  if (c === "HERA_PHERI") return "nobody has cards to steal";
+  return "no one to aim it at";
 }
 
 function Turn({ v, playable, passSize, act, ask }: { v: PlayerView; playable: ActionCard[]; passSize: number; act: (a: Action) => void; ask: Ask }) {
@@ -209,18 +234,27 @@ function Turn({ v, playable, passSize, act, ask }: { v: PlayerView; playable: Ac
 
   if (!card) {
     // your cards face up; each pair you may legally play is declared in words, beside Pass
+    // the two cards of every pair you may play glow together
+    const glowing = playable.flatMap((c) => hand.map((h, i) => (h === c ? i : -1)).filter((i) => i >= 0).slice(0, 2));
     const blocked = (["FAISLA", "TALASHI", "KUNDLI", "HERA_PHERI", "BATWARA", "MAYA_JAAL", "TEER_KAMAN"] as ActionCard[])
       .filter((c) => !playable.includes(c) && hand.filter((h) => h === c).length >= 2);
     return (
       <div className="flex flex-col gap-3">
-        <div className="flex flex-wrap gap-1.5">
-          {hand.map((c, i) => <CardFace key={i} c={c} size="sm" selected={(playable as Card[]).includes(c)} dim={!(playable as Card[]).includes(c)} />)}
+        <HandRow cards={hand} glow={glowing} />
+        <div className="flex flex-col gap-2">
+          {playable.map((c) => (
+            <button key={c} type="button" onClick={() => declare(c)}
+              className="min-h-12 rounded-full border-2 border-brass/80 bg-[linear-gradient(180deg,var(--color-rust)_0%,var(--color-rust-deep)_100%)] font-[family-name:var(--font-engraved)] text-[16px] font-bold uppercase tracking-[0.08em] text-stock active:translate-y-px">
+              Play {CARD[c].name} pair
+            </button>
+          ))}
+          <button type="button" onClick={() => setCard("NONE")}
+            className="min-h-12 rounded-full border-2 border-brass/60 bg-black/30 font-[family-name:var(--font-engraved)] text-[15px] font-semibold uppercase tracking-[0.12em] text-stock active:translate-y-px">
+            {playable.length ? `Or pass ${passSize}` : `Pass ${passSize} cards`}
+          </button>
         </div>
-        <div className="grid grid-cols-2 gap-2">
-          {playable.map((c) => <Btn key={c} voice={CARD[c].voice} onClick={() => declare(c)}>Declare {CARD[c].name}</Btn>)}
-          <Btn voice="pass" className={playable.length % 2 === 0 ? "col-span-2" : ""} onClick={() => setCard("NONE")}>Pass</Btn>
-        </div>
-        {blocked.map((c) => <p key={c} className="text-[12px] text-muted">{CARD[c].name} ×2 — needs {passSize} other cards left to pass</p>)}
+        {!playable.length && <p className="text-center text-[12px] text-stock/60">No pair to play — tap a card to read it.</p>}
+        {blocked.map((c) => <p key={c} className="text-center text-[12px] text-stock/60">{CARD[c].name} ×2 — {whyNot(v, c, hand, passSize)}</p>)}
       </div>
     );
   }
@@ -232,12 +266,10 @@ function Turn({ v, playable, passSize, act, ask }: { v: PlayerView; playable: Ac
         hint={playing
           ? `${auto ? `Your other ${passSize} cards go face down to ${next} as you declare.` : `Choose ${passSize} cards to pass face down to ${next} — a Stone only if you must.`} ${CARD[card].text}`
           : `Face down to ${next}. A Stone may go — whoever is next picks it up.`} />
-      <div className="flex flex-wrap gap-2 pt-2">
-        {hand.map((c, i) => {
-          const locked = pairIdx.includes(i);
-          return <CardFace key={i} c={c} size="sm" dim={locked} selected={pass.includes(i)} label={locked ? "PLAY" : pass.includes(i) ? "PASS" : undefined}
-            onClick={locked || auto ? undefined : () => togglePass(i)} />;
-        })}
+      <div className="pt-2">
+        <HandRow cards={hand} dim={pairIdx} selected={pass}
+          labels={Object.fromEntries([...pairIdx.map((i) => [i, "PLAY"]), ...pass.map((i) => [i, "PASS"])])}
+          onTap={auto ? undefined : (i) => { if (!pairIdx.includes(i)) togglePass(i); }} />
       </div>
       {!auto && <p className="text-[13px] text-ink-2">{pass.length} of {passSize} chosen to pass</p>}
       {needsTarget && <Pickers options={targets} sel={target} onPick={setTarget} />}

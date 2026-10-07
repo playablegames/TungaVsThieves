@@ -1,9 +1,11 @@
 import type { Metadata, Viewport } from "next";
-import { Playfair_Display, Plus_Jakarta_Sans } from "next/font/google";
+import { Cinzel, Playfair_Display, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 
 // DESIGN.md: Playfair Display for roles, banners and reveals (roman only); Plus Jakarta Sans for everything you tap or read fast
-const playfair = Playfair_Display({ variable: "--font-playfair", subsets: ["latin"], weight: ["700", "900"], style: ["normal"] });
+const playfair = Playfair_Display({ variable: "--font-playfair", subsets: ["latin"], weight: ["400", "700", "900"], style: ["normal"] });
+// Cinzel: the engraved capitals on the title screen buttons
+const cinzel = Cinzel({ variable: "--font-cinzel", subsets: ["latin"], weight: ["600", "700"] });
 const jakarta = Plus_Jakarta_Sans({ variable: "--font-jakarta", subsets: ["latin"], weight: ["400", "500", "700", "800"] });
 
 export const metadata: Metadata = {
@@ -15,7 +17,7 @@ export const viewport: Viewport = { width: "device-width", initialScale: 1, view
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${playfair.variable} ${jakarta.variable} h-full antialiased`}>
+    <html lang="en" className={`${playfair.variable} ${cinzel.variable} ${jakarta.variable} h-full antialiased`}>
       <body className="min-h-dvh">{children}</body>
     </html>
   );

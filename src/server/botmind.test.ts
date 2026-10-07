@@ -75,33 +75,26 @@ describe("bot minds", () => {
     expect(checked).toBeGreaterThan(50);
   });
 
-  it("Dal Badal: both swapped bots know each other's role, and everything any bot 'knows' stays true after swaps", () => {
-    let swaps = 0, facts = 0;
+  it("Dal Badal shuffles: everything any bot 'knows' stays true, and nobody keeps a stale read on a shuffled seat", () => {
+    let shuffles = 0, facts = 0;
     for (let i = 0; i < 400; i++) {
       const { s } = i < games.length ? games[i] : game(6 + (i % 7), 9000 + i);
-      const swapsHere = s.events.filter((e) => e.type === "dal_badal");
-      // check the mind right after each swap, and at the end of the game
-      const moments = [...swapsHere.map((e) => e.n + 3), s.events.length];
+      const here = s.events.filter((e) => e.type === "dal_badal");
+      shuffles += here.length;
+      const moments = [...here.map((e) => e.n + 8), s.events.length];
       for (const end of moments) {
         const at: GameState = { ...s, events: s.events.slice(0, end) };
-        // sides as they stood at that moment: replay the swaps up to there
-        const side = s.players.map((p) => p.side);
-        const orig = s.events.find((e) => e.type === "analytics_deal")!.data!.players as { side: "V" | "T" }[];
-        orig.forEach((p, k) => (side[k] = p.side));
-        for (const e of at.events) if (e.type === "dal_badal") { const a = e.data!.a as number, b = e.data!.b as number; [side[a], side[b]] = [side[b], side[a]]; }
+        // sides as they stood at that moment: the deal, then every secret "role" line since
+        const side = (s.events.find((e) => e.type === "analytics_deal")!.data!.players as { side: "V" | "T" }[]).map((p) => p.side);
+        for (const e of at.events) if (e.type === "role" && e.data?.swapped && Array.isArray(e.to)) side[e.to[0]] = e.data.side as "V" | "T";
         for (let seat = 0; seat < s.players.length; seat++) {
           const view = { ...at, players: at.players.map((p, k) => ({ ...p, side: side[k] })) };
           const m = mindOf(view, seat, 1);
           for (const [x, k] of m.known) { expect(k.side).toBe(side[x]); facts++; }
-          const last = [...at.events].reverse().find((e) => e.type === "dal_badal");
-          if (last && end !== s.events.length && (last.data!.a === seat || last.data!.b === seat)) {
-            const partner = last.data!.a === seat ? (last.data!.b as number) : (last.data!.a as number);
-            if (view.players[partner].alive) { expect(m.known.get(partner)?.side).toBe(side[partner]); expect(m.known.get(partner)?.how).toBe("swap"); swaps++; }
-          }
         }
       }
     }
-    expect(swaps).toBeGreaterThan(5);
+    expect(shuffles).toBeGreaterThan(3);
     expect(facts).toBeGreaterThan(50);
   });
 
@@ -116,5 +109,37 @@ describe("bot minds", () => {
     }
     expect(villager).toBeGreaterThan(5);
     expect(thief).toBeGreaterThan(2);
+  });
+});
+
+describe("claims out loud", () => {
+  // playtest 2026-10-07: a player read a thief's Kundli and had no way to tell the bots
+  const claim = (s: GameState, seat: number, target: number, side: "T" | "V", kind = "kundli") =>
+    s.events.push({ n: s.events.length, type: "claim", to: "all", msg: "claim", data: { seat, kind, target, role: s.players[target].role, side } });
+
+  it("a villager bot votes the thief a player says they read in a Kundli; the accused thief votes the speaker", () => {
+    let votedThief = 0, total = 0, thiefHitsBack = 0, thiefTotal = 0;
+    for (let g = 0; g < 60; g++) {
+      const s = start(Array.from({ length: 8 }, (_, i) => `P${i}`), 7000 + g);
+      const thief = s.players.find((p) => p.side === "T")!.seat;
+      const speaker = s.players.find((p) => p.side === "V")!.seat;
+      claim(s, speaker, thief, "T");
+      for (const p of s.players) {
+        if (p.seat === speaker || p.seat === thief) continue;
+        if (p.side === "V") { total++; if (botVote(s, p.seat, s.seed, fixed(g + p.seat)) === thief) votedThief++; }
+      }
+      thiefTotal++;
+      if (botVote(s, thief, s.seed, fixed(g)) === speaker) thiefHitsBack++;
+    }
+    expect(votedThief / total).toBeGreaterThan(0.7);
+    expect(thiefHitsBack / thiefTotal).toBeGreaterThan(0.5);
+  });
+
+  it("the accused bot answers the claim", () => {
+    const s = start(Array.from({ length: 6 }, (_, i) => `P${i}`), 42);
+    const from = s.events.length;
+    claim(s, 1, 2, "T", "accuse");
+    const lines = botTalk(s, from, [2], s.seed, fixed(3));
+    expect(lines.map((l) => l.seat)).toEqual([2]);
   });
 });

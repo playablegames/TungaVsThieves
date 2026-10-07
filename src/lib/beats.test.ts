@@ -3,7 +3,7 @@ import { apply, start, waitingOn } from "@/engine/engine";
 import { randomAction } from "@/engine/decisions";
 import { viewFor } from "@/engine/view";
 import type { GameState } from "@/engine/types";
-import { beatFor, beatsFor, holdFor } from "./beats";
+import { HOLD_CAP, beatFor, beatsFor, holdFor } from "./beats";
 
 let a = 3;
 const rnd = () => { a = (a * 16807) % 2147483647; return a / 2147483647; };
@@ -78,7 +78,7 @@ describe("Table Stage beats", () => {
     for (const s of games) {
       const h = holdFor(s.events, s.players.map((p) => p.name));
       expect(h).toBeGreaterThan(0);
-      expect(h).toBeLessThanOrEqual(9000);
+      expect(h).toBeLessThanOrEqual(HOLD_CAP);
     }
   });
 });

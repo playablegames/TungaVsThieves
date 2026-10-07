@@ -21,8 +21,8 @@ function mulberry(seed: number) {
 function check(s: GameState, thieves: number, roles: string, firstPickupDone: boolean, bad: Map<string, number>) {
   const hit = (k: string) => bad.set(k, (bad.get(k) ?? 0) + 1);
   if (totalCards(s) !== 66) hit("card total != 66");
-  const inPlay = [...s.pile, ...s.players.flatMap((p) => p.hand)].filter(isStone).length;
-  if (inPlay !== 2) hit(`Stones in hands+pile = ${inPlay}`);
+  const inPlay = [...s.pile, ...(s.villagePot ?? []), ...s.players.flatMap((p) => p.hand)].filter(isStone).length;
+  if (inPlay !== 2) hit(`Stones in hands+pile+village = ${inPlay}`);
   if ([...s.deck, ...s.discard].some(isStone)) hit("Stone in deck/discard");
   if (s.players.filter((p) => p.side === "T").length !== thieves) hit("thief count changed");
   if (s.players.map((p) => p.role).sort().join() !== roles) hit("role set changed");

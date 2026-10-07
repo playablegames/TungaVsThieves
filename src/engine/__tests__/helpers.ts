@@ -34,4 +34,4 @@ export function rig(
 }
 
 export const totalCards = (s: GameState) =>
-  s.deck.length + s.discard.length + s.pile.length + s.players.reduce((k, p) => k + p.hand.length, 0);
+  s.deck.length + s.discard.length + s.pile.length + (s.villagePot ?? []).length + s.players.reduce((k, p) => k + p.hand.length, 0);

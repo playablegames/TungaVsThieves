@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { act, addBot, chat, createRoom, debateSeconds, extendDebate, reclaim, removeBot, sweep, getState, joinRoom, startGame, tick, HttpError } from "./game";
+import { act, addBot, chat, createRoom, debateSeconds, extendDebate, reclaim, removeBot, sweep, getState, joinRoom, startGame, tick, HttpError, INTRO_MS, BOT_DELAY_MS, VOTE_SETTLE_MS, ONLINE_MAX_PLAYERS } from "./game";
+import { HOLD_CAP } from "@/lib/beats";
 import { defaultAction, randomAction } from "@/engine/decisions";
 import { waitingOn } from "@/engine/engine";
 import { memoryStore } from "./store";
@@ -21,12 +22,17 @@ describe("room service (memory store)", () => {
     await err(startGame(code, tokens[1]), 403);           // only the host starts
     await startGame(code, tokens[0]);
     await err(joinRoom(code, "Late"), 409);                // no joining once started
-    for (let i = 0; i < 2000; i++) {
-      const row = await memoryStore.get(code);
-      if (row!.status === "over") break;
-      const seat = waitingOn(row!.state!)[0];
-      await act(code, row!.lobby[seat].token, defaultAction(row!.state!, seat));
-    }
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      for (let i = 0; i < 2000; i++) {
+        const row = await memoryStore.get(code);
+        if (row!.status === "over") break;
+        const seat = waitingOn(row!.state!)[0];
+        // open voting: once everyone has voted the ballots stay open until the clock runs out
+        if (seat === undefined) { vi.setSystemTime(row!.deadline! + 1); await tick(code); continue; }
+        await act(code, row!.lobby[seat].token, defaultAction(row!.state!, seat));
+      }
+    } finally { vi.useRealTimers(); }
     const s = await getState(code, tokens[0], 0);
     expect(s.status).toBe("over");
     expect(s.view!.finalReveal).not.toBeNull();
@@ -112,17 +118,19 @@ describe("room service (memory store)", () => {
       let a = 11; const rnd = () => { a = (a * 16807) % 2147483647; return a / 2147483647; };
       for (let g = 0; g < 40; g++) {
         const host = await createRoom("Solo");
-        for (let i = 0; i < 4 + (g % 9); i++) await addBot(host.code, host.token);
+        for (let i = 0; i < 3 + (g % 9); i++) await addBot(host.code, host.token); // 4-12 seats (ONLINE_MAX_PLAYERS)
         await startGame(host.code, host.token);
         let row = (await memoryStore.get(host.code))!;
         const me = row.lobby.findIndex((p) => !p.bot);
         for (let k = 0; k < 5000 && row.status !== "over"; k++) {
           const s = row.state!;
           const waiting = waitingOn(s);
-          if (s.phase.kind === "vote" || s.phase.kind === "batwara") expect(waiting).toEqual([me]);
+          // bots never hold up a vote: they have voted the moment ballots open (open voting: the human may already have, too)
+          if (s.phase.kind === "vote" || s.phase.kind === "batwara") expect(waiting.filter((x) => x !== me)).toEqual([]);
           if (waiting.includes(me)) await act(host.code, host.token, randomAction(s, me, rnd));
           else {
-            expect(row.deadline! - Date.now()).toBeLessThanOrEqual(1200 + 9000); // bot pause + the beats the table is watching
+            const openVote = s.phase.kind === "vote" && !s.phase.debate;
+            if (!openVote) expect(row.deadline! - Date.now()).toBeLessThanOrEqual(BOT_DELAY_MS + HOLD_CAP + (k === 0 ? INTRO_MS : 0)); // bot pause + the beats the table is watching (+ the intro, first move only)
             vi.setSystemTime(row.deadline! + 1);
             expect((await tick(host.code)).applied).toBe(true);
           }
@@ -201,5 +209,47 @@ describe("the server's clock and stand-ins", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("open voting on the clock (designer 2026-10-07)", () => {
+  it("change your vote until time is up; once everyone has voted it closes 10s after the last change", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const host = await createRoom("Solo");
+      for (let i = 0; i < 4; i++) await addBot(host.code, host.token);
+      await startGame(host.code, host.token);
+      // open a Faisla ballot by hand; the bots have already voted
+      const row = (await memoryStore.get(host.code))!;
+      const me = row.lobby.findIndex((p) => !p.bot);
+      const s = row.state!;
+      const others = s.players.map((p) => p.seat).filter((x) => x !== me);
+      s.phase = { kind: "vote", reason: "faisla", caller: me, voters: s.players.map((p) => p.seat), ballots: Object.fromEntries(others.map((x) => [x, null])), debate: false, ready: [] };
+      s.after = null;
+      row.deadline = Date.now() + 45_000;
+      await memoryStore.update({ ...row, version: row.version + 1 }, row.version);
+
+      const t0 = Date.now();
+      await act(host.code, host.token, { type: "vote", target: others[0] });     // everyone has voted now
+      expect((await memoryStore.get(host.code))!.deadline).toBe(t0 + VOTE_SETTLE_MS);
+      vi.setSystemTime(t0 + 6000);
+      await act(host.code, host.token, { type: "vote", target: others[1] });     // a change restarts the 10s
+      expect((await memoryStore.get(host.code))!.deadline).toBe(t0 + 6000 + VOTE_SETTLE_MS);
+      expect((await memoryStore.get(host.code))!.state!.phase.kind).toBe("vote"); // still open
+      vi.setSystemTime(t0 + 6000 + VOTE_SETTLE_MS + 1);
+      expect((await tick(host.code)).applied).toBe(true);
+      const after = (await memoryStore.get(host.code))!.state!;
+      const result = after.events.filter((e) => e.type === "vote_result").at(-1)!;
+      expect(result.data!.ballots).toMatchObject({ [me]: others[1] });           // the LAST vote counted
+    } finally { vi.useRealTimers(); }
+  });
+});
+
+describe("online cap (designer 2026-10-07)", () => {
+  it("an online table seats 12 at most — neither a 13th player nor a 13th bot", async () => {
+    const host = await createRoom("Host");
+    for (let i = 1; i < ONLINE_MAX_PLAYERS; i++) await addBot(host.code, host.token);
+    await err(addBot(host.code, host.token), 409);
+    await err(joinRoom(host.code, "Late"), 409);
   });
 });

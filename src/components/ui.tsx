@@ -53,7 +53,7 @@ export function Btn({ voice = "pass", className = "", ...p }: React.ButtonHTMLAt
 const FULL = new Map<number, number>();
 
 /** The decision clock as a ring — every phone shows the same deadline. */
-export function TimerRing({ deadline, now, size = 40 }: { deadline: number | null; now: () => number; size?: number }) {
+export function TimerRing({ deadline, now, size = 40, brass = false }: { deadline: number | null; now: () => number; size?: number; brass?: boolean }) {
   const [, force] = useState(0);
   useEffect(() => { const t = setInterval(() => force((x) => x + 1), 250); return () => clearInterval(t); }, []);
   if (!deadline) return <span style={{ width: size }} aria-hidden />;
@@ -66,11 +66,11 @@ export function TimerRing({ deadline, now, size = 40 }: { deadline: number | nul
   return (
     <span className="relative inline-grid place-items-center" style={{ width: size, height: size }} role="timer" aria-label={`${secs} seconds left`}>
       <svg width={size} height={size} className="-rotate-90" aria-hidden>
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth="3" className="stroke-raise-2" />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth="3" className={brass ? "fill-[#160b04] stroke-[#4a3220]" : "stroke-raise-2"} />
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth="3" strokeLinecap="round"
-          className={low ? "stroke-crimson" : "stroke-jade"} strokeDasharray={c} strokeDashoffset={c * (1 - frac)} />
+          className={low ? "stroke-crimson" : brass ? "stroke-[#f0a32e]" : "stroke-jade"} strokeDasharray={c} strokeDashoffset={c * (1 - frac)} />
       </svg>
-      <span className={`absolute text-[12px] font-extrabold tabular-nums ${low ? "text-crimson-soft" : "text-ink"}`}>{secs}</span>
+      <span className={`absolute font-extrabold tabular-nums ${brass ? "font-display text-[20px] font-bold" : "text-[12px]"} ${low ? "text-crimson-soft" : "text-ink"}`}>{secs}</span>
     </span>
   );
 }
