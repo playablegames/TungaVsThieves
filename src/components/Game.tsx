@@ -18,7 +18,6 @@ import { HandRow } from "./Hand";
 import { CardIcon } from "./CardIcon";
 import { Eject, thievesRemaining } from "./Eject";
 import { Confetti, ShareResult } from "./Share";
-import { WhisperBubble, WhisperSheet, whisperedThisRound } from "./Whisper";
 import { buzz, duck, play, setSound, soundOn, unlockOnFirstTap, type Sound } from "@/lib/sfx";
 import { musicDuck, musicOn, setMood, setMusic, startMusicOnFirstTap, stopMusic, type Mood } from "@/lib/music";
 import { narrate, narratorOn, setNarrator } from "@/lib/narrator";
@@ -324,7 +323,6 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
   const stage = useStage(v.events, v.players.map((p) => p.name));
   const bots = useBotSpeech(messages);
   const [menu, setMenu] = useState(false);
-  const [sheet, setSheet] = useState<null | "history">(null);
   const myMove = v.decision?.kind ?? null;
   const shown = stage.current?.n ?? stage.last?.n ?? -1;
   const beats = useMemo(() => beatsFor(v.events, v.players.map((p) => p.name)).filter((b) => !b.private), [v.events, v.players]);
@@ -407,8 +405,6 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
   const root = useRef<HTMLDivElement>(null);
   const [throws] = useState(() => new ThrowQueue());
   useEffect(() => { throws.feed(messages, v.me.seat); }, [throws, messages, v.me.seat]);
-  const inbox = useSyncExternalStore(throws.subscribe, throws.getInbox, throws.getInbox);
-  const [whisperTo, setWhisperTo] = useState<number | null>(null);
   const flying = useSyncExternalStore(throws.subscribe, throws.getSnapshot, throws.getSnapshot);
   const lastThrow = useRef(0);
   const throwAt = (seat: number, emoji: string) => {
@@ -466,7 +462,7 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
   // list, the whisper sheet (the seat menu closes itself on a phase change — Ring)
   useEffect(() => {
     if (!myMove) return;
-    queueMicrotask(() => { setMenu(false); setSheet(null); setFeedOpen(false); setWhisperTo(null); });
+    queueMicrotask(() => { setMenu(false); setFeedOpen(false); });
   }, [myMove, v.phase]);
   // your move: a chime, a short buzz and a tab-title flag, so a phone face-down on the table still tells you
   useEffect(() => {
@@ -497,7 +493,7 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden><path d="M4 6h16M4 12h16M4 18h16" /></svg>
         </button>
         {!solo && <MicButton voice={voice} />}
-        <button type="button" onClick={() => setSheet("history")} aria-label="What happened so far" className="grid h-11 w-11 place-items-center text-brass">
+        <button type="button" onClick={() => setFeedOpen(true)} aria-label="What happened so far" className="grid h-11 w-11 place-items-center text-brass">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5M12 7v5l3 2" /></svg>
         </button>
         <p className="flex-1 text-center font-[family-name:var(--font-engraved)] text-[12px] font-semibold uppercase tracking-[0.18em] text-brass">Round {v.round} of {v.rounds}</p>
@@ -506,14 +502,12 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
 
       <Ring v={v} voice={voice} talking={bots.current?.seat ?? null} floorSeat={s.floor && s.floor.until > now() ? s.floor.seat : null} actor={headline?.actor} target={headline?.target} pick={v.decision?.kind === "vote" ? v.decision.mine ?? null : null} tally={live ?? voteShown?.tally}
         flying={flying} onThrow={v.me.alive ? throwAt : undefined}
-        onWhisper={v.me.alive && !whisperedThisRound(v) ? setWhisperTo : undefined}
         away={s.away} marks={marks} onMark={setMark}
         onClaim={v.me.alive && s.status === "playing" ? claimAt : undefined}
         onQuick={v.me.alive && s.status === "playing" ? (l) => { seeTips("seats"); api.chat(code, token, QUICK_PREFIX + l).catch(() => {}); } : undefined}>
         {stage.current?.big
           ? <Stage stage={stage} skip={stage.skip} names={v.players.map((p) => p.name)} inline small={v.players.length > 8} />
-          : <Centre v={v} feed={feed} onOpen={() => setFeedOpen(true)} floor={s.floor && s.floor.until > now() ? s.floor : null} canFloor={v.me.alive && !s.floorUsed.includes(v.me.seat)}
-            takeFloor={() => api.floor(code, token).catch(() => {})} now={now} compact={Boolean(myMove && myMove !== "vote" && myMove !== "debate")} living={living.length} extend={extend}
+          : <Centre v={v} feed={feed} onOpen={() => setFeedOpen(true)} compact={Boolean(myMove && myMove !== "vote" && myMove !== "debate")} living={living.length} extend={extend}
           ready={() => act({ type: "ready" })} />}
       </Ring>
       {v.me.alive && !solo && <TalkButton up={Boolean(myMove && myMove !== "debate")} />}
@@ -521,10 +515,7 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
       <Tray v={v} act={act} live={live} waitForExit={myExitPending} banner={coach
         ? <Coach key={coach.id} text={coach.text} onNext={() => setCoachSeen((xs) => [...xs, coach.id])} onSkip={() => setCoachOff(true)} />
         : tip ? <Tip key={tip} text={TIP_TEXT[tip]} onDone={() => seeTips(tip)} /> : null} />
-      {whisperTo !== null && <WhisperSheet v={v} code={code} token={token} to={whisperTo} onClose={() => setWhisperTo(null)} />}
-      {inbox[0] && <WhisperBubble key={inbox[0].id} w={inbox[0]} names={names} onDone={() => throws.dismiss(inbox[0].id)} up={Boolean(myMove)} />}
       {feedOpen && <Sheet title="Everything at the table" onClose={() => setFeedOpen(false)}><FeedList items={[...feed].reverse()} names={names} me={v.me.seat} /></Sheet>}
-      {sheet === "history" && <Sheet title="What happened" onClose={() => setSheet(null)}><Story v={v} /></Sheet>}
 
       {menu && (
         <Sheet title="Menu" onClose={() => setMenu(false)}>
@@ -535,7 +526,11 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
               <p className="flex-1 text-[14px] text-stock/80">Your mic. Tap a player&rsquo;s seat to mute them for you only.</p>
             </div>
           )}
+          <SoundMode lines={bots.voice} setLines={bots.setVoice} />
           <AlertsToggle code={code} token={token} on={s.you.alerts} />
+          <details className="group rounded-2xl border border-brass/30 px-4 py-1 [&_summary::-webkit-details-marker]:hidden">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between text-[14px] font-semibold text-stock/80">More<span aria-hidden className="transition group-open:rotate-90">›</span></summary>
+            <div className="flex flex-col gap-2 pb-2">
           <Toggles solo={solo} />
           <button type="button" onClick={() => bots.setVoice(!bots.voice)} aria-pressed={bots.voice}
             className="flex min-h-12 items-center gap-3 rounded-2xl border border-brass/40 px-4 text-left text-[14px] text-stock">
@@ -548,7 +543,8 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
               {captions.on ? (captions.broken ? "Captions — this phone can't (mic busy)" : "Live captions of my voice on") : "Live captions of my voice off"}
             </button>
           )}
-          <Story v={v} />
+            </div>
+          </details>
           <Link href="/" className="text-center text-[13px] text-stock/60 underline">Leave this table</Link>
         </Sheet>
       )}
@@ -604,9 +600,9 @@ function RolePeek({ v }: { v: PlayerView }) {
 }
 
 /** Seats on an oval in turn order, you at the bottom, a thin brass line joining them. */
-function Ring({ v, voice, talking, floorSeat = null, actor, target, pick, tally, flying = [], away = [], marks = {}, onMark, onThrow, onWhisper, onPick, onClaim, onQuick, children }: {
+function Ring({ v, voice, talking, floorSeat = null, actor, target, pick, tally, flying = [], away = [], marks = {}, onMark, onThrow, onPick, onClaim, onQuick, children }: {
   v: PlayerView; voice: VoiceCtl; talking: number | null; floorSeat?: number | null; actor?: number; target?: number; pick: number | null; tally?: Record<string, number>;
-  flying?: Throw[]; away?: number[]; marks?: Record<number, Mark>; onMark?: (seat: number, m: Mark | null) => void; onThrow?: (seat: number, emoji: string) => void; onWhisper?: (seat: number) => void; onPick?: (seat: number) => void;
+  flying?: Throw[]; away?: number[]; marks?: Record<number, Mark>; onMark?: (seat: number, m: Mark | null) => void; onThrow?: (seat: number, emoji: string) => void; onPick?: (seat: number) => void;
   onClaim?: (kind: "accuse" | "trust" | "kundli" | "stone", seat: number, role?: string, has?: boolean) => void; onQuick?: (line: string) => void; children: React.ReactNode;
 }) {
   const n = v.players.length;
@@ -665,7 +661,7 @@ function Ring({ v, voice, talking, floorSeat = null, actor, target, pick, tally,
               micOff={me ? !voice.micOn || voice.micBlocked : Boolean(peer?.muted)}
               hushed={Boolean(peer?.hushed)}
               away={away.includes(p.seat)} mark={marks[p.seat]} said={said[p.seat]}
-              onTap={onPick && p.alive ? () => onPick(p.seat) : (me ? onQuick : onThrow || onWhisper || onClaim || peer) ? () => setPicker(picker === p.seat ? null : p.seat) : undefined} />
+              onTap={onPick && p.alive ? () => onPick(p.seat) : (me ? onQuick : onThrow || onClaim || peer) ? () => setPicker(picker === p.seat ? null : p.seat) : undefined} />
           </div>
         );
       })}
@@ -726,10 +722,6 @@ function Ring({ v, voice, talking, floorSeat = null, actor, target, pick, tally,
           {onThrow && REACTIONS.map((e) => (
             <button key={e} type="button" role="menuitem" onClick={() => { onThrow(picker, e); setPicker(null); }} className="grid h-10 w-10 place-items-center rounded-full text-[22px] active:scale-90">{e}</button>
           ))}
-          {onWhisper && v.players[picker]?.alive && (
-            <button type="button" role="menuitem" aria-label={`Whisper to ${v.players[picker]?.name}`} onClick={() => { onWhisper(picker); setPicker(null); }}
-              className="grid h-10 w-10 place-items-center rounded-full bg-jade-deep/60 text-[20px] ring-1 ring-jade/60">🤫</button>
-          )}
           {peerOf(picker) && (
             <button type="button" role="menuitem" aria-label={peerOf(picker)!.hushed ? "Unmute for me" : "Mute for me"} onClick={() => { voice.hush(picker); setPicker(null); }}
               className="grid h-10 w-10 place-items-center rounded-full text-[20px]">{peerOf(picker)!.hushed ? "🔊" : "🔇"}</button>
@@ -781,7 +773,7 @@ function Seat({ p, me, size, initials, got, tag, spot, voted, picked, speaking, 
       </button>
       <span className={`relative z-10 -mt-1 truncate rounded-full border bg-ember font-medium ${z.tag} ${me ? "border-2 border-jade text-jade-soft" : spot ? "border-[#f0a32e] text-[#f3c66b]" : "border-brass/60 text-stock"}`}>{p.name}</span>
       {p.alive
-        ? <span className="mt-0.5 flex h-1.5 gap-0.5" aria-hidden>{Array.from({ length: p.votes }).map((_, i) => <span key={i} className="h-1.5 w-1.5 rounded-full bg-[#f0a32e]" />)}</span>
+        ? <span className="mt-0.5 flex h-1.5 gap-0.5" aria-hidden>{p.votes > 1 && Array.from({ length: p.votes }).map((_, i) => <span key={i} className="h-1.5 w-1.5 rounded-full bg-[#f0a32e]" />)}</span>
         : <span className="text-[10px] leading-tight text-crimson-soft">{p.revealedRole ?? "out"}</span>}
       {/* what the table has said ABOUT them — kept on the seat once the feed has scrolled on (Town of Salem's notepad, BGA's player panels) */}
       {p.alive && said && (said.accuse || said.trust || said.role || said.stone !== undefined) && (
@@ -848,12 +840,6 @@ function liveTally(v: PlayerView): Record<string, number> {
 }
 
 /** seconds left on the floor */
-function FloorClock({ until, now }: { until: number; now: () => number }) {
-  const [, force] = useState(0);
-  useEffect(() => { const t = setInterval(() => force((x) => x + 1), 250); return () => clearInterval(t); }, []);
-  return <span className="tabular-nums">{Math.max(0, Math.ceil((until - now()) / 1000))}s</span>;
-}
-
 /** whose turn comes after this one (the next living seat) — only while a turn is on */
 function nextUp(v: PlayerView): string | null {
   if (!v.phase.startsWith("turn")) return null;
@@ -867,15 +853,13 @@ const TAGLESS = new Set(["pass", "away", "back", "floor_extended", "timeout", "g
 /** THE CENTRE (designer 2026-10-09, option A — "every little thing must be displayed at the center"): a status line,
  *  then the running feed — newest at the bottom and biggest, older lines smaller and fainter — then the debate's
  *  controls. Tap the feed for everything that was said and done. */
-function Centre({ v, feed, onOpen, compact, living, extend, ready, floor = null, canFloor = false, takeFloor, now }: {
+function Centre({ v, feed, onOpen, compact, living, extend, ready }: {
   v: PlayerView; feed: FeedItem[]; onOpen: () => void; compact: boolean; living: number;
   extend?: () => void; ready: () => void;
-  floor?: { seat: number; until: number } | null; canFloor?: boolean; takeFloor?: () => void; now?: () => number;
 }) {
   const d = v.decision;
   const voteOpen = v.phase.endsWith("_vote");
   const debate = v.phase.endsWith("_debate");
-  const name = (seat: number) => v.players[seat]?.name ?? "?";
   const btn = "min-h-11 rounded-full border-2 border-brass/70 px-3 font-[family-name:var(--font-engraved)] text-[13px] font-bold uppercase tracking-wide";
   const names = v.players.map((p) => p.name);
   // the debate's buttons and your move need the room: 3 lines then
@@ -899,17 +883,6 @@ function Centre({ v, feed, onOpen, compact, living, extend, ready, floor = null,
             </ul>}
       </button>
 
-      {debate && floor && (
-        // SAFAI DO: one voice, everyone else held
-        <p key={floor.seat} className="pop mt-2 rounded-xl border border-[#f0a32e]/70 bg-[#3a240c] px-2 py-1.5 text-[14px] font-bold text-[#f3c66b]">
-          🎤 {floor.seat === v.me.seat ? "You have the floor" : `${name(floor.seat)} has the floor`} · <FloorClock until={floor.until} now={now!} />
-        </p>
-      )}
-      {debate && !floor && canFloor && takeFloor && (
-        <button type="button" onClick={takeFloor} className="mt-2 min-h-10 w-full rounded-full border-2 border-[#f0a32e]/70 bg-black/30 text-[13px] font-bold text-[#f3c66b] active:translate-y-px">
-          🎤 Take the floor · 15s
-        </button>
-      )}
       {debate && d?.kind === "debate" && (
         <div className="mt-2 flex flex-col items-center gap-1.5">
           <p className="text-[12px] text-stock/60">{d.ready.length} of {living} ready</p>
@@ -1279,13 +1252,13 @@ export const TOUR: [string, React.ReactNode][] = [
   ["claims", <>Tap any player to tell the table <b>🌾 Villager · 🫵 Thief · 🔮 Role · 💎 Stone</b> — true or a lie. Bots listen.</>],
   ["marks", <>In that menu, <b>Mark ✓ ! ?</b> is your private note on a player. Only you see it.</>],
   ["counts", <>Under a name: <b>🫵</b> times called a thief, <b>🌾</b> called a villager, <b>💎✓/✗</b> said to hold a Stone or not.</>],
-  ["badges", <>On each player: the <b>number</b> is cards held, the <b>dots</b> are their votes, <b>💤</b> means away.</>],
+  ["badges", <>On each player: the <b>number</b> is cards held, <b>dots</b> mean extra votes, <b>💤</b> means away.</>],
   ["self", <>Tap <b>yourself</b> for quick lines like &ldquo;Not me!&rdquo;</>],
-  ["react", <>From a player&rsquo;s menu, throw <b>🍅 😂 🔥</b> — or <b>🤫 whisper</b> to just them, once a round.</>],
+  ["react", <>From a player&rsquo;s menu, throw <b>🍅 😂 🔥</b> at them.</>],
   ["voice", <>Your <b>mic is on</b> — just talk. The 🎙 button at the top mutes you.</>],
   ["clock", <>The <b>circle at the top right</b> is the clock for the move being made.</>],
-  ["history", <>The <b>clock-arrow</b> at the top shows everything that happened so far.</>],
-  ["menu", <><b>☰ Menu</b>: hold to peek at your role, turn alerts, sound and music.</>],
+  ["history", <>The <b>clock-arrow</b> at the top — or a tap on the middle — shows everything that happened so far.</>],
+  ["menu", <><b>☰ Menu</b>: hold to peek at your role, sound, turn alerts.</>],
 ];
 
 function Coach({ text, onNext, onSkip }: { text: React.ReactNode; onNext: () => void; onSkip: () => void }) {
@@ -1296,6 +1269,31 @@ function Coach({ text, onNext, onSkip }: { text: React.ReactNode; onNext: () => 
         <button type="button" onClick={onSkip} className="min-h-9 text-stock/60 underline underline-offset-2">Skip tutorial</button>
         <button type="button" onClick={onNext} className="min-h-9 text-[#f3c66b]">Got it ›</button>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- one sound switch (2026-10-09, "simplify")
+type SoundSetting = "all" | "voices" | "off";
+/** All = effects, music, the Sutradhar and lines read aloud · Voices only = the Sutradhar and lines, no effects or
+ *  music · Off = silent (voice chat is the mic's business). The single switches stay under More. */
+function SoundMode({ lines, setLines }: { lines: boolean; setLines: (on: boolean) => void }) {
+  const [, redraw] = useState(0);
+  const now: SoundSetting | null = soundOn() && musicOn() && narratorOn() && lines ? "all"
+    : !soundOn() && !musicOn() && narratorOn() && lines ? "voices"
+    : !soundOn() && !musicOn() && !narratorOn() && !lines ? "off" : null;
+  const pick = (m: SoundSetting) => {
+    setSound(m === "all"); setMusic(m === "all"); setNarrator(m !== "off"); setLines(m !== "off");
+    redraw((x) => x + 1);
+  };
+  const opt = (m: SoundSetting, label: string) => (
+    <button key={m} type="button" aria-pressed={now === m} onClick={() => pick(m)}
+      className={`min-h-11 flex-1 rounded-full text-[13px] font-bold ${now === m ? "bg-[#f0a32e] text-card-ink" : "text-stock/80 ring-1 ring-brass/40"}`}>{label}</button>
+  );
+  return (
+    <div className="flex flex-col gap-1.5" role="group" aria-label="Sound">
+      <p className="text-[13px] font-semibold text-stock/70">Sound</p>
+      <div className="flex gap-2">{opt("all", "All")}{opt("voices", "Voices only")}{opt("off", "Off")}</div>
     </div>
   );
 }

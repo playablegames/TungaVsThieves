@@ -7,7 +7,8 @@ import { play } from "./sfx";
 import { decodeWhisper, isWhisper, type Whisper } from "./whisper";
 
 export const REACT_PREFIX = "\u0001r|";
-export const REACTIONS = ["🍅", "😂", "🤨", "🙏", "🔥", "👀"] as const;
+// (2026-10-09, "simplify") three are enough
+export const REACTIONS = ["🍅", "😂", "🔥"] as const;
 export const isReaction = (text: string) => text.startsWith(REACT_PREFIX);
 export const reactionText = (emoji: string, target: number) => `${REACT_PREFIX}${emoji}|${target}`;
 

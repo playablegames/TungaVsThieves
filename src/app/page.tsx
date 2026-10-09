@@ -198,12 +198,12 @@ function HowToPlay({ onClose, onLearn }: { onClose: () => void; onLearn: () => v
           <p className={h}>The screen</p>
           <ul className="mt-1 flex flex-col gap-1.5">
             <li><b>The middle</b> — the table&rsquo;s diary: every move, claim and vote. Tap it to see everything.</li>
-            <li><b>Tap a player</b> — 🌾 Villager · 🫵 Thief · 🔮 Role · 💎 Stone (true or a lie), throw 🍅 😂, or 🤫 whisper.</li>
+            <li><b>Tap a player</b> — 🌾 Villager · 🫵 Thief · 🔮 Role · 💎 Stone (true or a lie), or throw 🍅 😂 🔥.</li>
             <li><b>Mark ✓ ! ?</b> — your private note on a player. Only you see it.</li>
             <li><b>Under a name</b> — 🫵 / 🌾 how often called a thief / a villager; 💎✓/✗ said to hold a Stone.</li>
-            <li><b>On a player</b> — the number is cards held, the dots are votes, 💤 is away.</li>
+            <li><b>On a player</b> — the number is cards held, dots are extra votes, 💤 is away.</li>
             <li><b>Tap yourself</b> — quick lines like &ldquo;Not me!&rdquo;</li>
-            <li><b>Top</b> — ☰ menu (peek at your role, alerts, sound), 🎙 your mic, the history, the clock.</li>
+            <li><b>Top</b> — ☰ menu (peek at your role, sound, alerts), 🎙 your mic, the history, the clock.</li>
           </ul>
         </section>
         <section>
