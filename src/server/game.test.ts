@@ -86,7 +86,7 @@ describe("room service (memory store)", () => {
     expect((await memoryStore.get(code))!.state!.events.some((e) => e.type === "timeout")).toBe(true);
   });
 
-  it("eliminated players cannot chat", async () => {
+  it("a player who is out still talks to the table (designer 2026-10-09: no Gone room)", async () => {
     const { code, tokens } = await room(5);
     await startGame(code, tokens[0]);
     await chat(code, tokens[2], "hello");
@@ -94,8 +94,8 @@ describe("room service (memory store)", () => {
     const seat = row.lobby.findIndex((p) => p.token === tokens[2]);
     row.state!.players[seat].alive = false;
     await memoryStore.update({ ...row }, row.version);
-    await err(chat(code, tokens[2], "boo"), 403);
-    expect((await getState(code, tokens[0], 0)).messages.map((m) => m.text)).toEqual(["hello"]);
+    await chat(code, tokens[2], "I was a villager!");
+    expect((await getState(code, tokens[0], 0)).messages.map((m) => m.text)).toEqual(["hello", "I was a villager!"]);
   });
 
   it("only the host adds bots or removes seats — any seat but the host's own (2026-10-09)", async () => {

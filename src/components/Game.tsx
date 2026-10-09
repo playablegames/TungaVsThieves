@@ -55,7 +55,8 @@ export default function Game({ code }: { code: string }) {
     st ? { seat: st.you.seat, name: st.you.name } : null,
     st?.status !== "playing",
     // whoever is speaking last words stays at the table until they finish
-    st?.view?.players.filter((p) => !p.alive && p.seat !== lw?.seat).map((p) => p.seat) ?? [],
+    // (designer 2026-10-09) no Gone room: a player who is out is still heard by everyone
+    [],
     st?.voice ?? "mesh",
   );
   const ptt = usePtt();
@@ -400,7 +401,7 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
     api.claim(code, token, { kind, target: seat, ...(role ? { role } : {}), ...(has !== undefined ? { has } : {}) }).catch(() => {});
   };
   // live captions (menu switch, off by default): your sentences go in the centre under your name
-  const captions = useCaptions(voice.status === "on" && voice.micOn && !voice.micBlocked && v.me.alive && (!ptt.on || ptt.down),
+  const captions = useCaptions(voice.status === "on" && voice.micOn && !voice.micBlocked && (!ptt.on || ptt.down),
     useCallback((t: string) => { api.chat(code, token, CAPTION_PREFIX + t).catch(() => {}); }, [code, token]));
   const root = useRef<HTMLDivElement>(null);
   const [throws] = useState(() => new ThrowQueue());
@@ -501,16 +502,16 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
       </header>
 
       <Ring v={v} voice={voice} talking={bots.current?.seat ?? null} floorSeat={s.floor && s.floor.until > now() ? s.floor.seat : null} actor={headline?.actor} target={headline?.target} pick={v.decision?.kind === "vote" ? v.decision.mine ?? null : null} tally={live ?? voteShown?.tally}
-        flying={flying} onThrow={v.me.alive ? throwAt : undefined}
+        flying={flying} onThrow={s.status === "playing" ? throwAt : undefined}
         away={s.away} marks={marks} onMark={setMark}
-        onClaim={v.me.alive && s.status === "playing" ? claimAt : undefined}
-        onQuick={v.me.alive && s.status === "playing" ? (l) => { seeTips("seats"); api.chat(code, token, QUICK_PREFIX + l).catch(() => {}); } : undefined}>
+        onClaim={s.status === "playing" ? claimAt : undefined}
+        onQuick={s.status === "playing" ? (l) => { seeTips("seats"); api.chat(code, token, QUICK_PREFIX + l).catch(() => {}); } : undefined}>
         {stage.current?.big
           ? <Stage stage={stage} skip={stage.skip} names={v.players.map((p) => p.name)} inline small={v.players.length > 8} />
           : <Centre v={v} feed={feed} onOpen={() => setFeedOpen(true)} compact={Boolean(myMove && myMove !== "vote" && myMove !== "debate")} living={living.length} extend={extend}
           ready={() => act({ type: "ready" })} />}
       </Ring>
-      {v.me.alive && !solo && <TalkButton up={Boolean(myMove && myMove !== "debate")} />}
+      {!solo && <TalkButton up={Boolean(myMove && myMove !== "debate")} />}
       {/* the coach (a guided first game) or a first-time tip sits INSIDE the tray, so the cards never cover it */}
       <Tray v={v} act={act} live={live} waitForExit={myExitPending} banner={coach
         ? <Coach key={coach.id} text={coach.text} onNext={() => setCoachSeen((xs) => [...xs, coach.id])} onSkip={() => setCoachOff(true)} />
@@ -956,7 +957,7 @@ function Tray({ v, act, live, banner = null, waitForExit = false }: { v: PlayerV
           {!v.me.alive ? "You're out" : inTray ? "Your move" : "Your Cards"}
         </h2>
       </div>
-      {!v.me.alive && <p className="text-center text-[12px] text-stock/60">Gone room — you hear the table; only the gone hear you.</p>}
+      {!v.me.alive && <p className="text-center text-[13px] text-stock/70">You&rsquo;re out — you can still talk to the table.</p>}
       {exitFirst ? <p className="py-3 text-center font-display text-[16px] text-stock/80">Your last decision comes next…</p>
         : inTray ? <Decide key={v.phase} v={v} act={act} /> : v.me.alive && <HandRow cards={v.me.hand} />}
     </section>

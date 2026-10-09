@@ -1,8 +1,7 @@
 // LiveKit voice (research 2026-10-07: a phone-to-phone mesh won't hold 8-12 players on mobile; an SFU sends each voice
 // once and lets the SERVER decide who hears whom). Each seated player gets short-lived passes:
-//   alive → the table room, may speak.
-//   out   → the table room listen-only, plus the Gone room where they may speak — so the living never hear the gone,
-//           enforced by LiveKit itself, not by trusting the phones.
+//   everyone → the table room, may speak. (Since 2026-10-09 a player who is out keeps their voice at the table — the
+//   designer cut the Gone room; `alive: false` still makes the old Gone-room pass, unused.)
 // Off until LIVEKIT_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET are set; the phones then use the old mesh voice.
 import { createHash } from "node:crypto";
 import { AccessToken } from "livekit-server-sdk";
