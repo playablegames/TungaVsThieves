@@ -23,7 +23,7 @@ function game(n: number, seed: number) {
 }
 
 describe("bot minds", () => {
-  const games = Array.from({ length: 80 }, (_, i) => game(4 + (i % 9), 500 + i));
+  const games = Array.from({ length: 80 }, (_, i) => game(5 + (i % 9), 500 + i));
 
   it("talk through whole games without failing: only bots speak, at most 3 lines and one per bot per move", () => {
     let lines = 0;

@@ -8,6 +8,7 @@ import { api, useGame, useHydrated } from "@/lib/client";
 import { CARD } from "@/lib/cards";
 import { beatsFor, type Beat } from "@/lib/beats";
 import type { Action, Card, Side } from "@/engine/types";
+import { MIN_PLAYERS } from "@/engine/setup";
 import type { PlayerView, PublicPlayer } from "@/engine/view";
 import type { ClientState } from "@/server/game";
 import { useStage } from "@/lib/stage";
@@ -19,8 +20,10 @@ import { Eject, thievesRemaining } from "./Eject";
 import { Confetti, ShareResult } from "./Share";
 import { WhisperBubble, WhisperSheet, whisperedThisRound } from "./Whisper";
 import { buzz, duck, play, setSound, soundOn, unlockOnFirstTap, type Sound } from "@/lib/sfx";
+import { musicDuck, musicOn, setMood, setMusic, startMusicOnFirstTap, stopMusic, type Mood } from "@/lib/music";
 import { narrate, narratorOn, setNarrator } from "@/lib/narrator";
 import { REACTIONS, ThrowQueue, reactionText, type Throw } from "@/lib/reactions";
+import { setPtt, setTalking, usePtt } from "@/lib/ptt";
 import { RoleReveal, revealSeen } from "./RoleReveal";
 import { TimerRing } from "./ui";
 import { useVoice } from "@/lib/voice";
@@ -32,13 +35,35 @@ type VoiceCtl = ReturnType<typeof useVoice>;
 export default function Game({ code }: { code: string }) {
   const g = useGame(code);
   const st = g.state;
+  // voice moments: SAFAI DO (one player holds the floor) and LAST WORDS (the one just put out speaks)
+  const [, rerender] = useState(0);
+  const lw = st?.lastWords && st.lastWords.until > g.now() ? st.lastWords : null;
+  const fl = st?.floor && st.floor.until > g.now() ? st.floor : null;
+  useEffect(() => {
+    // re-render the moment a floor or last-words window ends, so mics open again on time
+    const ends = [st?.lastWords?.until, st?.floor?.until].filter((x): x is number => typeof x === "number");
+    if (!ends.length) return;
+    const t = setTimeout(() => rerender((x) => x + 1), Math.max(0, Math.min(...ends) - g.now() + 60));
+    return () => clearTimeout(t);
+  }, [st?.lastWords?.until, st?.floor?.until, g]);
   const voice = useVoice(
     code,
     st ? { seat: st.you.seat, name: st.you.name } : null,
     st?.status !== "playing",
-    st?.view?.players.filter((p) => !p.alive).map((p) => p.seat) ?? [],
+    // whoever is speaking last words stays at the table until they finish
+    st?.view?.players.filter((p) => !p.alive && p.seat !== lw?.seat).map((p) => p.seat) ?? [],
     st?.voice ?? "mesh",
   );
+  const ptt = usePtt();
+  const me = st?.you.seat ?? -1;
+  const held = Boolean((fl && fl.seat !== me) || (lw && lw.seat !== me) || (ptt.on && !ptt.down));
+  const setHeld = voice.setHeld;
+  useEffect(() => { setHeld(held); }, [held, setHeld]);
+  const clip = voice.clip;
+  const nameOf = (seat: number) => st?.view?.players[seat]?.name.replace(/\s*🤖$/, "") ?? "";
+  const lwKey = lw ? `${lw.seat}:${lw.until}` : "", flKey = fl ? `${fl.seat}:${fl.until}` : "";
+  useEffect(() => { if (lw) clip(`${nameOf(lw.seat)} — last words`, Math.max(0, lw.until - g.now())); }, [lwKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (fl) clip(`${nameOf(fl.seat)} takes the floor`, Math.max(0, fl.until - g.now())); }, [flKey]); // eslint-disable-line react-hooks/exhaustive-deps
   // the role reveal opens the game on every phone, once
   const [revealed, setRevealed] = useState(() => revealSeen(code));
   if (!g.hydrated) return <Centered>Connecting…</Centered>;
@@ -167,7 +192,7 @@ function Lobby({ s, code, token, onError, voice }: { s: ClientState; code: strin
       <div className="contents landscape:col-start-1 landscape:row-start-2 landscape:flex landscape:flex-col landscape:justify-end">
       {n >= 13 && <p className="mb-2 text-center text-[13px] font-semibold text-brass landscape:hidden">↻ Turn your phone sideways for a bigger table</p>}
       <p className="mb-3 text-center text-[13px] text-stock/70">
-        {row ? `${row[0]} villagers · ${row[1]} thie${row[1] === 1 ? "f" : "ves"}` : `You need at least 4 players`}
+        {row ? `${row[0]} villagers · ${row[1]} thie${row[1] === 1 ? "f" : "ves"}` : `You need at least ${MIN_PLAYERS} players`}
       </p>
 
       {s.you.host ? (
@@ -249,8 +274,8 @@ function status(v: PlayerView): string {
   if (p.endsWith("_debate")) return `${p.startsWith("final") ? "Last debate" : "Faisla"} — the floor is open`;
   if (p.endsWith("_vote")) return mine ? "Your vote" : `Voting — waiting for ${list}`;
   if (p === "surrender") return mine ? "Surrender your Stone?" : "The Stone holders are deciding…";
-  if (p === "batwara") return mine ? "Bhukamp — pass one left, one right" : `Bhukamp — waiting for ${list}`;
-  if (p.startsWith("elim:dal_pick")) return mine ? "Dal Badal — pick a role card" : `Dal Badal — ${list} picking a role card`;
+  if (p === "batwara") return mine ? "Bhukamp — pass one card clockwise" : `Bhukamp — waiting for ${list}`;
+  if (p.startsWith("dal_badal")) return mine ? "Dal Badal — pick a role card" : `Dal Badal — ${list} picking a role card`;
   if (p.startsWith("elim")) {
     const seat = Number(p.split(":")[2]);
     return mine ? "You're out — your last decision" : `${name(seat)} is out — their last decision`;
@@ -307,17 +332,18 @@ function Table({ s, v, act, now, extend, code, token, voice, messages }: {
     lastThrow.current = Date.now();
     api.chat(code, token, reactionText(emoji, seat)).catch(() => {});
   };
-  useEffect(() => { unlockOnFirstTap(); }, []);
+  useEffect(() => { unlockOnFirstTap(); startMusicOnFirstTap(); }, []);
+  useEffect(() => () => stopMusic(), []);
   // every big moment gets its sound, the narrator's line, a shake and a buzz (research 2026-10-07)
   const beat = stage.current;
   useEffect(() => {
     if (!beat) return;
     const SOUND: Partial<Record<string, Sound>> = {
-      faisla: "faisla", ballots_open: "drumroll", final_vote: "drumroll", talashi: "flip", kundli: "mystic", kundli_private: "mystic",
-      hera_pheri: "steal", batwara: "quake", maya_jaal: "rewind", dal_badal: "swirl", eliminated: "gong", claim: "claim",
-      pass: "whoosh", last_shot: "arrow", to_village: "gong", surrender_open: "drumroll", surrender: "gong",
+      faisla: "faisla", ballots_open: "drumroll", final_vote: "drumroll", talashi: "flip", talashi_private: "flip", kundli: "mystic", kundli_private: "mystic",
+      hera_pheri: "steal", batwara: "quake", dal_badal: "swirl", eliminated: "gong", eliminated_private: "mystic", claim: "claim",
+      pass: "whoosh", to_village: "gong", surrender_open: "drumroll", surrender: "gong",
     };
-    if (beat.type === "teer_kaman" || beat.type === "last_shot") play("arrow", beat.result === "hit");
+    if (beat.type === "teer_kaman") play("arrow", beat.result === "hit");
     else if (SOUND[beat.type]) play(SOUND[beat.type]!);
     narrate(beat, names);
     const hard = beat.type === "eliminated" || beat.type === "batwara" || (beat.type === "teer_kaman" && beat.result === "hit");
@@ -330,7 +356,12 @@ function Table({ s, v, act, now, extend, code, token, voice, messages }: {
   }, [beat, names]);
   // talking? the effects step back so voices stay on top
   const talkingNow = voice.speaking || Object.values(voice.peers).some((p) => p.speaking && !p.hushed);
-  useEffect(() => { duck(talkingNow); }, [talkingNow]);
+  useEffect(() => { duck(talkingNow); musicDuck(talkingNow); }, [talkingNow]);
+  // the score follows the game (music.ts): calm on turns, tense through a Faisla, the last vote and the surrender,
+  // and it steps aside for the ejection and the end
+  const mood: Mood = s.status === "over" || beat?.type === "eliminated" ? "silent"
+    : /_(debate|vote)$/.test(v.phase) || v.phase === "surrender" ? "tense" : "calm";
+  useEffect(() => { setMood(mood); }, [mood]);
   // the clock running out on YOUR decision: a heartbeat every second for the last ten
   useEffect(() => {
     if (!myMove || !s.deadline) return;
@@ -353,7 +384,7 @@ function Table({ s, v, act, now, extend, code, token, voice, messages }: {
     return () => { document.title = was; };
   }, [myMove]);
 
-  if (s.status === "over") return (<><Stage stage={stage} skip={stage.skip} names={v.players.map((p) => p.name)} /><Final v={v} /></>);
+  if (s.status === "over") return (<><Stage stage={stage} skip={stage.skip} names={v.players.map((p) => p.name)} /><Final v={v} clips={voice.clips ?? []} /></>);
 
   const living = v.players.filter((p) => p.alive);
   const ejected = beat?.type === "eliminated" && beat.target !== undefined ? v.players[beat.target] : null;
@@ -361,7 +392,7 @@ function Table({ s, v, act, now, extend, code, token, voice, messages }: {
     <div ref={root} className="flex min-h-0 flex-1 flex-col">
       {ejected && beat && (
         <Eject key={beat.n} name={ejected.name.replace(/\s*🤖$/, "")} initials={initialsOf(names)[ejected.seat]} colour={SEAT_COLOURS[ejected.seat % SEAT_COLOURS.length]}
-          thief={beat.tone === "relic"} role={ejected.revealedRole ?? ""} onDone={stage.skip}
+          thief={beat.tone === "relic"} role={ejected.revealedRole} onDone={stage.skip} lastWords={Boolean(beat.lastWords)} mine={ejected.seat === v.me.seat}
           remaining={thievesRemaining(v.rolesInPlay, v.players.filter((p) => !p.alive).map((p) => p.revealedRole))} />
       )}
       <div aria-hidden className="fixed inset-0 -z-10 bg-[radial-gradient(80%_45%_at_50%_32%,var(--color-ember-2)_0%,var(--color-ember)_60%,#120903_100%)]" />
@@ -377,13 +408,15 @@ function Table({ s, v, act, now, extend, code, token, voice, messages }: {
         <p className="flex-1 text-center font-[family-name:var(--font-engraved)] text-[12px] font-semibold uppercase tracking-[0.18em] text-brass">Round {v.round} of {v.rounds}</p>
         <TimerRing deadline={s.deadline} now={now} size={52} brass />
       </header>
+      <LiveStrip seen={seen} onOpen={() => setSheet("history")} />
 
-      <Ring v={v} voice={voice} talking={bots.current?.seat ?? null} actor={headline?.actor} target={headline?.target} pick={v.decision?.kind === "vote" ? v.decision.mine ?? null : null} tally={live ?? voteShown?.tally}
+      <Ring v={v} voice={voice} talking={bots.current?.seat ?? null} floorSeat={s.floor && s.floor.until > now() ? s.floor.seat : null} actor={headline?.actor} target={headline?.target} pick={v.decision?.kind === "vote" ? v.decision.mine ?? null : null} tally={live ?? voteShown?.tally}
         flying={flying} onThrow={v.me.alive ? throwAt : undefined}
         onWhisper={v.me.alive && !whisperedThisRound(v) ? setWhisperTo : undefined}>
         {stage.current?.big
           ? <Stage stage={stage} skip={stage.skip} names={v.players.map((p) => p.name)} inline small={v.players.length > 8} />
-          : <Centre v={v} last={headline} lastVote={voteShown} live={live} ticker={ticker} compact={Boolean(myMove && myMove !== "vote" && myMove !== "debate")} living={living.length} extend={extend}
+          : <Centre v={v} last={headline} floor={s.floor && s.floor.until > now() ? s.floor : null} canFloor={v.me.alive && !s.floorUsed.includes(v.me.seat)}
+            takeFloor={() => api.floor(code, token).catch(() => {})} now={now} lastVote={voteShown} live={live} ticker={ticker} compact={Boolean(myMove && myMove !== "vote" && myMove !== "debate")} living={living.length} extend={extend}
           ready={() => act({ type: "ready" })} />}
       </Ring>
       <div className="mx-3 flex min-h-11 items-center" aria-live="polite">
@@ -395,6 +428,7 @@ function Table({ s, v, act, now, extend, code, token, voice, messages }: {
           <p key={said.n} className={`stage-in w-full rounded-xl bg-black/40 px-3 py-1.5 text-[13px] leading-snug ${said.tone === "lethal" ? "text-crimson-soft" : "text-[#f3c66b]"}`}>🗣 {said.title}</p>
         ) : null}
       </div>
+      {v.me.alive && <TalkButton />}
       <Tray v={v} act={act} live={live} onClaim={v.me.alive ? () => setSheet("claim") : undefined} />
       {whisperTo !== null && <WhisperSheet v={v} code={code} token={token} to={whisperTo} onClose={() => setWhisperTo(null)} />}
       {inbox[0] && <WhisperBubble key={inbox[0].id} w={inbox[0]} names={names} onDone={() => throws.dismiss(inbox[0].id)} />}
@@ -425,12 +459,33 @@ function Table({ s, v, act, now, extend, code, token, voice, messages }: {
 function Toggles() {
   const [snd, setSnd] = useState(soundOn);
   const [nar, setNar] = useState(narratorOn);
+  const [mus, setMus] = useState(musicOn);
   const row = "flex min-h-12 items-center gap-3 rounded-2xl border border-brass/40 px-4 text-left text-[14px] text-stock";
   return (
     <>
       <button type="button" aria-pressed={snd} onClick={() => { setSound(!snd); setSnd(!snd); }} className={row}><span className="text-[18px]" aria-hidden>{snd ? "🥁" : "🔕"}</span>{snd ? "Game sounds on" : "Game sounds off"}</button>
+      <button type="button" aria-pressed={mus} onClick={() => { setMusic(!mus); setMus(!mus); }} className={row}><span className="text-[18px]" aria-hidden>{mus ? "🎵" : "🔇"}</span>{mus ? "Music on" : "Music off"}</button>
+      <PttSwitch row={row} />
       <button type="button" aria-pressed={nar} onClick={() => { setNarrator(!nar); setNar(!nar); }} className={row}><span className="text-[18px]" aria-hidden>{nar ? "🎙️" : "🤐"}</span>{nar ? "Sutradhar (narrator) on" : "Sutradhar off"}</button>
     </>
+  );
+}
+
+function PttSwitch({ row }: { row: string }) {
+  const p = usePtt();
+  return <button type="button" aria-pressed={p.on} onClick={() => setPtt(!p.on)} className={row}><span className="text-[18px]" aria-hidden>{p.on ? "✋" : "🎙️"}</span>{p.on ? "Push to talk (hold the button)" : "Open mic (talk anytime)"}</button>;
+}
+
+/** push-to-talk: hold the big button to speak */
+function TalkButton() {
+  const p = usePtt();
+  if (!p.on) return null;
+  return (
+    <button type="button" aria-label="Hold to talk" onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); setTalking(true); }}
+      onPointerUp={() => setTalking(false)} onPointerCancel={() => setTalking(false)} onContextMenu={(e) => e.preventDefault()}
+      className={`fixed bottom-[34%] right-3 z-30 grid h-16 w-16 select-none place-items-center rounded-full border-2 text-[26px] shadow-[0_8px_20px_rgba(0,0,0,.7)] [-webkit-touch-callout:none] ${p.down ? "speaking border-jade bg-jade-deep" : "border-brass/70 bg-ember"}`}>
+      🎙️
+    </button>
   );
 }
 
@@ -447,8 +502,8 @@ function RolePeek({ v }: { v: PlayerView }) {
 }
 
 /** Seats on an oval in turn order, you at the bottom, a thin brass line joining them. */
-function Ring({ v, voice, talking, actor, target, pick, tally, flying = [], onThrow, onWhisper, onPick, children }: {
-  v: PlayerView; voice: VoiceCtl; talking: number | null; actor?: number; target?: number; pick: number | null; tally?: Record<string, number>;
+function Ring({ v, voice, talking, floorSeat = null, actor, target, pick, tally, flying = [], onThrow, onWhisper, onPick, children }: {
+  v: PlayerView; voice: VoiceCtl; talking: number | null; floorSeat?: number | null; actor?: number; target?: number; pick: number | null; tally?: Record<string, number>;
   flying?: Throw[]; onThrow?: (seat: number, emoji: string) => void; onWhisper?: (seat: number) => void; onPick?: (seat: number) => void; children: React.ReactNode;
 }) {
   const n = v.players.length;
@@ -462,14 +517,15 @@ function Ring({ v, voice, talking, actor, target, pick, tally, flying = [], onTh
     return { x: 50 + 41 * Math.cos(a), y: 50 + 42 * Math.sin(a) };
   };
   // the spotlight beam: from the middle of the table to whoever must act
-  const lit = v.phase.startsWith("turn") ? v.turnSeat : v.phase === "batwara" ? null : v.waitingOn.length === 1 ? v.waitingOn[0] : null;
+  // the beam follows whoever holds the floor; otherwise whoever must act
+  const lit = floorSeat !== null ? floorSeat : v.phase.startsWith("turn") ? v.turnSeat : v.phase === "batwara" ? null : v.waitingOn.length === 1 ? v.waitingOn[0] : null;
   const beam = lit !== null ? (() => {
     const t = pos(lit), dx = t.x - 50, dy = t.y - 50, len = Math.hypot(dx, dy) || 1, w = 7;
     return `50,50 ${t.x + (-dy / len) * w},${t.y + (dx / len) * w} ${t.x - (-dy / len) * w},${t.y - (dx / len) * w}`;
   })() : null;
   const peerOf = (seat: number) => voice.peers[seat];
   return (
-    <section className="relative mx-2 min-h-[440px] flex-1" aria-label="The table">
+    <section className="relative mx-2 mt-5 min-h-[440px] flex-1" aria-label="The table">
       <div className="absolute inset-x-[9%] inset-y-[8%] rounded-[50%] border border-brass/35" aria-hidden />
       {beam && lit !== null && (
         <svg aria-hidden viewBox="0 0 100 100" preserveAspectRatio="none" className="pointer-events-none absolute inset-0 h-full w-full">
@@ -539,7 +595,7 @@ function Seat({ p, me, size, initials, got, tag, spot, voted, picked, speaking, 
   speaking: boolean; micOff: boolean; hushed: boolean; onTap?: () => void;
 }) {
   const z = SEAT[size];
-  const label = `${p.name}${me ? " (you)" : ""}${got ? `, got ${got} vote${got === 1 ? "" : "s"}` : ""}: ${p.handSize} cards, ${p.votes} vote${p.votes === 1 ? "" : "s"}${p.alive ? "" : `, out — was ${p.revealedRole}`}${spot ? ", their move" : ""}${speaking ? ", talking" : ""}${voted ? ", has voted" : ""}`;
+  const label = `${p.name}${me ? " (you)" : ""}${got ? `, got ${got} vote${got === 1 ? "" : "s"}` : ""}: ${p.handSize} cards, ${p.votes} vote${p.votes === 1 ? "" : "s"}${p.alive ? "" : p.revealedRole ? `, out — was ${p.revealedRole}` : ", out"}${spot ? ", their move" : ""}${speaking ? ", talking" : ""}${voted ? ", has voted" : ""}`;
   return (
     <div className={`relative flex flex-col items-center text-center ${z.w} ${p.alive ? "" : "opacity-45 grayscale"}`}>
       {/* the play in the centre panel, on the ring: who played it, and at whom (12-player playtest: "who did what to whom") */}
@@ -558,7 +614,7 @@ function Seat({ p, me, size, initials, got, tag, spot, voted, picked, speaking, 
       <span className={`relative z-10 -mt-1 truncate rounded-full border bg-ember font-medium ${z.tag} ${me ? "border-2 border-jade text-jade-soft" : spot ? "border-[#f0a32e] text-[#f3c66b]" : "border-brass/60 text-stock"}`}>{p.name}</span>
       {p.alive
         ? <span className="mt-0.5 flex h-1.5 gap-0.5" aria-hidden>{Array.from({ length: p.votes }).map((_, i) => <span key={i} className="h-1.5 w-1.5 rounded-full bg-[#f0a32e]" />)}</span>
-        : <span className="text-[10px] leading-tight text-crimson-soft">{p.revealedRole}</span>}
+        : <span className="text-[10px] leading-tight text-crimson-soft">{p.revealedRole ?? "out"}</span>}
       {spot && <span aria-hidden className="absolute -bottom-3 text-[12px] leading-none text-[#f0a32e]">▲</span>}
     </div>
   );
@@ -614,6 +670,13 @@ function liveTally(v: PlayerView): Record<string, number> {
   return t;
 }
 
+/** seconds left on the floor */
+function FloorClock({ until, now }: { until: number; now: () => number }) {
+  const [, force] = useState(0);
+  useEffect(() => { const t = setInterval(() => force((x) => x + 1), 250); return () => clearInterval(t); }, []);
+  return <span className="tabular-nums">{Math.max(0, Math.ceil((until - now()) / 1000))}s</span>;
+}
+
 /** whose turn comes after this one (the next living seat) — only while a turn is on */
 function nextUp(v: PlayerView): string | null {
   if (!v.phase.startsWith("turn")) return null;
@@ -622,11 +685,12 @@ function nextUp(v: PlayerView): string | null {
   return null;
 }
 
-const TICKER = new Set(["pass", "away", "back", "floor_extended", "timeout", "vote_lost", "gift", "whisper", "whisper_private"]);
+const TICKER = new Set(["pass", "away", "back", "floor_extended", "timeout", "gift", "dal_badal_done", "whisper", "whisper_private"]);
 
-function Centre({ v, last, lastVote, live, ticker, compact, living, extend, ready }: {
+function Centre({ v, last, lastVote, live, ticker, compact, living, extend, ready, floor = null, canFloor = false, takeFloor, now }: {
   v: PlayerView; last: Beat | null; lastVote: Beat | null; live: Record<string, number> | null; ticker: Beat | null; compact: boolean; living: number;
   extend?: () => void; ready: () => void;
+  floor?: { seat: number; until: number } | null; canFloor?: boolean; takeFloor?: () => void; now?: () => number;
 }) {
   const d = v.decision;
   const voteOpen = v.phase.endsWith("_vote");
@@ -647,6 +711,17 @@ function Centre({ v, last, lastVote, live, ticker, compact, living, extend, read
             {debate ? "The floor is open — accuse, defend, claim." : `${living - v.waitingOn.length} of ${living} voted`}
           </p>
           {voteOpen && live && <Tally v={v} tally={live} ballots={v.ballots ?? {}} />}
+          {debate && floor && (
+            // SAFAI DO: one voice, everyone else held
+            <p key={floor.seat} className="pop mt-2 rounded-xl border border-[#f0a32e]/70 bg-[#3a240c] px-2 py-1.5 text-[14px] font-bold text-[#f3c66b]">
+              🎤 {floor.seat === v.me.seat ? "You have the floor" : `${name(floor.seat)} has the floor`} · <FloorClock until={floor.until} now={now!} />
+            </p>
+          )}
+          {debate && !floor && canFloor && takeFloor && (
+            <button type="button" onClick={takeFloor} className="mt-2 min-h-10 w-full rounded-full border-2 border-[#f0a32e]/70 bg-black/30 text-[13px] font-bold text-[#f3c66b] active:translate-y-px">
+              🎤 Take the floor · 15s
+            </button>
+          )}
           {debate && d?.kind === "debate" && (
             <div className="mt-2 flex flex-col items-center gap-1.5">
               <p className="text-[12px] text-stock/60">{d.ready.length} of {living} ready</p>
@@ -829,7 +904,7 @@ function Story({ v }: { v: PlayerView }) {
 // ---------------------------------------------------------------- the end: every role flips, the whole story opens
 /** Game over (2026-10-07): the verdict, then the whole table turns its role cards over, round the same ring, with
  *  the two Stones in the middle saying where they ended up — the question the whole game was about. */
-function Final({ v }: { v: PlayerView }) {
+function Final({ v, clips = [] }: { v: PlayerView; clips?: { label: string; url: string }[] }) {
   const [story, setStory] = useState(false);
   const reveal = v.finalReveal!;
   const village = v.winner === "V";
@@ -910,6 +985,20 @@ function Final({ v }: { v: PlayerView }) {
         </div>
       </div>
 
+      {/* the best voice moments of the game, as this phone heard them */}
+      {clips.length > 0 && (
+        <div className="mt-3 rounded-2xl border border-brass/40 bg-black/30 p-3">
+          <p className="mb-2 text-center font-[family-name:var(--font-engraved)] text-[11px] font-semibold uppercase tracking-[0.2em] text-brass">Highlights</p>
+          <ul className="flex flex-col gap-1.5">
+            {clips.map((c) => (
+              <li key={c.url}>
+                <button type="button" onClick={() => void new Audio(c.url).play().catch(() => {})}
+                  className="flex min-h-10 w-full items-center gap-2 rounded-xl border border-brass/30 px-3 text-left text-[14px] text-stock active:translate-y-px">▶ {c.label}</button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {won && <Confetti />}
       <div className="mt-3 grid grid-cols-2 gap-2">
         <ShareResult won={won} village={village} role={mine.role} thief={mine.side === "T"} caught={reveal.filter((r) => r.side === "T" && !v.players[r.seat].alive).length} />
@@ -958,4 +1047,25 @@ function VoiceBanner({ voice }: { voice: VoiceCtl }) {
   if (voice.micBlocked && voice.status === "on")
     return <p className="m-3 mb-0 rounded-xl border border-brass/40 bg-black/30 p-3 text-[13px] text-stock/75">Mic blocked — you&rsquo;re listening only. Allow the microphone, then tap the mic.</p>;
   return null;
+}
+
+/** LIVE (designer 2026-10-09: "live updates at the top of the latest thing that happened"): the newest public moment
+ *  in one bold line, the one before it faint underneath. It follows the stage — a vote result shows here only once the
+ *  table has watched it — so it never spoils a beat. Tap for the whole story. */
+function LiveStrip({ seen, onOpen }: { seen: Beat[]; onOpen: () => void }) {
+  const [now, before] = [seen.at(-1) ?? null, seen.at(-2) ?? null];
+  const line = (b: Beat) => (b.detail && b.detail.length <= 42 && b.type !== "claim" ? `${b.title} — ${b.detail}` : b.title);
+  return (
+    <button type="button" onClick={onOpen} aria-label={now ? `Live: ${line(now)}. Tap for everything that happened` : "Live updates"}
+      className="relative z-20 mx-3 mt-1 flex h-[46px] shrink-0 items-center gap-2.5 rounded-xl border border-brass/30 bg-[#170d06] px-3 text-left shadow-[0_6px_14px_-6px_rgba(0,0,0,.8)]">
+      <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-crimson-deep/80 px-2 py-0.5 font-[family-name:var(--font-engraved)] text-[10px] font-bold uppercase tracking-[0.18em] text-ink">
+        <span className="live-dot h-1.5 w-1.5 rounded-full bg-ink" aria-hidden />Live
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col leading-tight">
+        {now ? <span key={now.n} className="stage-in truncate text-[14px] font-semibold text-stock">{line(now)}</span>
+          : <span className="truncate text-[14px] text-stock/60">The game is on — watch here</span>}
+        {before && <span key={before.n} className="truncate text-[12px] text-stock/50">{line(before)}</span>}
+      </span>
+    </button>
+  );
 }

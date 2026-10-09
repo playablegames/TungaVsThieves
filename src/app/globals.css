@@ -55,6 +55,8 @@ body {
 @keyframes flip-in { from { opacity: 0; transform: perspective(600px) rotateY(80deg); } to { opacity: 1; transform: none; } }
 @keyframes spot { 0%, 100% { box-shadow: 0 0 0 2px var(--color-jade), 0 0 14px 2px #2ecc7155; } 50% { box-shadow: 0 0 0 2px var(--color-jade), 0 0 22px 4px #2ecc7166; } }
 .stage-in { animation: stage-in 280ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+@keyframes live-dot { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+.live-dot { animation: live-dot 1.4s ease-in-out infinite; }
 .stage-card { animation: stage-card 320ms cubic-bezier(0.16, 1, 0.3, 1) both; }
 .stage-stamp { animation: stage-stamp 260ms cubic-bezier(0.16, 1, 0.3, 1) 420ms both; }
 .flip-in { animation: flip-in 450ms cubic-bezier(0.16, 1, 0.3, 1) both; }
@@ -63,6 +65,7 @@ body {
 .speaking { box-shadow: 0 0 0 3px var(--color-jade), 0 0 14px 2px color-mix(in srgb, var(--color-jade) 55%, transparent); transition: box-shadow 120ms; }
 @media (prefers-reduced-motion: reduce) {
   .stage-in, .stage-card, .stage-stamp, .flip-in { animation: stage-in 150ms linear both; }
+  .live-dot { animation: none; }
   .spotlight { animation: none; box-shadow: 0 0 0 2px var(--color-jade); }
 }
 

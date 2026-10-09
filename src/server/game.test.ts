@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { act, addBot, chat, createRoom, debateSeconds, extendDebate, reclaim, removeBot, sweep, getState, joinRoom, startGame, tick, HttpError, INTRO_MS, BOT_DELAY_MS, VOTE_SETTLE_MS, ONLINE_MAX_PLAYERS, whisper, exportLog } from "./game";
+import { act, addBot, chat, createRoom, debateSeconds, extendDebate, reclaim, removeBot, sweep, getState, joinRoom, startGame, tick, HttpError, INTRO_MS, BOT_DELAY_MS, VOTE_SETTLE_MS, ONLINE_MAX_PLAYERS, whisper, exportLog, takeFloor, FLOOR_MS } from "./game";
 import { botVote } from "./botmind";
 import { HOLD_CAP } from "@/lib/beats";
 import { defaultAction, randomAction } from "@/engine/decisions";
@@ -54,7 +54,7 @@ describe("room service (memory store)", () => {
   });
 
   it("rejects strangers, out-of-turn moves and illegal moves", async () => {
-    const { code, tokens } = await room(4);
+    const { code, tokens } = await room(5);
     await startGame(code, tokens[0]);
     await err(getState(code, "nope", 0), 403);
     const row = (await memoryStore.get(code))!;
@@ -65,7 +65,7 @@ describe("room service (memory store)", () => {
   });
 
   it("two simultaneous moves: exactly one wins, the table stays consistent", async () => {
-    const { code, tokens } = await room(4);
+    const { code, tokens } = await room(5);
     await startGame(code, tokens[0]);
     const row = (await memoryStore.get(code))!;
     const seat = waitingOn(row.state!)[0];
@@ -76,7 +76,7 @@ describe("room service (memory store)", () => {
   });
 
   it("tick does nothing before the deadline, and plays the defaults after it", async () => {
-    const { code, tokens } = await room(4);
+    const { code, tokens } = await room(5);
     await startGame(code, tokens[0]);
     expect((await tick(code)).applied).toBe(false);
     const row = (await memoryStore.get(code))!;
@@ -119,7 +119,7 @@ describe("room service (memory store)", () => {
       let a = 11; const rnd = () => { a = (a * 16807) % 2147483647; return a / 2147483647; };
       for (let g = 0; g < 40; g++) {
         const host = await createRoom("Solo");
-        for (let i = 0; i < 3 + (g % 9); i++) await addBot(host.code, host.token); // 4-12 seats (ONLINE_MAX_PLAYERS)
+        for (let i = 0; i < 4 + (g % 8); i++) await addBot(host.code, host.token); // 5-12 seats (ONLINE_MAX_PLAYERS)
         await startGame(host.code, host.token);
         let row = (await memoryStore.get(host.code))!;
         const me = row.lobby.findIndex((p) => !p.bot);
@@ -171,7 +171,7 @@ describe("room service (memory store)", () => {
 
 describe("the server's clock and stand-ins", () => {
   it("sweep closes every room whose deadline passed — no phone needed", async () => {
-    const { code, tokens } = await room(4);
+    const { code, tokens } = await room(5);
     await startGame(code, tokens[0]);
     expect((await sweep()).closed).toBe(0);                    // nothing is due yet
     const row = (await memoryStore.get(code))!;
@@ -185,7 +185,7 @@ describe("the server's clock and stand-ins", () => {
   it("two timeouts in a row bring in a stand-in that only plays safe; acting or 'I'm back' ends it", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
-      const { code, tokens } = await room(4);
+      const { code, tokens } = await room(5);
       await startGame(code, tokens[0]);
       let row = (await memoryStore.get(code))!;
       const quiet = waitingOn(row.state!)[0];
@@ -273,7 +273,7 @@ describe("whispers (designer 2026-10-07)", () => {
   });
 
   it("a voice note is private too, size-capped, and the host's log never carries any whisper", async () => {
-    const { code, tokens } = await room(4);
+    const { code, tokens } = await room(5);
     await startGame(code, tokens[0]);
     const row = (await memoryStore.get(code))!;
     const to = row.lobby.findIndex((p) => p.token === tokens[2]);
@@ -307,5 +307,63 @@ describe("whispers (designer 2026-10-07)", () => {
     }
     expect(tries).toBeGreaterThan(10);
     expect(hits / tries).toBeGreaterThan(0.7);
+  });
+});
+
+describe("voice moments (designer 2026-10-07)", () => {
+  it("SAFAI DO: the floor opens only in a debate, once per player, one at a time, and the debate never cuts it off", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const { code, tokens } = await room(5);
+      await startGame(code, tokens[0]);
+      await err(takeFloor(code, tokens[1]), 409);                   // no debate yet
+      const row = (await memoryStore.get(code))!;
+      const s = row.state!;
+      s.events.push({ n: s.events.length, type: "faisla", to: "all", msg: "Faisla", data: { seat: 0 } });
+      s.phase = { kind: "vote", reason: "faisla", caller: 0, voters: s.players.map((p) => p.seat), ballots: {}, debate: true, ready: [] };
+      row.deadline = Date.now() + 5000;                             // the debate is about to close
+      await memoryStore.update({ ...row, version: row.version + 1 }, row.version);
+      await takeFloor(code, tokens[1]);
+      const after = (await memoryStore.get(code))!;
+      expect(after.deadline!).toBeGreaterThanOrEqual(Date.now() + FLOOR_MS); // the floor outlasts the clock
+      await err(takeFloor(code, tokens[2]), 409);                   // someone else has it
+      vi.setSystemTime(Date.now() + FLOOR_MS + 1);
+      await err(takeFloor(code, tokens[1]), 409);                   // once per debate
+      await takeFloor(code, tokens[2]);                             // the next player may
+      const st = await getState(code, tokens[3], 0);
+      expect(st.floor?.seat).toBe((await memoryStore.get(code))!.lobby.findIndex((p) => p.token === tokens[2]));
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("LAST WORDS: a human put out gets a 10 s window (and the table waits for it); a bot doesn't", async () => {
+    for (const victimIsBot of [false, true]) {
+      const host = await createRoom("Host");
+      await joinRoom(host.code, "Riya");
+      for (let i = 0; i < 4; i++) await addBot(host.code, host.token);
+      await startGame(host.code, host.token);
+      const row = (await memoryStore.get(host.code))!;
+      const s = row.state!;
+      const me = row.lobby.findIndex((p) => p.token === host.token);
+      const victim = victimIsBot ? row.lobby.findIndex((p) => p.bot) : row.lobby.findIndex((p) => p.name === "Riya");
+      // the host's turn, holding a Teer Kaman pair: shoot the victim, naming their real role
+      s.players[me].hand = ["TEER_KAMAN", "TEER_KAMAN", "FAISLA", "KUNDLI", "HERA_PHERI"];
+      s.phase = { kind: "turn", seat: me }; s.turnSeat = me;
+      await memoryStore.update({ ...row, version: row.version + 1 }, row.version);
+      const t0 = Date.now();
+      const other = s.rolesInPlay.find((r) => r !== s.players[victim].role)!;
+      await act(host.code, host.token, { type: "play", card: "TEER_KAMAN", pass: ["FAISLA", "KUNDLI", "HERA_PHERI"], target: victim, roles: [s.players[victim].role, other] });
+      const after = (await memoryStore.get(host.code))!.state!;
+      const out = after.events.find((e) => e.type === "eliminated" && e.data?.seat === victim)!;
+      expect(out).toBeTruthy();
+      if (victimIsBot) {
+        expect(out.data!.lastWords).toBeUndefined();
+        expect(after.lastWords?.seat).not.toBe(victim);
+      } else {
+        expect(out.data!.lastWords).toBe(true);
+        expect(after.lastWords!.seat).toBe(victim);
+        expect(after.lastWords!.until).toBeGreaterThanOrEqual(t0 + 10_000);
+        expect((await getState(host.code, host.token, 0)).lastWords?.seat).toBe(victim);
+      }
+    }
   });
 });

@@ -3,7 +3,7 @@
 // A plain external store (read with useSyncExternalStore) so React never sets state inside an effect.
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { GameEvent } from "@/engine/types";
-import { beatsFor, type Beat } from "./beats";
+import { beatsFor, PACE, type Beat } from "./beats";
 
 export interface StageSnapshot {
   current: Beat | null;   // on stage right now
@@ -52,8 +52,9 @@ export class BeatQueue {
     this.current = this.queue.shift() ?? null;
     if (this.current) {
       if (!this.current.private) this.last = this.current;
-      // a phone that fell behind (or came back from the background) catches up fast
-      const hold = this.queue.length > 2 ? 500 : this.current.hold;
+      // a phone that fell behind (or came back from the background) catches up — but only when far behind, and never
+      // so fast the table can't read it (2026-10-09: "too fast" — bursts of 3 used to flash by at half a second each)
+      const hold = this.queue.length > 5 ? Math.round(1000 * PACE) : this.current.hold;
       this.timer = setTimeout(() => this.next(), reducedMotion() ? Math.min(hold, 1800) : hold);
     }
     this.emit();

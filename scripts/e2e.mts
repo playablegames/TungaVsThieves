@@ -33,8 +33,7 @@ for (let k = 0; k < 3000; k++) {
       const stonesLast = (h: string[]) => [...h.filter((c) => !c.startsWith("STONE")), ...h.filter((c) => c.startsWith("STONE"))];
       const pass = stonesLast(rest).slice(0, 3); // a Stone may go into the pile (v16), only if it must
       const others = v.players.filter((p: any) => p.alive && p.seat !== v.me.seat);
-      const dead = v.players.filter((p: any) => !p.alive);
-      const target = card === "MAYA_JAAL" ? dead[0]?.seat : ["KUNDLI", "TALASHI", "TEER_KAMAN"].includes(card) ? others[0].seat : card === "HERA_PHERI" ? others.find((p: any) => p.handSize > 0)?.seat : undefined;
+      const target = ["KUNDLI", "TALASHI", "TEER_KAMAN"].includes(card) ? others[0].seat : card === "HERA_PHERI" ? others.find((p: any) => p.handSize > 0)?.seat : undefined;
       act = { type: "play", card, pass, target, roles: card === "TEER_KAMAN" ? v.rolesInPlay.slice(0, 2) : undefined };
     } else act = { type: "pass", pass: [...v.me.hand.filter((c: string) => !c.startsWith("STONE")), ...v.me.hand.filter((c: string) => c.startsWith("STONE"))].slice(0, v.decision.passSize) };
   } else if (v.decision.kind === "debate") {

@@ -21,7 +21,7 @@ export function rig(
     s.rolesInPlay = s.players.map((p) => p.role).sort();
   }
   if (opts.hands) {
-    // put the cards we take back into the deck so the card total stays 66
+    // put the cards we take back into the deck so the card total stays 63 (Stones not dealt in a rig drop out)
     const pool = [...s.deck, ...s.discard, ...s.pile, ...s.players.flatMap((p) => p.hand)];
     s.discard = [];
     s.players.forEach((p, i) => (p.hand = [...(opts.hands![i] ?? [])]));

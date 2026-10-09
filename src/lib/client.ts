@@ -41,6 +41,7 @@ export const api = {
     call(`/api/games/${code}/claim`, { method: "POST", token, body: JSON.stringify(body) }),
   whisper: (code: string, token: string, body: { to: number; kind: "v"; audio: string } | { to: number; kind: "t"; text: string } | { to: number; kind: "k"; about: number; role: string }) =>
     call(`/api/games/${code}/whisper`, { method: "POST", token, body: JSON.stringify(body) }),
+  floor: (code: string, token: string) => call(`/api/games/${code}/floor`, { method: "POST", token }),
   reclaim: (code: string, token: string) => call(`/api/games/${code}/reclaim`, { method: "POST", token }),
   extend: (code: string, token: string) => call(`/api/games/${code}/extend`, { method: "POST", token }),
   tick: (code: string) => call<{ applied: boolean }>(`/api/games/${code}/tick`, { method: "POST" }),

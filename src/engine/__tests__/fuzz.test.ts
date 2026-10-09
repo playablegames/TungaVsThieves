@@ -1,5 +1,6 @@
-// Invariant fuzzing: random-legal players at every count 4-30, the suite_v15.py audit checks after EVERY action,
-// plus redaction checks on every player's view. Zero violations required.
+// Invariant fuzzing: random-legal players at every count 5-30, the suite_v15.py audit checks after EVERY action,
+// plus redaction checks on every player's view — since 2026-10-09 no role ever reaches the table before the end.
+// Zero violations required.
 import { describe, expect, it } from "vitest";
 import { apply, start, waitingOn } from "../engine";
 import { randomAction, defaultAction } from "../decisions";
@@ -20,7 +21,9 @@ function mulberry(seed: number) {
 
 function check(s: GameState, thieves: number, roles: string, firstPickupDone: boolean, bad: Map<string, number>) {
   const hit = (k: string) => bad.set(k, (bad.get(k) ?? 0) + 1);
-  if (totalCards(s) !== 66) hit("card total != 66");
+  // 6 action cards × 10 + Dal Badal + 2 Stones = 63; Dal Badal leaves the game once used (2026-10-09)
+  const used = s.events.some((e) => e.type === "dal_badal") ? 1 : 0;
+  if (totalCards(s) !== 63 - used) hit(`card total != ${63 - used}`);
   const inPlay = [...s.pile, ...(s.villagePot ?? []), ...s.players.flatMap((p) => p.hand)].filter(isStone).length;
   if (inPlay !== 2) hit(`Stones in hands+pile+village = ${inPlay}`);
   if ([...s.deck, ...s.discard].some(isStone)) hit("Stone in deck/discard");
@@ -46,16 +49,18 @@ function redaction(s: GameState, bad: Map<string, number>) {
     if (v.events.some((e) => Array.isArray(e.to) && e.to.length === 0)) hit("view shows analytics");
     if (over && v.events.length !== s.events.filter((e) => !(Array.isArray(e.to) && e.to.length === 0)).length) hit("the end doesn't open the whole story");
     if (!over && v.finalReveal) hit("final reveal before the end");
+    if (!over && v.events.some((e) => e.to === "all" && e.type === "eliminated" && e.data?.role !== undefined)) hit("a role on a public elimination");
     for (const q of v.players) {
       if ("role" in q || "hand" in q) hit("public player row carries role/hand");
       if (!over && q.revealedRole && s.players[q.seat].revealedRole === null) hit("unrevealed role in view");
+      if (!over && q.revealedRole) hit("a role shown on a seat (roles are hidden)");
     }
   }
 }
 
 const GAMES_PER_COUNT = Number(process.env.FUZZ_GAMES ?? 400);
-describe("fuzz: random legal games, every count 4-30", () => {
-  it.each(Array.from({ length: 27 }, (_, i) => i + 4))("%i players: every invariant holds, no secret leaks", (n) => {
+describe("fuzz: random legal games, every count 5-30", () => {
+  it.each(Array.from({ length: 26 }, (_, i) => i + 5))("%i players: every invariant holds, no secret leaks", (n) => {
     const bad = new Map<string, number>();
     const ends = new Map<string, number>();
     let games = 0, actions = 0;

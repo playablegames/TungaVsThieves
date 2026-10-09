@@ -47,7 +47,7 @@ export function Stage({ stage, skip, names, inline = false, small = false }: { s
               </ul>
             )}
             {/* Talashi: the searched hand, face up, as cards */}
-            {b.type === "talashi" && b.cards && b.cards.length > 0 && (
+            {b.type === "talashi_private" && b.cards && b.cards.length > 0 && (
               <ul className="mt-3 flex flex-wrap justify-center gap-2">
                 {b.cards.map((c, i) => (
                   <li key={i} className={`stage-card relative flex aspect-[5/8] flex-col ${inline ? "w-[44px]" : "w-[60px]"} items-center rounded-md border border-[#b8863b] bg-[radial-gradient(120%_90%_at_50%_35%,#f5e2bd_0%,#e6c995_100%)] px-1 pb-1 pt-1.5 text-card-ink shadow-[0_8px_18px_-6px_rgba(0,0,0,.9)]`} style={{ animationDelay: `${i * 120}ms` }}>
@@ -57,7 +57,7 @@ export function Stage({ stage, skip, names, inline = false, small = false }: { s
                 ))}
               </ul>
             )}
-            {b.type !== "talashi" && b.cards && b.cards.length > 0 && (
+            {b.type !== "talashi_private" && b.cards && b.cards.length > 0 && (
               <ul className="mt-3 flex flex-wrap justify-center gap-1.5">
                 {b.cards.map((c, i) => (
                   <li key={i} className="flex items-center gap-1.5 rounded-full border border-brass/40 bg-black/30 py-0.5 pl-0.5 pr-2.5 text-[12px] text-stock">

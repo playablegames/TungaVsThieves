@@ -5,10 +5,11 @@ import { randomBytes, randomInt } from "node:crypto";
 import { apply, closeVote, start, waitingOn } from "@/engine/engine";
 import { botAction, defaultAction } from "@/engine/decisions";
 import { botTalk, botVote } from "./botmind";
+import { pushBotClaim } from "./belief";
 import { MIN_PLAYERS, ROLE_TABLE, THIEF_ROLES } from "@/engine/setup";
 import { RuleError, type Action, type Card, type GameState } from "@/engine/types";
 import { viewFor, type PlayerView } from "@/engine/view";
-import { holdFor } from "@/lib/beats";
+import { LAST_WORDS_MS, PACE, holdFor } from "@/lib/beats";
 import { WHISPER_MAX_AUDIO, encodeWhisper, isWhisper, redactWhisper, decodeWhisper, type WhisperBody } from "@/lib/whisper";
 import { ping, store, type ChatMessage, type GameRow, type Timers } from "./store";
 
@@ -21,12 +22,12 @@ const EXTEND_SECONDS = 30;
 /** the open floor scales with who is still talking: 45s for a small table, up to the debate cap (90s) at 15+ */
 export const debateSeconds = (living: number, cap: number) => Math.min(cap, Math.max(45, 5 * living + 15));
 /** a bot's turn waits this long AFTER the table has watched the last beat */
-// playtest 2026-10-07: 1.2s made a table of bots a blur
-export const BOT_DELAY_MS = 3000;
+// playtest 2026-10-07: 1.2s made a table of bots a blur; 2026-10-09 slower still (PACE)
+export const BOT_DELAY_MS = Math.round(3000 * PACE);
 /** open voting: everyone has voted and nobody has changed their mind for this long — the vote closes (designer: 5s) */
 export const VOTE_SETTLE_MS = 5_000;
 /** online tables seat at most this many (designer 2026-10-07): the seat ring and phone-to-phone voice are only proven
- *  this far. The engine plays 4-30; raise this once big tables have their own layout and a voice relay. */
+ *  this far. The engine plays 5-30; raise this once big tables have their own layout and a voice relay. */
 export const ONLINE_MAX_PLAYERS = 12;
 /** the intro every phone shows when the game starts (RoleReveal.tsx): role 15s, the Stones 10s, the deal 8.4s (DealIntro.tsx) */
 export const INTRO_MS = 34_000;
@@ -199,13 +200,27 @@ function runBots(row: GameRow, s: GameState): GameState {
     if (k !== "vote" && k !== "batwara" && k !== "surrender") break;
     const bots = waitingOn(s).filter((seat) => isAuto(row, seat));
     if (!bots.length) break;
-    for (const seat of bots) if (waitingOn(s).includes(seat)) s = apply(s, seat, autoAction(row, s, seat));
+    for (const seat of bots) if (waitingOn(s).includes(seat)) {
+      // a bot says what it knows (or lies) before it is ready (2026-10-09, belief.ts)
+      if (s.phase.kind === "vote" && s.phase.debate && isBot(row, seat)) pushBotClaim(s, seat, s.seed, Math.random);
+      s = apply(s, seat, autoAction(row, s, seat));
+    }
   }
   return s;
 }
 
-function commitState(row: GameRow, state: GameState): GameRow {
-  const before = row.state?.events.length ?? 0;
+/** `from`: where this move's events start — pass it when the state was changed IN PLACE (row.state === state), or the
+ *  new events look old and their effects (last words, the beats' hold) never happen */
+function commitState(row: GameRow, state: GameState, from?: number): GameRow {
+  const before = from ?? row.state?.events.length ?? 0;
+  // LAST WORDS: a human put out gets 10 s before the ejection (the beat's hold grows by the same 10 s)
+  for (const e of state.events.slice(before)) {
+    const seat = typeof e.data?.seat === "number" ? e.data.seat : null;
+    if (e.type === "eliminated" && seat !== null && !isBot(row, seat)) {
+      e.data = { ...e.data, lastWords: true };
+      state.lastWords = { seat, until: Date.now() + LAST_WORDS_MS + 1500 };
+    }
+  }
   // open voting: a ballot (or a changed one) never restarts the clock — the vote runs until its deadline
   const ballotsWereOpen = row.state?.phase.kind === "vote" && !row.state.phase.debate;
   const prevBallots = row.state?.phase.kind === "vote" ? JSON.stringify(row.state.phase.ballots) : null;
@@ -301,8 +316,9 @@ export async function reclaim(code: string, token: string | null) {
     if (!p.away || !row.state) return row;
     p.away = false; p.strikes = 0;
     const s = row.state;
+    const from = s.events.length;
     s.events.push({ n: s.events.length, type: "back", to: "all", msg: `${p.name} is back.`, data: { seat } });
-    return commitState(row, s);
+    return commitState(row, s, from);
   });
 }
 
@@ -331,6 +347,12 @@ export interface ClientState {
   timers: Timers;
   /** which voice the phones use: LiveKit when configured on the server, else the phone-to-phone mesh */
   voice: "livekit" | "mesh";
+  /** SAFAI DO: who holds the floor right now, and until when (server clock) */
+  floor: { seat: number; until: number } | null;
+  /** who has already had the floor in this debate */
+  floorUsed: number[];
+  /** LAST WORDS: the player just put out, speaking until … */
+  lastWords: { seat: number; until: number } | null;
 }
 
 export async function getState(code: string, token: string | null, sinceMsg: number): Promise<ClientState> {
@@ -352,6 +374,9 @@ export async function getState(code: string, token: string | null, sinceMsg: num
     }),
     timers: row.timers,
     voice: livekitConfigured() ? "livekit" : "mesh",
+    floor: row.state?.floor && row.state.floor.until > Date.now() ? { seat: row.state.floor.seat, until: row.state.floor.until } : null,
+    floorUsed: row.state?.floor?.used ?? [],
+    lastWords: row.state?.lastWords && row.state.lastWords.until > Date.now() ? row.state.lastWords : null,
   };
 }
 
@@ -402,16 +427,17 @@ export async function debugRig(code: string, token: string | null, body: { hand?
     const seat = seatOf(row, token);
     const s = row.state;
     if (!s) throw new HttpError(409, "Start the game first");
-    // put chosen players out (their role revealed, as after a vote) — Stones they hold move to the next player
+    const from = s.events.length;
+    // put chosen players out (role hidden, as every exit is since 2026-10-09) — Stones they hold move to the next player
     if (Array.isArray(body.out)) for (const x of body.out as number[]) {
       const p = s.players[x];
       if (!p || x === seat || !p.alive) continue;
-      p.alive = false; p.revealedRole = p.role; p.votesAtDeath = p.votes; p.votes = 0; s.deadOrder.push(x);
+      p.alive = false; p.votesAtDeath = p.votes; p.votes = 0; s.deadOrder.push(x);
       const stones = p.hand.filter((c) => c.startsWith("STONE"));
       s.deck.push(...p.hand.filter((c) => !c.startsWith("STONE")));
       p.hand = [];
       s.players[(x + 1) % s.players.length].hand.push(...stones);
-      s.events.push({ n: s.events.length, type: "eliminated", to: "all", msg: `${p.name} is OUT — ${p.role}.`, data: { seat: x, role: p.role, side: p.side, hand: [], killer: null } });
+      s.events.push({ n: s.events.length, type: "eliminated", to: "all", msg: `${p.name} is OUT. Their role stays hidden.`, data: { seat: x, hand: [], killer: null } });
     }
     if (Array.isArray(body.hand)) {
       // put the old cards back in the deck so the card count stays true
@@ -435,7 +461,7 @@ export async function debugRig(code: string, token: string | null, body: { hand?
       const holders = s.players.filter((p) => p.alive && p.hand.some((c) => c.startsWith("STONE"))).map((p) => p.seat);
       s.events.push({ n: s.events.length, type: "surrender_open", to: "all", msg: "The last round is over.", data: { holders: holders.length } });
       s.phase = { kind: "surrender", holders, choices: {} };
-      return commitState(row, s);
+      return commitState(row, s, from);
     }
     if (s.phase.kind === "turn" && s.phase.seat !== seat) {
       // the player whose turn it was had picked up 3: they go back to the deck, so everyone else holds 2 as in a real game
@@ -444,7 +470,7 @@ export async function debugRig(code: string, token: string | null, body: { hand?
       s.deck.push(...was.hand.splice(2));
       s.phase = { kind: "turn", seat }; s.turnSeat = seat;
     }
-    return commitState(row, s);
+    return commitState(row, s, from);
   });
 }
 
@@ -491,12 +517,37 @@ export async function whisper(code: string, token: string | null, body: { to?: u
   await ping(next.code, next.version);
 }
 
+/** SAFAI DO: take the floor for 15 s during a debate — every other mic is held shut while you speak. Once per debate. */
+export const FLOOR_MS = 15_000;
+export async function takeFloor(code: string, token: string | null) {
+  await play(code, (row) => {
+    const s = row.state;
+    if (!s || s.phase.kind !== "vote" || !s.phase.debate) throw new HttpError(409, "The floor is only open during a debate");
+    const seat = seatOf(row, token);
+    if (!s.players[seat].alive) throw new HttpError(403, "Eliminated players stay silent");
+    const debate = [...s.events].reverse().find((e) => e.type === "faisla" || e.type === "final_vote")?.n ?? 0;
+    const f = s.floor && s.floor.debate === debate ? s.floor : { seat: -1, until: 0, used: [], debate };
+    if (f.until > Date.now()) throw new HttpError(409, `${s.players[f.seat].name} has the floor`);
+    if (f.used.includes(seat)) throw new HttpError(409, "You've had the floor this debate");
+    const until = Date.now() + FLOOR_MS;
+    s.floor = { seat, until, used: [...f.used, seat], debate };
+    s.events.push({ n: s.events.length, type: "floor", to: "all", msg: `${s.players[seat].name} takes the floor.`, data: { seat } });
+    row.state = s;
+    // the debate never closes on someone mid-sentence
+    if (row.deadline !== null && row.deadline < until + 2000) row.deadline = until + 2000;
+    return row;
+  });
+}
+
 /** LiveKit passes for this seat (null when LiveKit isn't configured — the phones fall back to the mesh) */
 export async function livekitPasses(code: string, token: string | null) {
   if (!livekitConfigured()) return null;
   const row = await load(code);
   const seat = seatOf(row, token);
-  const alive = row.state ? row.state.players[seat].alive || row.state.phase.kind === "over" : true;
+  const s = row.state;
+  const lastWords = Boolean(s?.lastWords && s.lastWords.seat === seat && s.lastWords.until > Date.now());
+  // alive, the game over, or speaking last words: may speak at the table
+  const alive = s ? s.players[seat].alive || s.phase.kind === "over" || lastWords : true;
   return voicePasses(row.code, seat, row.lobby[seat].name, alive, token!);
 }
 

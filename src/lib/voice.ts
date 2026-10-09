@@ -30,6 +30,8 @@ export interface VoiceSnap {
   speaking: boolean;
   /** by seat; only peers you can hear */
   peers: Record<number, VoicePeer>;
+  /** the game's best voice moments this phone heard (LiveKit only) — replayed at game over, never uploaded */
+  clips?: { label: string; url: string }[];
 }
 
 interface Meta { seat: number; name: string; muted: boolean }
@@ -91,6 +93,8 @@ class Voice {
   private listeners = new Set<() => void>();
   private snap: VoiceSnap;
   private ice: RTCIceServer[] = STUN;
+  /** the mic is held shut: someone else has the floor, last words, or push-to-talk is up */
+  private held = false;
 
   constructor(private code: string) {
     this.snap = { status: realtime ? "off" : "unavailable", micOn: true, micBlocked: false, speaking: false, peers: {} };
@@ -150,9 +154,10 @@ class Voice {
     this.set({ status: "connecting" });
     this.ice = await fetchIce(this.code);
 
+    playAndRecord();
     try {
       this.local = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
-      this.local.getAudioTracks().forEach((t) => (t.enabled = this.snap.micOn));
+      this.local.getAudioTracks().forEach((t) => (t.enabled = this.snap.micOn && !this.held));
       this.set({ micBlocked: false });
     } catch {
       this.set({ micBlocked: true });
@@ -217,9 +222,18 @@ class Voice {
       return;
     }
     const on = !this.snap.micOn;
-    this.local?.getAudioTracks().forEach((t) => (t.enabled = on));
-    this.me.muted = !on;
+    this.local?.getAudioTracks().forEach((t) => (t.enabled = on && !this.held));
+    this.me.muted = !on || this.held;
     this.set({ micOn: on, speaking: on && this.snap.speaking });
+    this.track();
+  }
+
+  /** hold the mic shut (or let it go) without changing the player's own mute */
+  setHeld(held: boolean) {
+    if (held === this.held) return;
+    this.held = held;
+    this.local?.getAudioTracks().forEach((t) => (t.enabled = this.snap.micOn && !held));
+    this.me.muted = !this.snap.micOn || held;
     this.track();
   }
 
@@ -370,6 +384,12 @@ class Voice {
   };
 }
 
+/** iPhone: set the audio session to play-and-record BEFORE the mic opens, or iOS may reroute or duck the sound
+ *  mid-game (Safari 16.4+; research 2026-10-07). Harmless everywhere else. */
+export function playAndRecord() {
+  try { const a = (navigator as unknown as { audioSession?: { type: string } }).audioSession; if (a) a.type = "play-and-record"; } catch {}
+}
+
 const voices = new Map<string, Voice>();
 const voiceFor = (code: string) => {
   const key = code.toUpperCase();
@@ -407,5 +427,7 @@ export function useVoice(code: string, me: { seat: number; name: string } | null
     unlock: () => { void v.unlock(); },
     toggleMic: () => { void v.toggleMic(); },
     hush: (seat: number) => v.hush(seat),
+    setHeld: (held: boolean) => v.setHeld(held),
+    clip: (label: string, ms: number) => { if ("clip" in v) (v as unknown as { clip: (l: string, m: number) => void }).clip(label, ms); },
   };
 }

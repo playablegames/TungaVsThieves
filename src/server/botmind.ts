@@ -9,20 +9,22 @@
 // SITUATIONS (each has villager and thief lines below)
 //  S1  the deal: a first word, coloured by role and whether the bot holds a Stone
 //  S2  bot passes (no pair worth playing)              S3  bot picks up the pile and finds a Stone
-//  S4  bot plays a pair: Faisla · Talashi · Hera Pheri · Bhukamp · Maya Jaal · Teer Kaman (Kundli → S7)
+//  S4  bot plays a pair: Faisla · Talashi · Hera Pheri · Bhukamp · Teer Kaman (Kundli → S7)
 //  S5  Hera Pheri on the bot (and whether a Stone was taken)
 //  S6  Talashi on the bot (Stone found / clean)        S7  Kundli: the bot reads (thief/villager × own side) /
 //                                                          is read / watches someone else get read
-//  S8  Teer Kaman at the bot (miss)                    S9  Maya Jaal brings the bot back
+//  S8  Teer Kaman at the bot (miss = the shooter is out) S9  Dal Badal: the thief shows its role
 //  S10 Bhukamp by someone else
 //  S12 the debate (Faisla or the final vote): priority — confirmed thief from own Kundli → thief under suspicion
 //      deflects → Stone claim/denial → accusation with a reason → threat from a pair in hand → vouching → hunch
 //  S13 the final mandatory vote: the Stone question     S14 nobody voted out
 //  S15 an elimination: last words (by side, with/without a Stone) and the table's reaction (who voted a villager out)
-//  S16 dying powers aimed at the bot: gift · Dal Badal · last shot · handoff     S17 bot loses a vote
+//  S16 dying power (a vote, both sides) and handoff aimed at the bot
+// (2026-10-09) roles are hidden: an exit never says who was what — a bot going out claims the village either way
 //  S18 game over: winners and losers
 import type { ActionCard, Card, GameEvent, GameState, Side } from "@/engine/types";
 import { viewFor, type PlayerView } from "@/engine/view";
+import { beliefVote } from "./belief";
 
 type R = () => number;
 export interface BotLine { seat: number; text: string }
@@ -87,14 +89,17 @@ export function mindOf(s: GameState, seat: number, seed: number): Mind {
         // (2026-10-07) up to 3 roles shuffled and picked back blind: nothing anyone knew about those seats holds now,
         // and being in the shuffle tells you only your own new role
         for (const x of (d?.seats as number[]) ?? []) known.delete(x);
+        // (2026-10-09) the thief showed their role first: one of the three now holds it
+        for (const x of (d?.seats as number[]) ?? []) add(x, thief ? 0 : 1.5, "Dal Badal mein tha");
         void swapPartner; void mySide;
         break;
       }
       case "hera_pheri": if (target === seat) add(actor, 2, "mere cards uthaye"); break;
       case "teer_kaman": if (target === seat) add(actor, 3, "mujh pe teer chalaya"); break;
       case "last_shot": if (target === seat) add(actor, 2, "aakhri teer mujh pe chalaya"); break;
-      case "talashi":
-        if (target === seat) add(actor, 1, "meri talashi li");
+      case "talashi": if (target === seat) add(actor, 1, "meri talashi li"); break;
+      // (2026-10-09) a private search: only the searcher sees the hand
+      case "talashi_private":
         if (stonesIn(d?.hand) && target !== seat) add(target, thief ? 0.5 : 1.5, "Stone uske haath mein dikha");
         break;
       // a claim out loud: a villager weighs it by who said it; a thief only cares when it is aimed at itself
@@ -124,7 +129,11 @@ export function mindOf(s: GameState, seat: number, seed: number): Mind {
         ballots = (d?.ballots as Record<string, number | null>) ?? {};
         for (const [voter, t] of Object.entries(ballots)) if (t === seat) { suspected = true; add(Number(voter), 2, "mujhe vote kiya"); }
         break;
+      // (2026-10-09) the Faisla caller alone learns the role: they read it like a public reveal
+      case "eliminated_private":
       case "eliminated": {
+        // (2026-10-09) the public line never shows the role — there is nothing to learn from it
+        if (d?.side === undefined) { ballots = {}; break; }
         const villager = d?.side === "V";
         for (const [voter, t] of Object.entries(ballots)) if (t === actor) add(Number(voter), villager ? 3 : -2, villager ? `${name(actor)} ko vote kiya, woh gaon wala nikla` : null);
         const killer = num(d, "killer");
@@ -155,17 +164,9 @@ const ranked = (m: Mind) => [...m.reads.entries()].sort((a, b) => b[1].score - a
 const top = (m: Mind) => ranked(m)[0] ?? null;
 const aliveSeat = (m: Mind, x: number) => Boolean(m.v.players[x]?.alive);
 
-/** A bot's ballot: a thief it saw first, then its top suspect with a real reason, otherwise a hunch. */
+/** A bot's ballot (2026-10-09): from its beliefs — see belief.ts. */
 export function botVote(s: GameState, seat: number, seed: number, r: R): number | null {
-  const m = mindOf(s, seat, seed);
-  const seen = m.thief ? [] : m.sawThief.filter((x) => aliveSeat(m, x));
-  if (seen.length) return seen[0];
-  const order = ranked(m);
-  if (!order.length) return null;
-  const [t, read] = order[0];
-  if (read.score >= 2 && r() < 0.85) return t;
-  if (r() < 0.15) return null;
-  return pick(r, order.slice(0, 3))[0];
+  return beliefVote(s, seat, seed, r);
 }
 
 // ------------------------------------------------------------------ S12/S13 the debate
@@ -284,14 +285,20 @@ export function botTalk(s: GameState, from: number, bots: number[], seed: number
       case "final_vote":
         for (const b of bots.filter(living).sort(() => r() - 0.5).slice(0, 3)) say(b, debateLine(mind(b), true, r));
         break;
-      case "talashi": {
+      // (2026-10-09) Talashi is private: the searcher saw the cards, the searched player knows its own hand
+      case "talashi_private": {
         const found = stonesIn(d?.hand) > 0;
         if (isBot(actor) && r() < 0.7) say(actor, found
           ? (side(actor) === "V" ? `${nm(target)} ke paas Stone hai! ${nm(target)}, tum gaon wale ho na?` : `${nm(target)} ke paas Stone hai — chor ke paas hi hoga!`)
           : `${nm(target)} ke haath mein kuch khaas nahi.`);
+        break;
+      }
+      case "talashi": {
         // S6 searched
-        if (isBot(target)) say(target, found
-          ? (side(target) === "V" ? "Haan, Stone mere paas hai — gaon ke liye sambhal ke rakha hai." : "Haan Stone hai. Toh? Main gaon wala hoon.")
+        if (!isBot(target)) break;
+        const found = stonesIn(s.players[target].hand) > 0;
+        say(target, found
+          ? (side(target) === "V" ? "Haan, Stone mere paas hai — gaon ke liye sambhal ke rakha hai." : "Dekh liya? Ab chup raho.")
           : "Le, dekh le sab. Kuch nahi milega.");
         break;
       }
@@ -309,12 +316,9 @@ export function botTalk(s: GameState, from: number, bots: number[], seed: number
         if (isBot(actor)) say(actor, pick(r, ["Bhukamp! Sab cards hilao!", "Thoda hila dete hain sabko."]));
         else say(someBot([actor]), pick(r, ["Arre, mere achhe cards chale gaye!", "Bhukamp… ab kaun kya pakad raha hai, kaun jaane."])); // S10
         break;
-      case "maya_jaal":
-        if (isBot(target)) say(target, pick(r, ["Wapas aa gaya! Ab hisaab hoga.", `Shukriya ${nm(actor)}. Ab sach saamne aayega.`])); // S9
-        else if (isBot(actor)) say(actor, `${nm(target)}, wapas aao — tumhari zarurat hai.`);
-        break;
       case "teer_kaman":
-        if (isBot(actor)) say(actor, d?.hit ? `Bola tha na! ${nm(target)} pe shak sahi tha.` : "Chook gaya… par shak abhi bhi hai.");
+        // a miss puts the shooter out (2026-10-09); a hit tells only the shooter the role
+        if (isBot(actor)) say(actor, d?.hit ? `Nishana laga! ${nm(target)} pe shak sahi tha.` : "Chook gaya… main bahar.");
         if (isBot(target) && !d?.hit) say(target, pick(r, [`Nishana chook gaya, ${nm(actor)}!`, `Mujh pe teer? ${nm(actor)}, tu khud chor hai.`])); // S8
         break;
       // S7 Kundli
@@ -338,8 +342,16 @@ export function botTalk(s: GameState, from: number, bots: number[], seed: number
         break;
       // S15
       case "eliminated": {
-        const villager = d?.side === "V";
         const withStone = stonesIn(d?.hand) > 0;
+        if (d?.side === undefined) {
+          // a hidden exit: last words claim the village whatever the truth; the table only wonders
+          say(actor, side(actor ?? 0) === "V" || r() < 0.8
+            ? pick(r, ["Main gaon wala tha! Galat aadmi pakda tumne.", "Yaad rakhna — main sach bol raha tha.", withStone ? "Mera Stone sambhal ke rakhna, gaon walon." : "Asli chor abhi bhi tumhare beech hai."])
+            : "Ab tum kabhi nahi jaanoge main kaun tha…");
+          say(someBot([actor]), pick(r, [`${nm(actor)} gaya… chor tha ya nahi, kaun jaane.`, "Ek kam hua. Sahi tha ya galat?"]));
+          break;
+        }
+        const villager = d?.side === "V";
         say(actor, villager
           ? pick(r, ["Main gaon wala tha! Galat aadmi pakda tumne.", "Yaad rakhna — main sach bol raha tha.", withStone ? "Mera Stone sambhal ke rakhna, gaon walon." : "Asli chor abhi bhi tumhare beech hai."])
           : pick(r, ["Haan, main chor tha… par akela nahi hoon.", withStone ? "Stone le jao… par baaki chor abhi bhi hain." : "Pakad liya… par baaki abhi bhi tumhare beech hain."]));
@@ -353,17 +365,15 @@ export function botTalk(s: GameState, from: number, bots: number[], seed: number
       // S16 dying powers aimed at a bot
       case "gift": if (target !== null) say(target, `Shukriya ${nm(actor)}! Is vote ka sahi istemaal karunga.`); break;
       case "dal_badal": {
-        // in the shuffle: everyone claims the village, whatever card they drew
+        // S9 the thief showed its role; then in the shuffle everyone claims the village, whatever card they drew
+        if (isBot(actor)) say(actor, pick(r, ["Haan, main chor tha… ab dhoondo mujhe!", "Pehchaan lo… ab kaun chor hai, kaun jaane?"]));
         for (const me of (d?.seats as number[]) ?? []) {
-          if (!isBot(me)) continue;
+          if (!isBot(me) || me === actor) continue;
           say(me, pick(r, ["Naya role mila… main ab bhi gaon ke saath hoon.", "Kuch nahi badla, sab theek hai.", "Dal Badal se darr nahi lagta. Main gaon wala hoon."]));
         }
         break;
       }
-      case "last_shot": if (target !== null && !d?.hit && living(target)) say(target, "Aakhri teer bhi chook gaya. Main saaf hoon."); break;
       case "handoff": if (target !== null) say(target, stonesIn(d?.cards) && side(target) === "V" ? `Stone mil gaya! Shukriya ${nm(actor)}, sambhal ke rakhunga.` : `Itne saare cards! Dhanyavaad ${nm(actor)}.`); break;
-      // S17
-      case "vote_lost": if (r() < 0.6) say(actor, "Mera ek vote gaya… ab dhyaan se khelna padega."); break;
       // S18
       case "over": {
         const winners = bots.filter((b) => side(b) === d?.winner);

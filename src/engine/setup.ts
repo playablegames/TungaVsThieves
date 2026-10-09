@@ -2,17 +2,22 @@
 import { ACTION_CARDS, type Card, type GameState, type Player } from "./types";
 import { shuffle } from "./rng";
 
-/** players -> [villagers, thieves, rounds]. Thieves cut to about one in four (designer 2026-10-07: "catching thieves
- *  should be easier"). 4-16 measured with scripts/balance.mts (Tunga 52-72%, 1,000 bot games each); 17-30 follow the
- *  same ratio. Rounds unchanged. */
+/** players -> [villagers, thieves, rounds]. Tuned 2026-10-09 to the designer's target "almost 50/50, or 55/45" under
+ *  the hidden-role rules: about one thief per three players (scripts/tune.mts, belief bots — src/server/belief.ts).
+ *  Chosen per count as the setting closest to 52.5% across all three skills; final check on the shipped rules (clockwise
+ *  Bhukamp), 2,000 average + 1,000 casual + 1,000 sharp games each. Tunga wins (avg/casual/sharp): 5p 52/48/49 ·
+ *  6p 56/57/58 · 7p 46/45/42 · 8p 50/47/50 · 9p 56/52/56 · 10p 48/46/48 · 11p 51/54/53 · 12p 53/53/54. 13-16 (earlier
+ *  run): 13p 57/55/58 · 14p 55/48/51 · 15p 57/50/57 · 16p 56/53/57. 6 and 7 sit just outside the band — one thief more
+ *  or less overshoots. 17-30 follow the ratio (one thief per 3.1).
+ *  4 players dropped: one thief can't be balanced (68% at best) and the game ending gives away every villager exit. */
 export const ROLE_TABLE: Record<number, [number, number, number]> = {
-  4: [3, 1, 2], 5: [3, 2, 3], 6: [4, 2, 2], 7: [5, 2, 3], 8: [6, 2, 2], 9: [6, 3, 3],
-  10: [7, 3, 3], 11: [8, 3, 2], 12: [9, 3, 3], 13: [9, 4, 2], 14: [10, 4, 3], 15: [11, 4, 3],
-  16: [12, 4, 2], 17: [13, 4, 2], 18: [13, 5, 3], 19: [14, 5, 2], 20: [15, 5, 3], 21: [16, 5, 2],
-  22: [16, 6, 2], 23: [17, 6, 2], 24: [18, 6, 3], 25: [19, 6, 2], 26: [19, 7, 2], 27: [20, 7, 3],
-  28: [21, 7, 2], 29: [22, 7, 2], 30: [22, 8, 2],
+  5: [3, 2, 2], 6: [4, 2, 2], 7: [4, 3, 3], 8: [5, 3, 2], 9: [6, 3, 2], 10: [6, 4, 3],
+  11: [7, 4, 3], 12: [8, 4, 2], 13: [9, 4, 2], 14: [9, 5, 3], 15: [10, 5, 3], 16: [11, 5, 2],
+  17: [12, 5, 2], 18: [12, 6, 3], 19: [13, 6, 2], 20: [14, 6, 3], 21: [14, 7, 2], 22: [15, 7, 2],
+  23: [16, 7, 2], 24: [16, 8, 3], 25: [17, 8, 2], 26: [18, 8, 2], 27: [18, 9, 3], 28: [19, 9, 2],
+  29: [20, 9, 2], 30: [20, 10, 2],
 };
-export const MIN_PLAYERS = 4;
+export const MIN_PLAYERS = 5;
 export const MAX_PLAYERS = 30;
 
 /** First 5 / 4 are the box; the rest are the role packs (proposed names — designer to edit). */
@@ -28,7 +33,12 @@ export const THIEF_ROLES = [
   "Taskar", "Uchakka", "Jebkatra", "Thug", "Dakait", "Lafanga", "Chhota Chor",
 ];
 
-export const COPIES_PER_ACTION = 9;
+/** 6 action cards x 10 (designer 2026-10-09: Mayajaal cut) + one Dal Badal */
+export const COPIES_PER_ACTION = 10;
+
+/** cards dealt to each player. The balance probe may try others (DEAL_HAND=3 npx tsx scripts/balance.mts) — passed in
+ *  to start(), never mutated: tsx loads this module twice */
+export const DEAL_HAND = 2;
 
 export function newDeck(): Card[] {
   const d: Card[] = [];
@@ -38,7 +48,7 @@ export function newDeck(): Card[] {
 }
 
 /** `table` lets the balance probe try other role tables (scripts/balance.mts); the game always uses ROLE_TABLE */
-export function createGame(names: string[], seed: number, table: Record<number, [number, number, number]> = ROLE_TABLE): GameState {
+export function createGame(names: string[], seed: number, table: Record<number, [number, number, number]> = ROLE_TABLE, hand = DEAL_HAND): GameState {
   const n = names.length;
   if (n < MIN_PLAYERS || n > MAX_PLAYERS) throw new Error(`Tunga plays ${MIN_PLAYERS}-${MAX_PLAYERS} players`);
   const [nv, nt, rounds] = table[n];
@@ -50,8 +60,8 @@ export function createGame(names: string[], seed: number, table: Record<number, 
   ]);
 
   const deck = shuffle(st, newDeck());
-  // 2n+1 action cards set aside, plus both Stones, shuffled: 2 each, the last 3 are the Procession Pile
-  const setAside = shuffle(st, [...deck.splice(0, 2 * n + 1), "STONE_1", "STONE_2"] as Card[]);
+  // (hand x n) + 1 action cards set aside, plus both Stones, shuffled: `hand` each, the last 3 are the Procession Pile
+  const setAside = shuffle(st, [...deck.splice(0, hand * n + 1), "STONE_1", "STONE_2"] as Card[]);
   const players: Player[] = names.map((name, seat) => ({
     seat,
     name,
@@ -60,7 +70,7 @@ export function createGame(names: string[], seed: number, table: Record<number, 
     alive: true,
     votes: 1,
     votesAtDeath: 1,
-    hand: setAside.splice(0, 2),
+    hand: setAside.splice(0, hand),
     revealedRole: null,
   }));
 

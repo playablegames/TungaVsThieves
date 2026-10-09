@@ -20,7 +20,7 @@ function game(n: number, seed: number): GameState {
 const during = (s: GameState): GameState => ({ ...s, phase: { kind: "turn", seat: 0 } });
 
 describe("Table Stage beats", () => {
-  const games = Array.from({ length: 60 }, (_, i) => game(4 + (i % 9), 1000 + i));
+  const games = Array.from({ length: 60 }, (_, i) => game(5 + (i % 9), 1000 + i));
 
   it("every event the engine emits is either a beat or deliberately skipped — none fall through", () => {
     const fellThrough = new Set<string>();

@@ -1,26 +1,25 @@
-// Card copy — from the printed cards (v7 print = v16 rules). Shared by the UI.
+// Card copy — from the printed cards (v7 print = v16 rules), with the designer's 2026-10-09 rule changes. Shared by the UI.
 import type { Card } from "@/engine/types";
 
 /** DESIGN.md button voices: marigold vote · crimson lethal · jade relic · gold Bhukamp · stones · neutral */
 export type Voice = "vote" | "lethal" | "relic" | "gold" | "neutral" | "bhadra" | "tunga";
 
 export const CARD: Record<Card, { name: string; sub: string; text: string; voice: Voice }> = {
-  FAISLA: { name: "Faisla", sub: "Voting begins", text: "Open the floor, then everyone votes. Most votes is out — a tie, nobody. Draw 2.", voice: "vote" },
-  TALASHI: { name: "Talashi", sub: "See action cards", text: "Choose a player: their cards are shown to everyone — never their role. Draw 2.", voice: "relic" },
+  FAISLA: { name: "Faisla", sub: "Voting begins", text: "Open the floor, then everyone votes. Most votes is out — a tie, nobody. Only you see their role. Draw 2.", voice: "vote" },
+  TALASHI: { name: "Talashi", sub: "See action cards", text: "Choose a player and secretly see their cards — never their role. Draw 2.", voice: "relic" },
   KUNDLI: { name: "Kundli", sub: "See role", text: "Secretly see one player's role card. Say anything — or nothing. Draw 2.", voice: "relic" },
   HERA_PHERI: { name: "Hera Pheri", sub: "Swap action cards", text: "Steal 2 cards face down from any one player. They draw 2.", voice: "lethal" },
-  BATWARA: { name: "Bhukamp", sub: "Split your cards", text: "Everyone — you too — passes 1 card left and 1 right. Then draw 2: they and your last card go to the next player.", voice: "gold" },
-  MAYA_JAAL: { name: "Mayajaal", sub: "Turn back time", text: "Revive any one eliminated player. They draw 2 fresh. Draw 2.", voice: "relic" },
-  TEER_KAMAN: { name: "Teer Kaman", sub: "Eliminate a player", text: "Pick a player, name two roles. Either is theirs: they're out. Miss: you lose a vote for good. Draw 2.", voice: "lethal" },
-  DAL_BADAL: { name: "Dal Badal", sub: "Villagers pass · Thieves hold", text: "Never played. A thief eliminated holding it picks 3 living players: their role cards are shuffled, and each picks one back face down.", voice: "neutral" },
+  BATWARA: { name: "Bhukamp", sub: "Pass clockwise", text: "Everyone — you too — passes 1 card to the next player, clockwise.", voice: "gold" },
+  TEER_KAMAN: { name: "Teer Kaman", sub: "Eliminate a player", text: "Pick a player, name two roles. Either is theirs: they're out, and only you see their role. Draw 2. Miss: you're out.", voice: "lethal" },
+  DAL_BADAL: { name: "Dal Badal", sub: "Thieves only", text: "A thief's whole turn: pass 3, show your role, and shuffle role cards with 2 players — each picks one back face down. Draw 1. Then it leaves the game.", voice: "neutral" },
   STONE_1: { name: "Bhadra Stone", sub: "Villagers need both · Thieves need one", text: "Can be passed, never discarded.", voice: "bhadra" },
   STONE_2: { name: "Tunga Stone", sub: "Villagers need both · Thieves need one", text: "Can be passed, never discarded.", voice: "tunga" },
 };
 
 /** the one line a card tile has room for (Your Cards); long-press shows the full printed text */
 export const SHORT: Record<Card, string> = {
-  FAISLA: "Everyone votes", TALASHI: "Show their cards", KUNDLI: "See a role", HERA_PHERI: "Steal 2 cards",
-  BATWARA: "Split the cards", MAYA_JAAL: "Revive a player", TEER_KAMAN: "Shoot a role", DAL_BADAL: "Never played",
+  FAISLA: "Everyone votes", TALASHI: "See their cards", KUNDLI: "See a role", HERA_PHERI: "Steal 2 cards",
+  BATWARA: "1 card on", TEER_KAMAN: "Shoot a role", DAL_BADAL: "Thief: swap roles",
   STONE_1: "Pass it on", STONE_2: "Pass it on",
 };
 

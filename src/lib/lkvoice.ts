@@ -6,7 +6,7 @@
 // so the living can't hear the gone even if a phone misbehaves.
 import { Room, RoomEvent, Track, type Participant, type RemoteParticipant } from "livekit-client";
 import { loadToken } from "./client";
-import type { VoicePeer, VoiceSnap } from "./voice";
+import { playAndRecord, type VoicePeer, type VoiceSnap } from "./voice";
 
 const PREF = "tunga:voice";
 interface Passes { url: string; table: string; gone: string | null; alive: boolean }
@@ -21,6 +21,10 @@ export class LiveKitVoice {
   private alive = true;
   private me = { seat: -1, name: "" };
   private amGone = false;
+  private held = false;
+  private fx: AudioContext | null = null;
+  /** everything this phone hears (and says), mixed — the source of the highlight clips */
+  private mix: { ac: AudioContext; dest: MediaStreamAudioDestinationNode } | null = null;
   private snap: VoiceSnap = { status: "off", micOn: true, micBlocked: false, speaking: false, peers: {} };
 
   constructor(private code: string) {}
@@ -57,8 +61,9 @@ export class LiveKitVoice {
     } catch { this.set({ status: "unavailable" }); return; }
     if (gen !== this.gen) return;
     this.alive = passes.alive;
+    playAndRecord();
 
-    const join = async (pass: string, speak: boolean) => {
+    const join = async (pass: string, speak: boolean, ghostly = false) => {
       const room = new Room({ audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
       const refresh = () => this.refresh();
       room
@@ -66,6 +71,9 @@ export class LiveKitVoice {
         .on(RoomEvent.ActiveSpeakersChanged, refresh).on(RoomEvent.TrackMuted, refresh).on(RoomEvent.TrackUnmuted, refresh)
         .on(RoomEvent.TrackSubscribed, (track, _pub, p) => {
           if (track.kind === Track.Kind.Audio) {
+            this.toMix(track.mediaStreamTrack);
+            // the Gone room sounds like ghosts: an echoing, hollow "bhoot" voice (research 2026-10-07)
+            if (ghostly && this.bhoot(track.mediaStreamTrack)) { refresh(); return; }
             const el = track.attach();
             el.style.display = "none";
             document.body.appendChild(el);
@@ -76,16 +84,17 @@ export class LiveKitVoice {
         .on(RoomEvent.TrackUnsubscribed, (track) => { track.detach().forEach((e) => e.remove()); refresh(); })
         .on(RoomEvent.AudioPlaybackStatusChanged, () => this.set({ status: this.rooms.every((r) => r.canPlaybackAudio) ? "on" : "needs-tap" }))
         .on(RoomEvent.Disconnected, refresh);
+      room.on(RoomEvent.LocalTrackPublished, (pub) => { if (pub.track?.kind === Track.Kind.Audio) this.toMix(pub.track.mediaStreamTrack); });
       await room.connect(passes.url, pass, { autoSubscribe: true });
       this.rooms.push(room);
       if (speak) {
-        try { await room.localParticipant.setMicrophoneEnabled(this.snap.micOn); this.set({ micBlocked: false }); }
+        try { await room.localParticipant.setMicrophoneEnabled(this.snap.micOn && !this.held); this.set({ micBlocked: false }); }
         catch { this.set({ micBlocked: true }); }
       }
     };
     try {
       await join(passes.table, passes.alive);
-      if (passes.gone) await join(passes.gone, true);
+      if (passes.gone) await join(passes.gone, true, true);
     } catch { this.stop(); this.set({ status: "unavailable" }); return; }
     if (gen !== this.gen) { this.stop(); return; }
     this.set({ status: this.rooms.every((r) => r.canPlaybackAudio) ? "on" : "needs-tap" });
@@ -113,8 +122,63 @@ export class LiveKitVoice {
     this.set({ peers, speaking });
   }
 
+  /** a ghost's voice: hollow (band-passed), with a long echo — played through Web Audio instead of a plain <audio> */
+  private bhoot(track: MediaStreamTrack): boolean {
+    try {
+      const ac = (this.fx ??= new AudioContext());
+      void ac.resume();
+      const src = ac.createMediaStreamSource(new MediaStream([track]));
+      const band = ac.createBiquadFilter(); band.type = "bandpass"; band.frequency.value = 900; band.Q.value = 0.9;
+      const dry = ac.createGain(); dry.gain.value = 0.85;
+      const delay = ac.createDelay(1); delay.delayTime.value = 0.23;
+      const feedback = ac.createGain(); feedback.gain.value = 0.42;
+      const wet = ac.createGain(); wet.gain.value = 0.55;
+      src.connect(band);
+      band.connect(dry).connect(ac.destination);
+      band.connect(delay); delay.connect(feedback).connect(delay); delay.connect(wet).connect(ac.destination);
+      // Chrome only pulls audio from a remote WebRTC track if something plays it — a silent element keeps it flowing
+      const keep = new Audio(); keep.srcObject = new MediaStream([track]); keep.muted = true; void keep.play().catch(() => {});
+      return true;
+    } catch { return false; }
+  }
+
+  private toMix(track: MediaStreamTrack) {
+    try {
+      if (!this.mix) { const ac = new AudioContext(); this.mix = { ac, dest: ac.createMediaStreamDestination() }; }
+      void this.mix.ac.resume();
+      this.mix.ac.createMediaStreamSource(new MediaStream([track])).connect(this.mix.dest);
+    } catch {}
+  }
+
+  /** record the next `ms` of what this phone hears as a highlight (kept on this phone only, at most 8) */
+  clip(label: string, ms: number) {
+    if (!this.mix || typeof MediaRecorder === "undefined") return;
+    try {
+      const type = ["audio/mp4", "audio/webm;codecs=opus", "audio/webm"].find((t) => MediaRecorder.isTypeSupported(t));
+      const rec = new MediaRecorder(this.mix.dest.stream, type ? { mimeType: type, audioBitsPerSecond: 32_000 } : undefined);
+      const chunks: Blob[] = [];
+      rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+      rec.onstop = () => {
+        if (!chunks.length) return;
+        const url = URL.createObjectURL(new Blob(chunks, { type: rec.mimeType }));
+        this.set({ clips: [...(this.snap.clips ?? []), { label, url }].slice(-8) });
+      };
+      rec.start();
+      setTimeout(() => { if (rec.state !== "inactive") rec.stop(); }, ms);
+    } catch {}
+  }
+
+  /** hold the mic shut (someone else has the floor, last words, or push-to-talk is up) without changing my own mute */
+  setHeld(held: boolean) {
+    if (held === this.held) return;
+    this.held = held;
+    for (const r of this.rooms) if (r.localParticipant.permissions?.canPublish !== false) void r.localParticipant.setMicrophoneEnabled(this.snap.micOn && !held).catch(() => {});
+  }
+
   /** browsers won't play sound until the page is touched; one tap unlocks every voice */
   async unlock() {
+    void this.fx?.resume();
+    void this.mix?.ac.resume();
     await Promise.all(this.rooms.map((r) => r.startAudio().catch(() => {})));
     if (this.rooms.length) this.set({ status: this.rooms.every((r) => r.canPlaybackAudio) ? "on" : "needs-tap" });
   }
@@ -124,6 +188,10 @@ export class LiveKitVoice {
     if (remember) try { localStorage.setItem(PREF, "off"); } catch {}
     for (const r of this.rooms) void r.disconnect();
     this.rooms = [];
+    void this.fx?.close().catch(() => {});
+    this.fx = null;
+    void this.mix?.ac.close().catch(() => {});
+    this.mix = null;
     this.set({ status: "off", speaking: false, peers: {} });
   }
 
@@ -131,7 +199,7 @@ export class LiveKitVoice {
     const on = !this.snap.micOn || this.snap.micBlocked;
     const speakIn = this.rooms.filter((r) => r.localParticipant.permissions?.canPublish !== false);
     try {
-      await Promise.all(speakIn.map((r) => r.localParticipant.setMicrophoneEnabled(on)));
+      await Promise.all(speakIn.map((r) => r.localParticipant.setMicrophoneEnabled(on && !this.held)));
       this.set({ micOn: on, micBlocked: false });
     } catch { this.set({ micBlocked: true }); }
   }

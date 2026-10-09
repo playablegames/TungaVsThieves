@@ -8,7 +8,6 @@ const DISC: Record<Card, string> = {
   KUNDLI: "#2e6b3a",     // the role: forest green
   HERA_PHERI: "#8e2a14", // the steal: brick red
   BATWARA: "#9a5a12",    // Bhukamp: earth amber
-  MAYA_JAAL: "#1f6b6b",  // back from the dead: teal
   TEER_KAMAN: "#7a1020", // the arrow: crimson
   DAL_BADAL: "#4a4a52",  // the swap of sides: slate
   STONE_1: "#2a56b8",    // Bhadra Stone: blue
@@ -29,8 +28,6 @@ function Glyph({ c }: { c: Card }) {
       return <g {...W} strokeWidth={2.2}><path d="M5 10a7 7 0 0 1 12.2-3.5M19 14a7 7 0 0 1-12.2 3.5" /><path d="M17.5 3v4h-4M6.5 21v-4h4" /></g>;
     case "BATWARA": // the ground cracking
       return <g {...W}><path d="M3 18h18" /><path d="M12 4l-2 4 3 3-2.5 4 1.5 3" /><path d="M5 12l2-2M19 12l-2-2M6 7l1.5 1M18 7l-1.5 1" /></g>;
-    case "MAYA_JAAL": // hourglass — time turned back
-      return <g {...W}><path d="M7 3h10M7 21h10" /><path d="M8 3c0 5 8 5 8 9s-8 4-8 9M16 3c0 5-8 5-8 9s8 4 8 9" /><path d="M10 18.5h4" /></g>;
     case "TEER_KAMAN": // bow and arrow
       return <g {...W}><path d="M6 3c7 2 11 7 11 15" /><path d="M6 3l11 15" strokeWidth={1} /><path d="M3 21L19 5M19 5h-4M19 5v4" strokeWidth={2} /></g>;
     case "DAL_BADAL": // two people trading places

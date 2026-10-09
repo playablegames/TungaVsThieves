@@ -1,16 +1,14 @@
 // What a seat may do now, the timeout default, and a random legal move (for fuzzing / bots).
 import { isStone, type Action, type Card, type GameState } from "./types";
-import { canPlay, canRevote, living, passSize, playableCards, waitingOn } from "./engine";
+import { canDalBadal, canPlay, canRevote, living, passSize, playableCards, waitingOn } from "./engine";
 
 export type Decision =
-  | { kind: "turn"; playable: string[]; passSize: number }
+  | { kind: "turn"; playable: string[]; passSize: number; /** a thief holding Dal Badal may use it first */ dalBadal: boolean }
   | { kind: "debate"; reason: "faisla" | "final"; ready: number[] }
   | { kind: "vote"; reason: "faisla" | "final"; candidates: number[]; /** open voting: your vote so far (null = abstained; absent = not yet) */ mine?: number | null }
-  | { kind: "batwara"; left: number; right: number; /** you played it and more than one card is left after your split */ choosePile: boolean }
-  | { kind: "dal_badal"; candidates: number[]; count: number }
+  | { kind: "batwara"; left: number }
   | { kind: "dal_pick"; count: number }
   | { kind: "gift"; candidates: number[] }
-  | { kind: "shot"; candidates: number[]; roles: string[] }
   | { kind: "handoff"; candidates: number[] }
   | { kind: "surrender"; stones: string[] }
   | null;
@@ -23,18 +21,15 @@ export function decisionFor(s: GameState, seat: number): Decision {
   const ph = s.phase;
   const live = living(s).map((p) => p.seat);
   switch (ph.kind) {
-    case "turn": return { kind: "turn", playable: playableCards(s, seat), passSize: passSize(s.players[seat].hand) };
+    case "turn": return { kind: "turn", playable: playableCards(s, seat), passSize: passSize(s.players[seat].hand), dalBadal: canDalBadal(s, seat) };
     case "vote": return ph.debate ? { kind: "debate", reason: ph.reason, ready: [...ph.ready] } : { kind: "vote", reason: ph.reason, candidates: live };
-    case "batwara": return { kind: "batwara", left: -1, right: -1, choosePile: ph.actor === seat && s.players[seat].hand.length > 3 };
+    case "batwara": return { kind: "batwara", left: -1 };
+    case "dal_badal": return { kind: "dal_pick", count: ph.pool.length };
     case "surrender": return { kind: "surrender", stones: s.players[seat].hand.filter(isStone) };
     case "elim": {
       const others = live.filter((x) => x !== seat);
-      if (ph.step === "dal_badal") return { kind: "dal_badal", candidates: others, count: Math.min(3, others.length) };
-      if (ph.step === "dal_pick") return { kind: "dal_pick", count: ph.pool!.length };
       if (ph.step === "handoff") return { kind: "handoff", candidates: others };
-      return s.players[seat].side === "V"
-        ? { kind: "gift", candidates: others }
-        : { kind: "shot", candidates: others, roles: s.rolesInPlay };
+      return { kind: "gift", candidates: others };
     }
     default: return null;
   }
@@ -51,17 +46,12 @@ export function defaultAction(s: GameState, seat: number): Action {
     case "turn": return { type: "pass", pass: stonesLast(h, passSize(h)) };
     case "vote": return ph.debate ? { type: "ready" } : { type: "vote", target: null };
     case "surrender": return { type: "surrender", give: false };
-    case "batwara": {
-      const order = [...h.filter((c) => !isStone(c)), ...h.filter(isStone)];
-      // the Bhukamp player with cards to spare keeps Stones back from the pile too
-      return { type: "batwara", left: order[0], right: order[1], ...(ph.actor === seat && order.length > 3 ? { pile: order[2] } : {}) };
-    }
+    case "batwara": return { type: "batwara", card: stonesLast(h, 1)[0] };
+    case "dal_badal": return { type: "dal_pick", index: 0 };
     case "elim": {
       const others = living(s).map((p) => p.seat).filter((x) => x !== seat);
-      if (ph.step === "dal_badal") return { type: "dal_badal", seats: others.slice(0, 3) };
-      if (ph.step === "dal_pick") return { type: "dal_pick", index: 0 };
       if (ph.step === "handoff") return { type: "handoff", target: others[0] };
-      return s.players[seat].side === "V" ? { type: "gift", target: null } : { type: "shot", target: null };
+      return { type: "gift", target: null };
     }
     default: throw new Error("No decision");
   }
@@ -75,8 +65,22 @@ const sample = <T,>(r: R, xs: T[], k: number): T[] => {
   return out;
 };
 
-/** A bot seat's move: the random policy, but it never votes against itself and only gives up a Stone when it
- *  has to. Uses only what that seat knows. */
+/** roles this seat has read with its own Kundli and that still hold (a Dal Badal over that seat wipes the read) */
+export function readsOf(s: GameState, seat: number): Map<number, { role: string; side: "V" | "T" }> {
+  const out = new Map<number, { role: string; side: "V" | "T" }>();
+  for (const e of s.events) {
+    if (e.type === "kundli_private" && Array.isArray(e.to) && e.to.includes(seat)) {
+      out.set(e.data!.target as number, { role: e.data!.role as string, side: e.data!.side as "V" | "T" });
+    }
+    if (e.type === "dal_badal") for (const x of (e.data?.seats as number[]) ?? []) out.delete(x);
+  }
+  for (const [x] of out) if (!s.players[x].alive) out.delete(x);
+  return out;
+}
+
+/** A bot seat's move: the random policy, but it never votes against itself, only gives up a Stone when it has to,
+ *  and (2026-10-09: a miss now puts the shooter out) only fires Teer Kaman at a role it has read. Uses only what
+ *  that seat knows. */
 export function botAction(s: GameState, seat: number, r: R = Math.random): Action {
   if (s.phase.kind === "vote" && s.phase.debate) return { type: "ready" };
   if (s.phase.kind === "vote") {
@@ -84,7 +88,16 @@ export function botAction(s: GameState, seat: number, r: R = Math.random): Actio
     return { type: "vote", target: r() < 0.2 || !others.length ? null : pick(r, others) };
   }
   if (s.phase.kind === "surrender") return { type: "surrender", give: s.players[seat].side === "V" };
-  return randomAction(s, seat, r, 0.8, true);
+  const a = randomAction(s, seat, r, 0.8, true);
+  if (a.type === "play" && a.card === "TEER_KAMAN") {
+    const me = s.players[seat];
+    const foes = [...readsOf(s, seat)].filter(([, k]) => k.side !== me.side);
+    if (!foes.length) return { type: "pass", pass: a.pass };
+    const [target, k] = pick(r, foes);
+    const other = pick(r, s.rolesInPlay.filter((x) => x !== k.role));
+    return { ...a, target, roles: [k.role, other] };
+  }
+  return a;
 }
 
 /** k cards to pass: at random, or (keepStones) at random from the non-Stones, topped up with Stones */
@@ -100,17 +113,19 @@ export function randomAction(s: GameState, seat: number, r: R, activity = 0.8, k
   const others = live.filter((x) => x !== seat);
   switch (ph.kind) {
     case "turn": {
+      if (canDalBadal(s, seat) && r() < 0.5) {
+        const rest = [...h]; rest.splice(rest.indexOf("DAL_BADAL"), 1);
+        return { type: "dal_badal", seats: sample(r, others, 2), pass: passFrom(r, rest, passSize(rest), keepStones) };
+      }
       const cards = playableCards(s, seat);
       if (cards.length && r() < activity) {
         const card = pick(r, cards);
         const rest = [...h]; rest.splice(rest.indexOf(card), 1); rest.splice(rest.indexOf(card), 1);
-        const pass = card === "BATWARA" ? [] : passFrom(r, rest, 3, keepStones); // Bhukamp splits first
+        const pass = passFrom(r, rest, 3, keepStones);
         if (!canPlay(s, seat, card)) throw new Error("bug: playable card not playable");
-        const dead = s.players.filter((p) => !p.alive).map((p) => p.seat);
         const withCards = others.filter((x) => s.players[x].hand.length > 0);
         const target =
-          card === "MAYA_JAAL" ? pick(r, dead)
-          : card === "HERA_PHERI" ? pick(r, withCards)
+          card === "HERA_PHERI" ? pick(r, withCards)
           : ["KUNDLI", "TALASHI", "TEER_KAMAN"].includes(card) ? pick(r, others) : undefined;
         const roles = card === "TEER_KAMAN" ? (sample(r, s.rolesInPlay, 2) as [string, string]) : undefined;
         return { type: "play", card, pass, target, roles };
@@ -119,20 +134,12 @@ export function randomAction(s: GameState, seat: number, r: R, activity = 0.8, k
     }
     case "vote": return ph.debate ? { type: "ready" } : { type: "vote", target: r() < 0.25 ? null : pick(r, live) };
     case "surrender": return { type: "surrender", give: r() < 0.5 };
-    case "batwara": {
-      // a bot that keeps Stones splits from its other cards first (it must still give 2 if that is all it has)
-      const two = passFrom(r, h, 2, keepStones);
-      const rest = [...h]; rest.splice(rest.indexOf(two[0]), 1); rest.splice(rest.indexOf(two[1]), 1);
-      const pileFrom = keepStones && rest.some((c) => !isStone(c)) ? rest.filter((c) => !isStone(c)) : rest;
-      return { type: "batwara", left: two[0], right: two[1], ...(ph.actor === seat && rest.length > 1 ? { pile: pick(r, pileFrom) } : {}) };
-    }
+    // a bot that keeps Stones passes one of its other cards (it must still pass a Stone if that is all it has)
+    case "batwara": return { type: "batwara", card: passFrom(r, h, 1, keepStones)[0] };
+    case "dal_badal": return { type: "dal_pick", index: Math.floor(r() * ph.pool.length) };
     case "elim": {
-      if (ph.step === "dal_badal") return { type: "dal_badal", seats: sample(r, others, Math.min(3, others.length)) };
-      if (ph.step === "dal_pick") return { type: "dal_pick", index: Math.floor(r() * ph.pool!.length) };
       if (ph.step === "handoff") return { type: "handoff", target: pick(r, others) };
-      if (me.side === "V") return { type: "gift", target: r() < 0.2 ? null : pick(r, others) };
-      return r() < 0.2 ? { type: "shot", target: null }
-        : { type: "shot", target: pick(r, others), roles: sample(r, s.rolesInPlay, 2) as [string, string] };
+      return { type: "gift", target: r() < 0.2 ? null : pick(r, others) };
     }
     default: throw new Error("No decision");
   }

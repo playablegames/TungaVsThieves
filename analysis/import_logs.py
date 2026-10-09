@@ -58,7 +58,7 @@ def analyse(log):
         "kundli": len(by["kundli"]),
         "dal_badal": len(by["dal_badal"]),
         "gifts": sum(1 for e in by["gift"] if e["data"].get("target") is not None),
-        "revives": len(by["maya_jaal"]),
+        "claims": len(by["claim"]),  # (2026-10-09) Mayajaal is gone; claims out loud are the new thing to watch
         "eliminated": len(by["eliminated"]),
         "timeouts": len(by["timeout"]),
         "chat": len(log.get("messages", [])),
@@ -100,8 +100,8 @@ def main(paths):
           "  ".join("%d -> %s (%d games)" % (k, pct(v[1], v[0]), v[0]) for k, v in sorted(by_deal.items())))
     print("  Teer Kaman: %d shots, %d hits (%s) · last shots: %d, %d hits · Kundli reads: %d" % (
         tot["tk_shots"], tot["tk_hits"], pct(tot["tk_hits"], tot["tk_shots"]), tot["last_shots"], tot["last_hits"], tot["kundli"]))
-    print("  Dal Badal used %d · dying vote gifts %d · Maya Jaal revives %d · timeouts %d · chat messages %d" % (
-        tot["dal_badal"], tot["gifts"], tot["revives"], tot["timeouts"], tot["chat"]))
+    print("  Dal Badal used %d · dying vote gifts %d · claims out loud %d · timeouts %d · chat messages %d" % (
+        tot["dal_badal"], tot["gifts"], tot["claims"], tot["timeouts"], tot["chat"]))
     played = collections.Counter()
     for _, g in games: played.update(g["played"])
     print("  Pairs played: " + ", ".join("%s %d" % (k, v) for k, v in played.most_common()))

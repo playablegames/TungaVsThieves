@@ -2,7 +2,7 @@
 // The action dock: what YOU can do right now, one step at a time. Irreversible moves go through a 5-second
 // timed confirm instead of undo (BGA: undo is impossible once hidden information is out).
 import { useMemo, useState } from "react";
-import type { Action, ActionCard, Card } from "@/engine/types";
+import { ACTION_CARDS, type Action, type ActionCard, type Card } from "@/engine/types";
 import type { PlayerView, PublicPlayer } from "@/engine/view";
 import { CARD } from "@/lib/cards";
 import type { Voice } from "@/lib/cards";
@@ -17,7 +17,7 @@ function Btn({ voice = "pass", className = "", ...p }: React.ButtonHTMLAttribute
 import { HandRow } from "./Hand";
 import { CardIcon } from "./CardIcon";
 
-const TARGETED: ActionCard[] = ["KUNDLI", "TALASHI", "HERA_PHERI", "TEER_KAMAN", "MAYA_JAAL"];
+const TARGETED: ActionCard[] = ["KUNDLI", "TALASHI", "HERA_PHERI", "TEER_KAMAN"];
 
 type Ask = (label: string, action: Action) => void;
 
@@ -60,15 +60,13 @@ export function Decide({ v, act }: { v: PlayerView; act: (a: Action) => void }) 
   const others = living.filter((p) => p.seat !== v.me.seat);
   const name = (s: number) => v.players[s]?.name ?? "?";
   switch (d.kind) {
-    case "turn": return <Turn v={v} playable={d.playable as ActionCard[]} passSize={d.passSize} act={act} ask={c.ask} />;
+    case "turn": return <Turn v={v} playable={d.playable as ActionCard[]} passSize={d.passSize} dalBadal={d.dalBadal} act={act} ask={c.ask} />;
     case "debate": case "vote": return null;
     case "batwara": return <Bhukamp v={v} act={act} />;
     case "surrender": return <Surrender stones={d.stones as Card[]} act={act} />;
-    case "dal_badal": return <Swap options={others} count={d.count} ask={c.ask} name={name} />;
     case "dal_pick": return <DalPick count={d.count} act={act} />;
-    case "gift": return <OneOf title="Dying power — give 1 vote" hint="They vote with one more from now on." options={others}
+    case "gift": return <OneOf title="Give your vote" hint="They vote with one more from now on." options={others}
       go={(s) => c.ask(`Give your vote to ${name(s)}`, { type: "gift", target: s })} skip={{ label: "Give it to nobody", action: { type: "gift", target: null } }} act={act} />;
-    case "shot": return <Shot v={v} options={others} ask={c.ask} act={act} name={name} />;
     case "handoff": return <OneOf title="Hand ALL your cards to someone" hint="Stones included. Everyone sees what you hand over." options={others}
       go={(s) => c.ask(`Hand everything to ${name(s)}`, { type: "handoff", target: s })} act={act} />;
   }
@@ -85,21 +83,6 @@ function OneOf({ title, hint, options, go, skip, act }: { title: string; hint: s
   );
 }
 
-function Swap({ options, count, ask, name }: { options: PublicPlayer[]; count: number; ask: Ask; name: (s: number) => string }) {
-  const [sel, setSel] = useState<number[]>([]);
-  const toggle = (s: number) => {
-    const next = sel.includes(s) ? sel.filter((y) => y !== s) : sel.length < count ? [...sel, s] : sel;
-    setSel(next);
-    if (next.length === count) ask(`Shuffle ${next.map(name).join(", ")}`, { type: "dal_badal", seats: next });
-  };
-  return (
-    <div className="flex flex-col gap-3">
-      <Head title={`Dal Badal — pick ${count}`} hint={`Pick ${count} players. Their role cards are shuffled face down and each picks one back. They see their new role in secret; the table sees only who was in it.`} />
-      <div className="grid grid-cols-2 gap-2">{options.map((p) => <PlayerChip key={p.seat} p={p} selected={sel.includes(p.seat)} onClick={() => toggle(p.seat)} />)}</div>
-    </div>
-  );
-}
-
 /** your turn to draw a role back from the Dal Badal shuffle: the cards lie face down — any one */
 function DalPick({ count, act }: { count: number; act: (a: Action) => void }) {
   return (
@@ -111,20 +94,6 @@ function DalPick({ count, act }: { count: number; act: (a: Action) => void }) {
             className="aspect-[5/8] w-20 rounded-lg border-2 border-[#b8863b] bg-[repeating-linear-gradient(45deg,#2a1a0c_0_6px,#3a240c_6px_12px)] shadow-[0_8px_18px_-6px_rgba(0,0,0,.9)] active:translate-y-px" />
         ))}
       </div>
-    </div>
-  );
-}
-
-function Shot({ v, options, ask, act, name }: { v: PlayerView; options: PublicPlayer[]; ask: Ask; act: (a: Action) => void; name: (s: number) => string }) {
-  const [target, setTarget] = useState<number | null>(null);
-  const [roles, setRoles] = useState<string[]>([]);
-  const fire = (t: number | null, r: string[]) => { if (t !== null && r.length === 2) ask(`Shoot ${name(t)}`, { type: "shot", target: t, roles: r as [string, string] }); };
-  return (
-    <div className="flex flex-col gap-3">
-      <Head title="Last shot — who, and 2 roles" hint="Point at one player, name two roles. Either is theirs: they're out with you." />
-      <Pickers options={options} sel={target} onPick={(t) => { setTarget(t); fire(t, roles); }} />
-      <RolePicker roles={v.rolesInPlay} sel={roles} setSel={(r) => { setRoles(r); fire(target, r); }} />
-      <Btn voice="ghost" onClick={() => act({ type: "shot", target: null })}>No shot</Btn>
     </div>
   );
 }
@@ -145,32 +114,16 @@ function Surrender({ stones, act }: { stones: Card[]; act: (a: Action) => void }
   );
 }
 
+/** BHUKAMP (2026-10-09): everyone passes 1 card to the next player clockwise — one tap passes it */
 function Bhukamp({ v, act }: { v: PlayerView; act: (a: Action) => void }) {
-  const [left, setLeft] = useState<number | null>(null);
-  const [right, setRight] = useState<number | null>(null);
   const living = v.players.filter((p) => p.alive).map((p) => p.seat);
   const i = living.indexOf(v.me.seat);
-  const L = v.players[living[(i - 1 + living.length) % living.length]].name;
-  const R = v.players[living[(i + 1) % living.length]].name;
-  const [pile, setPile] = useState<number | null>(null);
-  const d = v.decision?.kind === "batwara" ? v.decision : null;
-  const choosePile = Boolean(d?.choosePile);
   const next = v.players[living[(i + 1) % living.length]].name;
-  // the tap that completes the split passes it (designer: "directly do action")
-  const tap = (k: number) => {
-    let l = left, r = right, p = pile;
-    if (l === k) l = null; else if (r === k) r = null; else if (p === k) p = null;
-    else if (l === null) l = k; else if (r === null) r = k; else if (choosePile && p === null) p = k;
-    setLeft(l); setRight(r); setPile(p);
-    if (l !== null && r !== null && (!choosePile || p !== null))
-      act({ type: "batwara", left: v.me.hand[l], right: v.me.hand[r], ...(choosePile ? { pile: v.me.hand[p!] } : {}) });
-  };
   return (
     <div className="flex flex-col gap-3">
-      <Head title={choosePile ? "Bhukamp — 1 left, 1 right, 1 on" : "Bhukamp — 1 left, 1 right"} />
+      <Head title={`Bhukamp — 1 card to ${next}`} />
       <div className="pt-2">
-        <HandRow cards={v.me.hand} selected={[left, right, pile].filter((k): k is number => k !== null)}
-          labels={Object.fromEntries([[left, `← ${L}`], [right, `${R} →`], [pile, `→ ${next}`]].filter(([k]) => k !== null))} onTap={tap} />
+        <HandRow cards={v.me.hand} onTap={(k) => act({ type: "batwara", card: v.me.hand[k] })} />
       </div>
     </div>
   );
@@ -179,33 +132,32 @@ function Bhukamp({ v, act }: { v: PlayerView; act: (a: Action) => void }) {
 /** why a pair in your hand can't be played right now (engine canPlay, in words) */
 function whyNot(v: PlayerView, c: ActionCard, hand: Card[], passSize: number): string {
   if (hand.length - 2 < 3) return `needs ${passSize} other cards left to pass`;
-  if (c === "MAYA_JAAL") return "nobody is out yet to bring back";
   if (c === "HERA_PHERI") return "nobody has cards to steal";
   return "no one to aim it at";
 }
 
-function Turn({ v, playable, passSize, act, ask }: { v: PlayerView; playable: ActionCard[]; passSize: number; act: (a: Action) => void; ask: Ask }) {
-  const [card, setCard] = useState<ActionCard | "NONE" | null>(null);
+function Turn({ v, playable, passSize, dalBadal, act, ask }: { v: PlayerView; playable: ActionCard[]; passSize: number; dalBadal: boolean; act: (a: Action) => void; ask: Ask }) {
+  const [card, setCard] = useState<ActionCard | "NONE" | "DAL_BADAL" | null>(null);
   const [pass, setPass] = useState<number[]>([]);
   const [target, setTarget] = useState<number | null>(null);
   const [roles, setRoles] = useState<string[]>([]);
   const hand = v.me.hand;
-  const pairIdx = useMemo(() => (!card || card === "NONE" ? [] : hand.map((c, i) => (c === card ? i : -1)).filter((i) => i >= 0).slice(0, 2)), [card, hand]);
-  const reset = () => { setCard(null); setPass([]); setTarget(null); setRoles([]); };
+  // the cards that leave with the move: a pair, or the Dal Badal card itself
+  const pairIdx = useMemo(() => (!card || card === "NONE" ? [] : hand.map((c, i) => (c === card ? i : -1)).filter((i) => i >= 0).slice(0, card === "DAL_BADAL" ? 1 : 2)), [card, hand]);
+  const [swap, setSwap] = useState<number[]>([]);
+  const reset = () => { setCard(null); setPass([]); setTarget(null); setRoles([]); setSwap([]); };
   const others = v.players.filter((p) => p.alive && p.seat !== v.me.seat);
-  const targets = card === "MAYA_JAAL" ? v.players.filter((p) => !p.alive) : card === "HERA_PHERI" ? others.filter((p) => p.handSize > 0) : others;
-  const needsTarget = card && card !== "NONE" && TARGETED.includes(card);
+  const targets = card === "HERA_PHERI" ? others.filter((p) => p.handSize > 0) : others;
+  const needsTarget = card && card !== "NONE" && card !== "DAL_BADAL" && TARGETED.includes(card);
   /** the cards left once this pair is out — when exactly passSize remain, they go on by themselves */
   const restAfter = (c: ActionCard) => {
     const pair = hand.map((h, i) => (h === c ? i : -1)).filter((i) => i >= 0).slice(0, 2);
     return hand.map((_, i) => i).filter((i) => !pair.includes(i));
   };
-  const auto = card && card !== "NONE" && restAfter(card).length === passSize;
+  const auto = card && card !== "NONE" && card !== "DAL_BADAL" && restAfter(card).length === passSize;
   const declare = (c: ActionCard) => {
     const rest = restAfter(c);
     // nothing to choose: the pair is declared and the other cards go to the next player in the same move
-    // Bhukamp splits first: nothing is passed when it is declared — the split screen comes next
-    if (c === "BATWARA") { ask(`Declaring ${CARD[c].name} — then everyone splits, you too`, { type: "play", card: c, pass: [] }); return; }
     if (rest.length === passSize && !TARGETED.includes(c)) {
       ask(CARD[c].name, { type: "play", card: c, pass: rest.map((i) => hand[i]) });
       return;
@@ -218,7 +170,7 @@ function Turn({ v, playable, passSize, act, ask }: { v: PlayerView; playable: Ac
     // your cards face up; each pair you may legally play is declared in words, beside Pass
     // the two cards of every pair you may play glow together
     const glowing = playable.flatMap((c) => hand.map((h, i) => (h === c ? i : -1)).filter((i) => i >= 0).slice(0, 2));
-    const blocked = (["FAISLA", "TALASHI", "KUNDLI", "HERA_PHERI", "BATWARA", "MAYA_JAAL", "TEER_KAMAN"] as ActionCard[])
+    const blocked = ACTION_CARDS
       .filter((c) => !playable.includes(c) && hand.filter((h) => h === c).length >= 2);
     return (
       <div className="flex flex-col gap-3">
@@ -230,6 +182,12 @@ function Turn({ v, playable, passSize, act, ask }: { v: PlayerView; playable: Ac
               Play {CARD[c].name} pair
             </button>
           ))}
+          {dalBadal && (
+            <button type="button" onClick={() => setCard("DAL_BADAL")}
+              className="min-h-12 rounded-full border-2 border-crimson bg-crimson-deep/80 font-[family-name:var(--font-engraved)] text-[16px] font-bold uppercase tracking-[0.08em] text-stock active:translate-y-px">
+              Use Dal Badal
+            </button>
+          )}
           <button type="button" onClick={() => setCard("NONE")}
             className="min-h-12 rounded-full border-2 border-brass/60 bg-black/30 font-[family-name:var(--font-engraved)] text-[15px] font-semibold uppercase tracking-[0.12em] text-stock active:translate-y-px">
             {playable.length ? `Or pass ${passSize}` : `Pass ${passSize} cards`}
@@ -244,14 +202,46 @@ function Turn({ v, playable, passSize, act, ask }: { v: PlayerView; playable: Ac
   const fire = (p: number[], t: number | null, r: string[]) => {
     if (!card || p.length !== passSize) return;
     if (card === "NONE") { act({ type: "pass", pass: p.map((i) => hand[i]) }); reset(); return; }
+    if (card === "DAL_BADAL") return;
     if (needsTarget && t === null) return;
     if (card === "TEER_KAMAN" && r.length !== 2) return;
     ask(card, { type: "play", card, pass: p.map((i) => hand[i]), target: t ?? undefined, roles: card === "TEER_KAMAN" ? (r as [string, string]) : undefined });
     reset();
   };
   const ASK: Partial<Record<ActionCard, string>> = {
-    TALASHI: "Search who?", KUNDLI: "Read whose role?", HERA_PHERI: "Steal from who?", MAYA_JAAL: "Bring back who?", TEER_KAMAN: "Shoot who? Name 2 roles",
+    TALASHI: "Search who?", KUNDLI: "Read whose role?", HERA_PHERI: "Steal from who?", TEER_KAMAN: "Shoot who? Name 2 roles",
   };
+  if (card === "DAL_BADAL") {
+    // DAL BADAL is the whole turn: pass 3, show your role, pick 2 players to shuffle role cards with, then draw 1
+    const need = Math.min(3, hand.length - 1);
+    const go = (p: number[], sw: number[]) => {
+      if (p.length === need && sw.length === 2) { act({ type: "dal_badal", seats: sw, pass: p.map((i) => hand[i]) }); reset(); }
+    };
+    return (
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <Head title={pass.length < need ? `Dal Badal — pick ${need} to pass` : "Dal Badal — swap with which 2?"} />
+          <button type="button" onClick={reset} className="min-h-10 shrink-0 text-[13px] text-stock/60 underline">Back</button>
+        </div>
+        <HandRow cards={hand} dim={pairIdx} selected={pass}
+          labels={Object.fromEntries([...pairIdx.map((i) => [i, "SWAP"]), ...pass.map((i) => [i, "PASS"])])}
+          onTap={(i) => {
+            if (pairIdx.includes(i)) return;
+            const next = pass.includes(i) ? pass.filter((x) => x !== i) : pass.length < need ? [...pass, i] : pass;
+            setPass(next); go(next, swap);
+          }} />
+        <div className="grid grid-cols-2 gap-2">
+          {others.map((p) => (
+            <PlayerChip key={p.seat} p={p} selected={swap.includes(p.seat)} onClick={() => {
+              const next = swap.includes(p.seat) ? swap.filter((x) => x !== p.seat) : swap.length < 2 ? [...swap, p.seat] : swap;
+              setSwap(next); go(pass, next);
+            }} />
+          ))}
+        </div>
+        <p className="text-center text-[12px] text-stock/60">Everyone sees your role. Then you draw 1.</p>
+      </div>
+    );
+  }
   const title = !playing ? `Pick ${passSize} to pass` : !auto ? `Pick ${passSize} to pass${needsTarget ? `, then ${ASK[card]?.toLowerCase()}` : ""}` : ASK[card] ?? CARD[card].name;
   return (
     <div className="flex flex-col gap-3">

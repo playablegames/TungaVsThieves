@@ -11,7 +11,7 @@ import { int, shuffle } from "./rng";
 
 export const CARD_NAME: Record<Card, string> = {
   FAISLA: "Faisla", TALASHI: "Talashi", KUNDLI: "Kundli", HERA_PHERI: "Hera Pheri",
-  BATWARA: "Bhukamp", MAYA_JAAL: "Mayajaal", TEER_KAMAN: "Teer Kaman",
+  BATWARA: "Bhukamp", TEER_KAMAN: "Teer Kaman",
   DAL_BADAL: "Dal Badal", STONE_1: "Bhadra Stone", STONE_2: "Tunga Stone",
 };
 const names = (cs: Card[]) => cs.map((c) => CARD_NAME[c]).join(", ") || "nothing";
@@ -72,7 +72,6 @@ export function canPlay(s: GameState, seat: number, card: ActionCard): boolean {
   if (h.length - 2 < 3) return false;
   const others = living(s).filter((p) => p.seat !== seat);
   switch (card) {
-    case "MAYA_JAAL": return s.players.some((p) => !p.alive);
     case "HERA_PHERI": return others.some((p) => p.hand.length > 0);
     case "FAISLA": case "BATWARA": return true;
     default: return others.length > 0;
@@ -80,6 +79,11 @@ export function canPlay(s: GameState, seat: number, card: ActionCard): boolean {
 }
 
 export const playableCards = (s: GameState, seat: number) => ACTION_CARDS.filter((c) => canPlay(s, seat, c));
+
+/** Dal Badal (designer 2026-10-09): a living thief holding it may use it on their turn, before they play or pass */
+export const canDalBadal = (s: GameState, seat: number) =>
+  s.phase.kind === "turn" && s.phase.seat === seat && P(s, seat).side === "T" && P(s, seat).hand.includes("DAL_BADAL")
+  && living(s).length >= 3;
 
 /** how many cards a pass must contain (normally 3; fewer only if the hand is starved) */
 export const passSize = (h: Card[]) => Math.min(3, h.length);
@@ -91,8 +95,8 @@ function checkPass(hand: Card[], pass: Card[]) {
 }
 
 // ---------------------------------------------------------------- flow
-export function start(names: string[], seed: number, table?: Parameters<typeof createGame>[2]): GameState {
-  const s = createGame(names, seed, table);
+export function start(names: string[], seed: number, table?: Parameters<typeof createGame>[2], hand?: number): GameState {
+  const s = createGame(names, seed, table, hand);
   emit(s, "setup", "all", `${names.length} players · ${s.rounds} rounds · roles in play: ${s.rolesInPlay.join(", ")}`,
     { rounds: s.rounds, rolesInPlay: s.rolesInPlay });
   for (const p of s.players) emit(s, "role", [p.seat], `You are ${p.role} (${p.side === "V" ? "Tunga" : "Thief"}).`, { role: p.role, side: p.side });
@@ -217,7 +221,8 @@ export function waitingOn(s: GameState): number[] {
       : ph.voters.filter((v) => !(v in ph.ballots));
     case "batwara": return ph.givers.filter((g) => !(g in ph.picks));
     case "surrender": return ph.holders.filter((h) => !(h in ph.choices));
-    case "elim": return ph.step === "dal_pick" ? [ph.pickers![0]] : [ph.seat];
+    case "dal_badal": return [ph.pickers[0]];
+    case "elim": return [ph.seat];
     default: return [];
   }
 }
@@ -246,6 +251,7 @@ export function apply(prev: GameState, seat: number, action: Action): GameState 
   const ph = s.phase;
 
   if (ph.kind === "turn") {
+    if (action.type === "dal_badal") return doDalBadal(s, seat, action.seats, action.pass);
     if (action.type === "pass") return doPassTurn(s, seat, action.pass);
     if (action.type === "play") return doPlay(s, seat, action);
     throw new RuleError("On your turn: pass 3, or play a pair");
@@ -273,19 +279,13 @@ export function apply(prev: GameState, seat: number, action: Action): GameState 
     return s;
   }
   if (ph.kind === "batwara") {
-    if (action.type !== "batwara") throw new RuleError("Choose 1 card left and 1 right");
-    const tmp = [...P(s, seat).hand];
-    removeCards(tmp, [action.left, action.right]);
-    let pile: Card | undefined;
-    if (seat === ph.actor && tmp.length > 1) {
-      // more than one card left after the split: the player picks which one joins the 2 they draw
-      if (!action.pile || !tmp.includes(action.pile)) throw new RuleError("Choose the card that goes on with the 2 you draw");
-      pile = action.pile;
-    }
-    ph.picks[seat] = { left: action.left, right: action.right, ...(pile ? { pile } : {}) };
+    if (action.type !== "batwara") throw new RuleError("Choose 1 card to pass to your left");
+    if (!P(s, seat).hand.includes(action.card)) throw new RuleError(`You don't hold ${CARD_NAME[action.card]}`);
+    ph.picks[seat] = action.card;
     if (waitingOn(s).length === 0) resolveBatwara(s);
     return s;
   }
+  if (ph.kind === "dal_badal") return doDalPick(s, action);
   if (ph.kind === "elim") return doElimStep(s, seat, action);
   throw new RuleError("The game is over");
 }
@@ -314,19 +314,14 @@ function doPlay(s: GameState, seat: number, a: Extract<Action, { type: "play" }>
   });
   const afterPair = [...p.hand];
   removeCards(afterPair, [a.card, a.card]);
-  // Bhukamp splits FIRST, so its pile is made after the split; every other pair passes 3 out first
-  const bhukamp = a.card === "BATWARA";
-  if (bhukamp) { if (a.pass.length) throw new RuleError("Bhukamp: split first — your pile is made after the split"); }
-  else checkPass(afterPair, a.pass);
+  checkPass(afterPair, a.pass);
   validateTarget(s, seat, a);
 
   // pair to the discard, the other 3 out FIRST (power or Stone)
   removeCards(p.hand, [a.card, a.card, ...a.pass]);
   discard(s, [a.card, a.card]);
-  if (!bhukamp) {
-    s.pile = a.pass;
-    s.pileFrom = seat;
-  }
+  s.pile = a.pass;
+  s.pileFrom = seat;
   emit(s, "play", "all", `${p.name} plays a pair of ${CARD_NAME[a.card]}.`, { seat, card: a.card, target: a.target ?? null });
 
   const t = a.target !== undefined ? P(s, a.target) : null;
@@ -339,7 +334,9 @@ function doPlay(s: GameState, seat: number, a: Extract<Action, { type: "play" }>
     }
     case "TALASHI": {
       p.hand.push(...draw(s, 2));
-      emit(s, "talashi", "all", `${p.name} searches ${t!.name}: ${names(t!.hand)}.`, { seat, target: t!.seat, hand: [...t!.hand] });
+      // a PRIVATE search (designer 2026-10-09): the table sees who was searched, only the searcher sees the cards
+      emit(s, "talashi", "all", `${p.name} searches ${t!.name}.`, { seat, target: t!.seat });
+      emit(s, "talashi_private", [seat], `${t!.name} holds: ${names(t!.hand)}.`, { seat, target: t!.seat, hand: [...t!.hand] });
       endTurn(s); return s;
     }
     case "HERA_PHERI": {
@@ -354,29 +351,13 @@ function doPlay(s: GameState, seat: number, a: Extract<Action, { type: "play" }>
       endTurn(s); return s;
     }
     case "BATWARA": {
-      // Bhukamp (designer, 2026-10-07): the table splits FIRST — every living player passes 1 left and 1 right, the
-      // player too (from the cards left after the pair) — then the player draws 2, and those 2 plus their last own
-      // card go to the next player as the pile. Nobody's hand shrinks; the player chooses what each neighbour gets.
-      const live = living(s);
-      const givers = live.filter((x) => x.hand.length >= 2).map((x) => x.seat);
-      // a player with exactly 1 card gives it left, no choice
-      for (const x of live.filter((x) => x.hand.length === 1)) {
-        const c = x.hand.pop()!;
-        P(s, neighbour(s, x.seat, -1)).hand.push(c);
-      }
-      emit(s, "batwara", "all", `BHUKAMP — ${p.name} shakes the table: everyone passes 1 card left and 1 card right.`, { seat });
+      // Bhukamp (designer 2026-10-09): every living player passes 1 card to the next player clockwise — the way the
+      // turn goes — in secret
+      const givers = living(s).filter((x) => x.hand.length > 0).map((x) => x.seat);
+      emit(s, "batwara", "all", `BHUKAMP — ${p.name} shakes the table: everyone passes 1 card clockwise.`, { seat });
       s.phase = { kind: "batwara", actor: seat, givers, picks: {} };
       if (givers.length === 0) resolveBatwara(s);
       return s;
-    }
-    case "MAYA_JAAL": {
-      p.hand.push(...draw(s, 2));
-      t!.alive = true;
-      t!.votes = t!.votesAtDeath;
-      t!.hand = draw(s, 2);
-      s.deadOrder = s.deadOrder.filter((d) => d !== t!.seat);
-      emit(s, "maya_jaal", "all", `${p.name} brings ${t!.name} back (${t!.revealedRole}).`, { seat, target: t!.seat });
-      endTurn(s); return s;
     }
     case "TEER_KAMAN": {
       const [r1, r2] = a.roles!;
@@ -384,14 +365,14 @@ function doPlay(s: GameState, seat: number, a: Extract<Action, { type: "play" }>
       emit(s, "teer_kaman", "all", `${p.name} shoots at ${t!.name}, naming ${r1} and ${r2} — ${hit ? "HIT" : "miss"}.`,
         { seat, target: t!.seat, roles: [r1, r2], hit });
       if (hit) {
-        s.elimQueue.push({ seat: t!.seat, killer: seat });
+        s.elimQueue.push({ seat: t!.seat, killer: seat, reveal: [seat] }); // only the shooter sees the role
         s.after = { kind: "endTurn", drawFor: seat };
         runElims(s);
       } else {
-        p.votes = Math.max(0, p.votes - 1);
-        p.hand.push(...draw(s, 2));
-        emit(s, "vote_lost", "all", `${p.name} loses a vote for good (now ${p.votes}).`, { seat, votes: p.votes });
-        endTurn(s);
+        // a miss puts the shooter out (designer 2026-10-09)
+        s.elimQueue.push({ seat, killer: null, reveal: [] }); // the shooter's role stays hidden
+        s.after = { kind: "endTurn", drawFor: null };
+        runElims(s);
       }
       return s;
     }
@@ -405,15 +386,53 @@ function doPlay(s: GameState, seat: number, a: Extract<Action, { type: "play" }>
   }
 }
 
+// ---------------------------------------------------------------- Dal Badal
+// (designer 2026-10-09) a thief on their turn shows their role and points at 2 other living players. The 3 role cards
+// are shuffled face down; from the thief, in seat order, each picks one — the last takes what is left. Each sees only
+// their own new role. The card leaves the game. It is the whole turn: pass 3 first, then the shuffle, then draw 1.
+function doDalBadal(s: GameState, seat: number, chosen: number[], pass: Card[]): GameState {
+  if (!canDalBadal(s, seat)) throw new RuleError("Only a thief holding Dal Badal can use it, on their turn");
+  const p = P(s, seat);
+  const seats = [...new Set(chosen)];
+  if (seats.length !== 2 || seats.some((x) => x === seat || !P(s, x)?.alive)) throw new RuleError("Pick 2 other living players");
+  const n = s.players.length;
+  const pickers = [seat, ...seats].sort((x, y) => ((x - seat + n) % n) - ((y - seat + n) % n));
+  const pool = shuffle(s, pickers.map((x) => ({ role: P(s, x).role, side: P(s, x).side })));
+  const rest = [...p.hand];
+  removeCards(rest, ["DAL_BADAL"]);
+  checkPass(rest, pass ?? []);
+  removeCards(p.hand, ["DAL_BADAL", ...pass]); // Dal Badal is out of the game — never reshuffled
+  s.pile = pass;
+  s.pileFrom = seat;
+  emit(s, "dal_badal", "all",
+    `DAL BADAL — ${p.name} shows ${p.role} (Thief) and shuffles roles with ${seats.map((x) => P(s, x).name).join(" and ")}. Each picks one back, face down.`,
+    { seat, role: p.role, seats: pickers });
+  s.phase = { kind: "dal_badal", actor: seat, pool, pickers, drawn: [] };
+  return s;
+}
+
+function doDalPick(s: GameState, a: Action): GameState {
+  const ph = s.phase as Extract<GameState["phase"], { kind: "dal_badal" }>;
+  if (a.type !== "dal_pick") throw new RuleError("Pick one of the face-down role cards");
+  if (!Number.isInteger(a.index) || a.index < 0 || a.index >= ph.pool.length) throw new RuleError("Pick one of the cards on the table");
+  // picks are held aside until the last card is taken, so no two players ever hold the same role mid-shuffle
+  const take = (x: number, i: number) => { const [r] = ph.pool.splice(i, 1); ph.drawn.push({ seat: x, ...r }); };
+  take(ph.pickers.shift()!, a.index);
+  if (ph.pickers.length === 1) take(ph.pickers.shift()!, 0); // the last one takes what is left
+  if (ph.pickers.length) return s;
+  for (const d of ph.drawn) { const x = P(s, d.seat); x.role = d.role; x.side = d.side; }
+  for (const d of ph.drawn) emit(s, "role", [d.seat], `Dal Badal: your role is now ${d.role} (${d.side === "V" ? "Tunga" : "Thief"}).`, { role: d.role, side: d.side, swapped: true });
+  P(s, ph.actor).hand.push(...draw(s, 1));
+  emit(s, "dal_badal_done", "all", `Dal Badal is done. ${P(s, ph.actor).name} draws 1.`, { seat: ph.actor });
+  endTurn(s);
+  return s;
+}
+
 function validateTarget(s: GameState, seat: number, a: Extract<Action, { type: "play" }>) {
-  const needs = ["KUNDLI", "TALASHI", "HERA_PHERI", "TEER_KAMAN", "MAYA_JAAL"].includes(a.card);
+  const needs = ["KUNDLI", "TALASHI", "HERA_PHERI", "TEER_KAMAN"].includes(a.card);
   if (!needs) return;
   if (a.target === undefined) throw new RuleError("Choose a player");
   const t = P(s, a.target);
-  if (a.card === "MAYA_JAAL") {
-    if (t.alive) throw new RuleError("Mayajaal brings back an eliminated player");
-    return;
-  }
   if (!t.alive || t.seat === seat) throw new RuleError("Choose another living player");
   if (a.card === "HERA_PHERI" && t.hand.length === 0) throw new RuleError("They hold no cards");
   if (a.card === "TEER_KAMAN") checkRoles(s, a.roles);
@@ -442,47 +461,36 @@ function resolveVote(s: GameState) {
 
   if (ph.reason === "final") {
     s.after = { kind: "finalReveal" };
-    if (out !== null) { s.elimQueue.push({ seat: out, killer: null }); runElims(s); }
+    if (out !== null) { s.elimQueue.push({ seat: out, killer: null, reveal: [] }); runElims(s); }
     else finalReveal(s);
     return;
   }
   // Faisla: either way, the caller draws 2 (after any elimination resolves)
   s.after = { kind: "endTurn", drawFor: ph.caller };
-  if (out !== null) { s.elimQueue.push({ seat: out, killer: ph.caller }); runElims(s); }
+  // only the caller sees the role (designer 2026-10-09) — nobody does if the caller is voted out by their own Faisla
+  if (out !== null) { s.elimQueue.push({ seat: out, killer: ph.caller, reveal: ph.caller !== null && out !== ph.caller ? [ph.caller] : [] }); runElims(s); }
   else continueAfterElims(s);
 }
 
 // ---------------------------------------------------------------- Batwara
 function resolveBatwara(s: GameState) {
   const ph = s.phase as Extract<GameState["phase"], { kind: "batwara" }>;
-  // the player's own card for the pile: what's left of their hand after their split (or the one they picked)
-  const actor = P(s, ph.actor);
-  const mine = ph.picks[ph.actor];
-  const rest = [...actor.hand];
-  if (mine) removeCards(rest, [mine.left, mine.right]);
-  const own = mine?.pile ? [mine.pile] : rest.slice(0, 1);
   const moves: [number, Card, number][] = [];
-  for (const [g, { left, right }] of Object.entries(ph.picks)) {
+  for (const [g, card] of Object.entries(ph.picks)) {
     const seat = Number(g);
-    removeCards(P(s, seat).hand, [left, right]);
-    moves.push([seat, left, neighbour(s, seat, -1)], [seat, right, neighbour(s, seat, 1)]);
+    removeCards(P(s, seat).hand, [card]);
+    moves.push([seat, card, neighbour(s, seat, 1)]); // clockwise = the next seat in turn order
   }
   for (const [from, c, to] of moves) {
     P(s, to).hand.push(c);
     emit(s, "batwara_private", [from, to], `${P(s, from).name} passed ${CARD_NAME[c]} to ${P(s, to).name}.`, { from, to, card: c });
   }
-  // then the player draws 2: those 2 and their own card go to the next player
-  removeCards(actor.hand, own);
-  const drawn = draw(s, 2);
-  s.pile = [...own, ...drawn];
-  s.pileFrom = actor.seat;
-  emit(s, "batwara_pile", [actor.seat], `You drew ${names(drawn)} — with ${names(own)} they go to the next player.`, { cards: [...s.pile] });
   emit(s, "batwara_done", "all", "Bhukamp is done.");
   endTurn(s);
 }
 
 // ---------------------------------------------------------------- elimination
-// order (rulebook): reveal -> Dal Badal -> dying power -> hand-off -> silent conduit
+// order: out (role seen only by the Teer Kaman shooter or the Faisla caller) -> dying power -> hand-off -> silent conduit
 function runElims(s: GameState) {
   for (;;) {
     const job = s.elimQueue[0];
@@ -492,16 +500,21 @@ function runElims(s: GameState) {
       p.alive = false;
       p.votesAtDeath = p.votes;
       p.votes = 0;
-      p.revealedRole = p.role;
       s.deadOrder.push(p.seat);
-      emit(s, "eliminated", "all", `${p.name} is OUT — ${p.role} (${p.side === "V" ? "Tunga" : "Thief"}). Hand: ${names(p.hand)}.`,
-        { seat: p.seat, role: p.role, side: p.side, hand: [...p.hand], killer: job.killer });
+      // (designer 2026-10-09) roles are never shown to the table: only the Teer Kaman shooter who hit, or the Faisla
+      // caller, sees it. The private line goes first, so a mind reading events meets the role before the public line.
+      if (job.reveal.length) {
+        emit(s, "eliminated_private", job.reveal, `${p.name} was ${p.role} (${p.side === "V" ? "Tunga" : "Thief"}).`,
+          { seat: p.seat, role: p.role, side: p.side, hand: [...p.hand], killer: job.killer });
+      }
+      if (s.publicRoles) {
+        p.revealedRole = p.role;
+        emit(s, "eliminated", "all", `${p.name} is OUT — ${p.role} (${p.side === "V" ? "Tunga" : "Thief"}). Hand: ${names(p.hand)}.`,
+          { seat: p.seat, role: p.role, side: p.side, hand: [...p.hand], killer: job.killer });
+      } else emit(s, "eliminated", "all", `${p.name} is OUT. Their role stays hidden. Hand: ${names(p.hand)}.`,
+        { seat: p.seat, hand: [...p.hand], killer: job.killer });
       const w = winnerIfWipe(s);
       if (w) { s.elimQueue = []; return finish(s, w, w === "V" ? "every thief is out" : "every villager is out"); }
-    }
-    if (p.side === "T" && p.hand.includes("DAL_BADAL") && living(s).length >= 2) {
-      s.phase = { kind: "elim", seat: p.seat, step: "dal_badal" };
-      return;
     }
     s.phase = { kind: "elim", seat: p.seat, step: "dying" };
     return;
@@ -513,65 +526,15 @@ function doElimStep(s: GameState, seat: number, a: Action): GameState {
   const p = P(s, seat);
   const live = living(s);
 
-  // Dal Badal (rule 2026-10-07): the dying thief points at 3 living players (2 if only 2 are left). Their role cards
-  // are shuffled face down; from the seat after the thief, each picks one — the last takes what is left. Each sees
-  // only their own new role; the table sees only who was in the shuffle.
-  if (ph.step === "dal_badal") {
-    if (a.type !== "dal_badal") throw new RuleError("Use Dal Badal: pick living players to shuffle roles");
-    const k = Math.min(3, live.length);
-    const seats = [...new Set(a.seats)];
-    if (seats.length !== k || seats.some((x) => !P(s, x)?.alive)) throw new RuleError(`Pick ${k} different living players`);
-    const n = s.players.length;
-    const pickers = seats.sort((x, y) => ((x - seat + n) % n) - ((y - seat + n) % n));
-    const pool = shuffle(s, pickers.map((x) => ({ role: P(s, x).role, side: P(s, x).side })));
-    removeCards(p.hand, ["DAL_BADAL"]);
-    discard(s, ["DAL_BADAL"]);
-    emit(s, "dal_badal", "all", `DAL BADAL — ${p.name} shuffles the roles of ${pickers.map((x) => P(s, x).name).join(", ")}. Each picks one back, face down.`, { seat, seats: pickers });
-    s.phase = { kind: "elim", seat, step: "dal_pick", pool, pickers };
-    return s;
-  }
-
-  if (ph.step === "dal_pick") {
-    if (a.type !== "dal_pick") throw new RuleError("Pick one of the face-down role cards");
-    const pool = ph.pool!, pickers = ph.pickers!;
-    if (!Number.isInteger(a.index) || a.index < 0 || a.index >= pool.length) throw new RuleError("Pick one of the cards on the table");
-    // picks are held aside until the last card is taken, so no two players ever hold the same role mid-shuffle
-    const drawn = [...(ph.drawn ?? [])];
-    const take = (x: number, i: number) => { const [r] = pool.splice(i, 1); drawn.push({ seat: x, ...r }); };
-    take(pickers.shift()!, a.index);
-    if (pickers.length === 1) take(pickers.shift()!, 0); // the last one takes what is left
-    if (pickers.length) { s.phase = { kind: "elim", seat: ph.seat, step: "dal_pick", pool, pickers, drawn }; return s; }
-    // everyone has a role again: each learns theirs in secret
-    for (const d of drawn) { const x = P(s, d.seat); x.role = d.role; x.side = d.side; }
-    for (const d of drawn) emit(s, "role", [d.seat], `Dal Badal: your role is now ${d.role} (${d.side === "V" ? "Tunga" : "Thief"}).`, { role: d.role, side: d.side, swapped: true });
-    const w = winnerIfWipe(s);
-    if (w) { s.elimQueue = []; finish(s, w, w === "V" ? "every thief is out" : "every villager is out"); return s; }
-    s.phase = { kind: "elim", seat: ph.seat, step: "dying" };
-    return s;
-  }
-
   if (ph.step === "dying") {
-    if (p.side === "V") {
-      if (a.type !== "gift") throw new RuleError("Give 1 vote to a living player, or to nobody");
-      if (a.target !== null) {
-        const t = P(s, a.target);
-        if (!t.alive) throw new RuleError("Give it to a living player");
-        t.votes += 1;
-        emit(s, "gift", "all", `${p.name} gives 1 vote to ${t.name} (now ${t.votes}).`, { seat, target: t.seat });
-      } else emit(s, "gift", "all", `${p.name} gives the vote to nobody.`, { seat, target: null });
-    } else {
-      if (a.type !== "shot") throw new RuleError("Take a last shot (or skip)");
-      if (a.target !== null) {
-        const t = P(s, a.target);
-        if (!t.alive) throw new RuleError("Shoot a living player");
-        checkRoles(s, a.roles);
-        const [r1, r2] = a.roles!;
-        const hit = t.role === r1 || t.role === r2;
-        emit(s, "last_shot", "all", `${p.name}'s LAST SHOT at ${t.name}, naming ${r1} and ${r2} — ${hit ? "HIT" : "miss"}.`,
-          { seat, target: t.seat, roles: [r1, r2], hit });
-        if (hit) s.elimQueue.push({ seat: t.seat, killer: null });
-      } else emit(s, "last_shot", "all", `${p.name} takes no last shot.`, { seat, target: null });
-    }
+    // (designer 2026-10-09, later) the same dying power for both sides: give 1 vote to a living player, or to nobody
+    if (a.type !== "gift") throw new RuleError("Give 1 vote to a living player, or to nobody");
+    if (a.target !== null) {
+      const t = P(s, a.target);
+      if (!t.alive) throw new RuleError("Give it to a living player");
+      t.votes += 1;
+      emit(s, "gift", "all", `${p.name} gives 1 vote to ${t.name} (now ${t.votes}).`, { seat, target: t.seat });
+    } else emit(s, "gift", "all", `${p.name} gives the vote to nobody.`, { seat, target: null });
     if (p.hand.length === 0 || living(s).length === 0) return finishElim(s);
     // put out by the mandatory vote: no hand-off — everything goes to the village
     if (RULES.finalVoteToVillage && s.after?.kind === "finalReveal") {

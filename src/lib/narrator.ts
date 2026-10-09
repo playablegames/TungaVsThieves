@@ -32,8 +32,7 @@ function lineFor(b: Beat, names: string[]): string | null {
     case "kundli": return pick(["कुंडली खुल रही है…", "किसी की कुंडली पढ़ी जा रही है।"]);
     case "hera_pheri": return pick(["हेरा फेरी!", "पत्ते उड़ गए!"]);
     case "batwara": return pick(["भूकंप! सब हिलाओ!", "धरती हिल गई!"]);
-    case "maya_jaal": return `माया जाल! ${who(b.target)} वापस आ गया!`;
-    case "dal_badal": return "दल बदल! अब कौन किसके साथ है?";
+    case "dal_badal": return `दल बदल! ${who(b.actor)} चोर निकला… अब कौन किसके साथ है?`;
     case "teer_kaman": return b.result === "hit" ? "निशाना सही लगा!" : "निशाना चूक गया!";
     case "eliminated": return b.tone === "relic" ? pick(["चोर पकड़ा गया!", "एक चोर गया!"]) : pick(["अरे! गाँव वाला निकला।", "गाँव ने अपना ही खो दिया।"]);
     case "over": return b.title.startsWith("Tunga") ? "तुंगा जीत गया! पत्थर गाँव में सुरक्षित हैं।" : "चोर जीत गए! पत्थर ले उड़े।";
