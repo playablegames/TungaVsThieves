@@ -556,6 +556,10 @@ export async function claim(code: string, token: string | null, body: { kind?: u
       if (!s.rolesInPlay.includes(role)) throw new HttpError(400, "Name a role in this game");
     }
     const me = s.players[seat].name, them = s.players[target].name;
+    // the same claim again from the same player adds nothing (playtest WJ9J9: one tap ×3) — quietly ignored
+    const same = (e: GameState["events"][number]) => e.type === "claim" && e.data?.seat === seat && e.data?.kind === kind && e.data?.target === target
+      && (kind === "stone" ? e.data?.has === Boolean(body.has) : kind === "kundli" ? e.data?.role === body.role : true);
+    if (s.events.some(same)) return row;
     if (kind === "stone") {
       pushStoneClaim(s, seat, target, Boolean(body.has));
       row.state = s;

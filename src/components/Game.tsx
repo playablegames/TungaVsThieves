@@ -1181,10 +1181,15 @@ interface SaidAbout { accuse: number; trust: number; role?: string; stone?: bool
 /** every public claim about a seat: how often called a thief, how often vouched for, the last role named for them */
 function saidAbout(v: PlayerView): Record<number, SaidAbout> {
   const out: Record<number, SaidAbout> = {};
+  const seen = new Set<string>();
   for (const e of v.events) {
     if (e.type !== "claim" || e.to !== "all") continue;
     const t = e.data?.target as number | undefined;
     if (t === undefined) continue;
+    // one speaker saying the same thing twice counts once
+    const key = `${e.data?.seat}:${e.data?.kind}:${t}:${e.data?.side}:${e.data?.has}:${e.data?.role}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
     const a = (out[t] ??= { accuse: 0, trust: 0 });
     if (e.data?.kind === "kundli") a.role = String(e.data?.role ?? "");
     else if (e.data?.kind === "stone") a.stone = Boolean(e.data?.has);

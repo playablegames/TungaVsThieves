@@ -67,6 +67,7 @@ export function deduce(s: GameState, seat: number, m: Model = MODEL, publicOnly 
   const norm = () => { let t = 0; for (const x of w) t += x; if (t > 0) for (let i = 0; i < w.length; i++) w[i] /= t; };
   const mine = (e: { to: "all" | number[] }) => e.to === "all" || (!publicOnly && Array.isArray(e.to) && e.to.includes(seat));
   const index = new Map(H.map((h, i) => [h, i]));
+  const said = new Set<string>();
 
   for (const e of v.events) {
     if (!mine(e)) continue;
@@ -112,12 +113,31 @@ export function deduce(s: GameState, seat: number, m: Model = MODEL, publicOnly 
         if (actor === null || target === null || actor === seat || d?.kind === "stone") break;
         const says = d?.side as Side | undefined;
         if (!says) break;
+        // the same thing said again by the same speaker is not new evidence (playtest WJ9J9: "Circuit is a thief" ×3)
+        const key = `${actor}:${d?.kind}:${target}:${says}`;
+        if (said.has(key)) break;
+        said.add(key);
         const seen = d?.kind === "kundli" || d?.kind === "was";
-        // a villager who SAW tells the truth; a villager's hunch leans right; a thief's word is noise
+        if (seen) {
+          // a villager who SAW tells the truth; a thief says it less often, and when it does it is noise
+          scale((h) => {
+            if (isT(h, actor)) return m.liar;
+            const right = (isT(h, target) === 1) === (says === "T");
+            return right ? m.honest : 1 - m.honest;
+          });
+          break;
+        }
+        // a HUNCH ("X is a thief" / "X is a villager" with nothing seen behind it), as a choice of whom to name: a
+        // villager's pick leans toward the truth, a thief's is anyone. Normalised over the seats it could have named,
+        // so on average a hunch says nothing about the SPEAKER — only about the target (playtest WJ9J9: two vouches
+        // made Chilyy the bots' top suspect and all 8 voted her out)
+        const others = n - 1;
         scale((h) => {
-          if (isT(h, actor)) return seen ? m.liar : m.liarHunch;
-          const right = (isT(h, target) === 1) === (says === "T");
-          return seen ? (right ? m.honest : 1 - m.honest) : (right ? m.hunch : 1) / m.hunch;
+          if (isT(h, actor)) return 1 / others;
+          const thievesOthers = K; // the speaker is a villager here, so all K thieves are among the others
+          const leanT = says === "T" ? m.hunch : 1, leanV = says === "T" ? 1 : m.hunch;
+          const total = thievesOthers * leanT + (others - thievesOthers) * leanV;
+          return (isT(h, target) ? leanT : leanV) / total;
         });
         break;
       }

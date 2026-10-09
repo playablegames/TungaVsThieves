@@ -212,6 +212,15 @@ export function beliefVote(s: GameState, seat: number, seed: number, r: R, skill
     score = (x: number) => (b.p.get(x) ?? 0) + (mine.known.get(x) === "V" ? 0.2 : 0) + (accusers.has(x) ? 0.6 : 0);
   } else {
     const sure = alive.filter((x) => b.known.get(x) === "T");
+    // a Faisla with nobody standing out: abstain rather than pile onto noise (playtest WJ9J9 — 0.46 against 0.42 and
+    // all 8 bots voted the same villager out). The mandatory vote still always names someone.
+    const final = s.phase.kind === "vote" && s.phase.reason === "final";
+    if (!final && !sure.length && skill.exact) {
+      const ranked = [...alive].sort((x, y) => (b.p.get(y) ?? 0) - (b.p.get(x) ?? 0));
+      const [t1, t2] = ranked.map((x) => b.p.get(x) ?? 0);
+      const mean = ranked.reduce((a, x) => a + (b.p.get(x) ?? 0), 0) / Math.max(1, ranked.length);
+      if (t1 - (t2 ?? 0) < 0.05 && t1 < mean * 1.25) return null;
+    }
     // the mandatory vote: the out player's cards go to the village, so a thief HOLDING a Stone is the one to catch
     if (s.phase.kind === "vote" && s.phase.reason === "final") {
       const st = stoneOdds(s, seat, seed, skill);
