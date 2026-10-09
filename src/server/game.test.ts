@@ -370,3 +370,28 @@ describe("voice moments (designer 2026-10-07)", () => {
     }
   });
 });
+
+describe("playtest LLE3Q (2026-10-09)", () => {
+  it("when the Faisla DEBATE runs out of time, the ballots open — the vote is not closed in the same step", async () => {
+    const { code, tokens } = await room(5);
+    await startGame(code, tokens[0]);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      // rig: the player whose turn it is holds a Faisla pair and calls it
+      const r0 = (await memoryStore.get(code))!;
+      const seat = waitingOn(r0.state!)[0];
+      r0.state!.players[seat].hand = ["FAISLA", "FAISLA", "KUNDLI", "TALASHI", "HERA_PHERI"];
+      r0.version++;
+      await memoryStore.update(r0, r0.version - 1);
+      await act(code, r0.lobby[seat].token, { type: "play", card: "FAISLA", pass: ["KUNDLI", "TALASHI", "HERA_PHERI"] });
+      const row = (await memoryStore.get(code))!;
+      expect(row.state!.phase.kind === "vote" && row.state!.phase.debate).toBe(true);
+      vi.setSystemTime(row.deadline! + 1);
+      await tick(code); // the debate's clock runs out
+      const after = (await memoryStore.get(code))!;
+      expect(after.state!.phase.kind).toBe("vote");
+      expect((after.state!.phase as { debate: boolean }).debate).toBe(false); // ballots are OPEN
+      expect(after.state!.events.at(-1)!.type).not.toBe("vote_result");
+    } finally { vi.useRealTimers(); }
+  });
+});

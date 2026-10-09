@@ -408,8 +408,9 @@ export async function tick(code: string) {
         s.events.push({ n: s.events.length, type: "away", to: "all", msg: `${p.name} has gone quiet — a stand-in plays safe for them until they're back.`, data: { seat } });
       }
     }
-    // open voting: time is up — the vote stands as it is now
-    if (s.voteUntilClock && s.phase.kind === "vote" && !s.phase.debate) s = closeVote(s);
+    // open voting: time is up — the vote stands as it is now. NOT when it was the DEBATE's clock that ran out: that
+    // only opens the ballots (bug in playtest LLE3Q 2026-10-09: the vote opened and closed in one step, zero ballots)
+    if (!floorClosing && s.voteUntilClock && s.phase.kind === "vote" && !s.phase.debate) s = closeVote(s);
     if (!floorClosing && waiting.some((seat) => !isAuto(r, seat))) s.events.push({ n: s.events.length, type: "timeout", to: "all", msg: "Time ran out — the default was played for anyone still deciding." });
     return commitState(r, s);
   });
