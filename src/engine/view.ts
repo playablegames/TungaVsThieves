@@ -31,6 +31,8 @@ export interface PublicView {
   /** at the end every hand and role is shown */
   finalReveal: { seat: number; role: string; side: Side; hand: Card[] }[] | null;
   events: GameEvent[];
+  /** a guided first game: the phone shows the coach */
+  tutorial: boolean;
 }
 
 export interface PlayerView extends PublicView {
@@ -72,6 +74,7 @@ export function publicView(s: GameState): PublicView {
     overReason: over ? over.reason : null,
     finalReveal: over ? s.players.map((p) => ({ seat: p.seat, role: p.role, side: p.side, hand: [...p.hand] })) : null,
     events: s.events.filter((e) => visibleTo(e, null)),
+    tutorial: Boolean(s.tutorial),
   };
 }
 

@@ -14,6 +14,7 @@ import type { GameState, Side } from "@/engine/types";
 import { viewFor } from "@/engine/view";
 import { THIEF_ROLES } from "@/engine/setup";
 import { randomAction, readsOf } from "@/engine/decisions";
+import { deduce, type Model } from "./deduce";
 import type { Action } from "@/engine/types";
 
 type R = () => number;
@@ -34,12 +35,20 @@ export interface Skill {
   claimRate: number;
   /** chance of firing Teer Kaman with no Kundli read (at its top suspect) */
   blindShot: number;
+  /** EXACT DEDUCTION (deduce.ts, stage 1 of the DeepRole-style bots): weigh every placement of the thieves instead
+   *  of nudging scores */
+  exact?: boolean;
+  /** the behaviour model deduce.ts weighs moves with (default MODEL) — passed here, never by mutating an import
+   *  (tsx loads modules twice: a script's MODEL is not the bots' MODEL) */
+  model?: Model;
 }
 
 export const SKILLS: Record<Skill["name"], Skill> = {
   casual: { name: "casual", activity: 0.6, sharp: 0.5, noise: 1.2, voteNoise: 0.35, lie: 0.4, claimRate: 0.5, blindShot: 0.3 },
-  average: { name: "average", activity: 0.8, sharp: 1, noise: 0.7, voteNoise: 0.15, lie: 0.6, claimRate: 0.8, blindShot: 0 },
-  sharp: { name: "sharp", activity: 0.85, sharp: 1.6, noise: 0.3, voteNoise: 0.05, lie: 0.8, claimRate: 1, blindShot: 0 },
+  // (designer 2026-10-09) average and sharp bots weigh every placement of the thieves (deduce.ts); casual bots keep the
+  // rougher score-nudging, so a table still has bots that misjudge like people do
+  average: { name: "average", activity: 0.8, sharp: 1, noise: 0.7, voteNoise: 0.15, lie: 0.6, claimRate: 0.8, blindShot: 0, exact: true },
+  sharp: { name: "sharp", activity: 0.85, sharp: 1.6, noise: 0.3, voteNoise: 0.05, lie: 0.8, claimRate: 1, blindShot: 0, exact: true },
 };
 export const DEFAULT_SKILL = SKILLS.average;
 
@@ -92,7 +101,7 @@ export function beliefOf(s: GameState, seat: number, seed: number, skill: Skill 
         break;
       case "teer_kaman": if (target === seat && !thiefSide) bump(actor, 1.2); break;
       case "hera_pheri": if (target === seat) bump(actor, 0.3); break;
-      case "claim": if (actor !== null && target !== null && actor !== seat) claims.push({ actor, target, side: d?.side as Side, kind: String(d?.kind) }); break;
+      case "claim": if (actor !== null && target !== null && actor !== seat && d?.kind !== "stone") claims.push({ actor, target, side: d?.side as Side, kind: String(d?.kind) }); break;
       // a word whispered to this bot alone (playtest 2026-10-07) weighs like a claim out loud
       case "whisper_private":
         if (actor !== null && target !== null && actor !== seat && num(d, "to") === seat && d?.side) claims.push({ actor, target, side: d.side as Side, kind: "kundli" });
@@ -174,6 +183,13 @@ export function beliefOf(s: GameState, seat: number, seed: number, skill: Skill 
       for (const [voter, t] of Object.entries(outBallots.get(c.target) ?? {})) if (t === c.target) bump(Number(voter), (c.side === "V" ? 0.6 : -0.4) * w);
     }
   }
+  if (skill.exact) {
+    // every placement of the thieves, weighed (deduce.ts); the trust record above still decides whose word to take
+    const ex = deduce(s, seat, skill.model, asTable && thiefSide).p;
+    ex.delete(seat);
+    if (self) ex.set(seat, 0);
+    return { p: ex, known, trust };
+  }
   return { p: probs(), known, trust };
 }
 
@@ -196,13 +212,84 @@ export function beliefVote(s: GameState, seat: number, seed: number, r: R, skill
     score = (x: number) => (b.p.get(x) ?? 0) + (mine.known.get(x) === "V" ? 0.2 : 0) + (accusers.has(x) ? 0.6 : 0);
   } else {
     const sure = alive.filter((x) => b.known.get(x) === "T");
-    if (sure.length) return sure[0];
+    // the mandatory vote: the out player's cards go to the village, so a thief HOLDING a Stone is the one to catch
+    if (s.phase.kind === "vote" && s.phase.reason === "final") {
+      const st = stoneOdds(s, seat, seed, skill);
+      const final = (x: number) => (b.p.get(x) ?? 0) * (0.25 + (st.get(x) ?? 0));
+      if (sure.length) return [...sure].sort((x, y) => (st.get(y) ?? 0) - (st.get(x) ?? 0))[0];
+      score = final;
+    } else if (sure.length) return sure[0];
   }
   const order = [...pool].sort((x, y) => score(y) - score(x));
   // (a high draw means noise: tests drive bots with seeded draws that start near 0)
   const d = r();
   if (skill.name === "casual" && d >= 0.92) return null;
   return d >= 1 - skill.voteNoise ? pick(r, order.slice(0, 3)) : order[0];
+}
+
+// ------------------------------------------------------------------ STONES (2026-10-09)
+// "Every action at the table must keep updating the bots' knowledge": besides who is a thief, each bot tracks WHERE
+// THE STONES ARE — P(holds a Stone) for every living seat — from everything it alone could see: its own hand, what it
+// searched (Talashi), what it took or lost (Hera Pheri), the card it passed or got in a Bhukamp, a hand-off, cards
+// going to the village, a surrender, and Stone claims (believed as far as it trusts the speaker). Cards move: a turn
+// sends 3 cards on (a pair played sends them ALL), so a sighting fades as the holder plays, and the next player to
+// pick up the pile inherits the doubt. Recomputed from the events every time a bot decides — never stale.
+const STONE = (c: unknown) => c === "STONE_1" || c === "STONE_2";
+export function stoneOdds(s: GameState, seat: number, seed: number, skill: Skill = DEFAULT_SKILL): Map<number, number> {
+  const v = viewFor(s, seat);
+  const n = v.players.length;
+  const p = new Map<number, number>();
+  for (let x = 0; x < n; x++) p.set(x, Math.min(0.9, 2 / Math.max(2, n)));
+  let inPile = 0; // chance the pile on its way carries a Stone
+  let village = 0;
+  const num = (d: Record<string, unknown> | undefined, k: string) => (typeof d?.[k] === "number" ? (d[k] as number) : null);
+  const has = (cards: unknown) => Array.isArray(cards) && cards.some(STONE);
+  const trustOf = beliefOf(s, seat, seed, skill);
+  const credence = (who: number) => (who === seat ? 1 : trustOf.known.get(who) === "V" ? 0.95 : trustOf.known.get(who) === "T" ? 0.05 : Math.max(0.05, 1 - (trustOf.p.get(who) ?? 0.5)));
+  for (const e of v.events) {
+    if (Array.isArray(e.to) && !e.to.includes(seat)) continue;
+    const d = e.data, actor = num(d, "seat"), target = num(d, "target");
+    switch (e.type) {
+      case "pickup": if (actor !== null) { p.set(actor, 1 - (1 - p.get(actor)!) * (1 - inPile)); inPile = 0; } break;
+      case "pickup_private": if (has(d?.cards)) p.set(seat, 1); break;
+      case "pass": if (actor !== null) { const moved = p.get(actor)! * 0.4; p.set(actor, p.get(actor)! - moved); inPile = moved; } break;
+      case "play": if (actor !== null) { inPile = p.get(actor)!; p.set(actor, 0.1); } break; // the pair goes down, the rest goes on
+      case "conduit": break; // the pile passes through a player who is out — its chance travels on
+      case "talashi_private": if (target !== null && actor === seat) p.set(target, has(d?.hand) ? 1 : 0); break;
+      case "hera_pheri_private": if (has(d?.taken) && actor !== null) { p.set(actor, 1); } break;
+      case "batwara": {
+        // everyone passes 1 card clockwise: a little of each seat's chance moves one seat on
+        const was = new Map(p);
+        for (let x = 0; x < n; x++) p.set(x, was.get(x)! * 0.75 + was.get((x - 1 + n) % n)! * 0.25);
+        break;
+      }
+      case "batwara_private": { const from = num(d, "from"), to = num(d, "to"); if (from !== null && to !== null && STONE(d?.card)) { p.set(to, 1); } break; }
+      case "handoff": if (actor !== null && target !== null) { p.set(actor, 0); if (has(d?.cards)) p.set(target, 1); } break;
+      case "to_village": if (actor !== null) { p.set(actor, 0); village += ((d?.cards as unknown[]) ?? []).filter(STONE).length; } break;
+      case "surrender": if (actor !== null) { p.set(actor, 0); village += ((d?.cards as unknown[]) ?? []).filter(STONE).length; } break;
+      case "eliminated": if (actor !== null) p.set(actor, 0); break;
+      case "claim":
+        if (d?.kind === "stone" && target !== null && actor !== null && actor !== seat) {
+          const cr = credence(actor);
+          p.set(target, cr * (d?.has ? 1 : 0) + (1 - cr) * p.get(target)!);
+        }
+        break;
+    }
+  }
+  // your own hand is the truth
+  p.set(seat, v.me.hand.some(STONE) ? 1 : 0);
+  // no more Stones than are left out of the village
+  const left = Math.max(0, 2 - village);
+  const others = [...p.keys()].filter((x) => x !== seat && v.players[x]?.alive);
+  const mine = v.me.hand.filter(STONE).length;
+  // a seat it KNOWS holds one stays certain; the guesses share what room is left
+  const certain = others.filter((x) => p.get(x)! >= 1);
+  const guesses = others.filter((x) => p.get(x)! < 1);
+  const sum = guesses.reduce((a, x) => a + p.get(x)!, 0);
+  const room = Math.max(0, left - mine - certain.length);
+  if (sum > room && sum > 0) for (const x of guesses) p.set(x, (p.get(x)! * room) / sum);
+  for (const x of p.keys()) if (!v.players[x]?.alive && x !== seat) p.set(x, 0);
+  return p;
 }
 
 // ------------------------------------------------------------------ claims
@@ -255,9 +342,9 @@ export function pushBotClaim(s: GameState, seat: number, seed: number, r: R, ski
   const c = botClaim(s, seat, seed, r, skill);
   if (!c) return false;
   const me = s.players[seat].name, them = s.players[c.target].name;
+  // designer 2026-10-09: Villager / Thief / Role / Stone — a Kundli reader may name the exact role (true or a lie)
   const what = c.side === "T" ? "a thief" : "a villager";
-  const msg = c.kind === "was" ? `${me}: "${them} was ${c.role} — ${what}."`
-    : c.kind === "kundli" ? `${me}: "I read ${them}'s Kundli — ${c.role}, ${what}."` : `${me}: "${them} is a thief."`;
+  const msg = c.role ? `${me}: "${them} ${c.kind === "was" ? "was" : "is"} ${c.role} — ${what}."` : `${me}: "${them} is ${what}."`;
   s.events.push({ n: s.events.length, type: "claim", to: "all", msg, data: { seat, ...c } });
   return true;
 }

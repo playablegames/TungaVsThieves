@@ -2,20 +2,16 @@
 import { ACTION_CARDS, type Card, type GameState, type Player } from "./types";
 import { shuffle } from "./rng";
 
-/** players -> [villagers, thieves, rounds]. Tuned 2026-10-09 to the designer's target "almost 50/50, or 55/45" under
- *  the hidden-role rules: about one thief per three players (scripts/tune.mts, belief bots — src/server/belief.ts).
- *  Chosen per count as the setting closest to 52.5% across all three skills; final check on the shipped rules (clockwise
- *  Bhukamp), 2,000 average + 1,000 casual + 1,000 sharp games each. Tunga wins (avg/casual/sharp): 5p 52/48/49 ·
- *  6p 56/57/58 · 7p 46/45/42 · 8p 50/47/50 · 9p 56/52/56 · 10p 48/46/48 · 11p 51/54/53 · 12p 53/53/54. 13-16 (earlier
- *  run): 13p 57/55/58 · 14p 55/48/51 · 15p 57/50/57 · 16p 56/53/57. 6 and 7 sit just outside the band — one thief more
- *  or less overshoots. 17-30 follow the ratio (one thief per 3.1).
+/** players -> [villagers, thieves, rounds]. RETUNED 2026-10-09 (designer: "retune role table and keep 3 rounds fixed")
+ *  for the bots as they are now — casual (score-nudging), average and sharp (exact deduction, server/deduce.ts) —
+ *  picking per count the thief number closest to 52.5% Tunga across all three (scripts/tune.mts, 400 games per option
+ *  per skill, ±5). Tunga wins (casual/average/sharp): 5p 2T 54/60/61 · 6p 3T 46/42/44 (2T was 64/65/68 — neither lands
+ *  in the band; 3T, half the table, is closer) · 7p 3T 47/53/53 · 8p 3T 56/58/65 (4T was 41/45/44) · 9p 4T 45/47/47 ·
+ *  10p 4T 48/52/49 · 11p 4T 52/52/57 · 12p 5T 49/48/47 · 13p 5T 48/50/56. The run was stopped after 13p (online tables
+ *  stop at 12); 14-30 follow the ratio, two thieves for every five players.
  *  4 players dropped: one thief can't be balanced (68% at best) and the game ending gives away every villager exit. */
 export const ROLE_TABLE: Record<number, [number, number, number]> = {
-  5: [3, 2, 2], 6: [4, 2, 2], 7: [4, 3, 3], 8: [5, 3, 2], 9: [6, 3, 2], 10: [6, 4, 3],
-  11: [7, 4, 3], 12: [8, 4, 2], 13: [9, 4, 2], 14: [9, 5, 3], 15: [10, 5, 3], 16: [11, 5, 2],
-  17: [12, 5, 2], 18: [12, 6, 3], 19: [13, 6, 2], 20: [14, 6, 3], 21: [14, 7, 2], 22: [15, 7, 2],
-  23: [16, 7, 2], 24: [16, 8, 3], 25: [17, 8, 2], 26: [18, 8, 2], 27: [18, 9, 3], 28: [19, 9, 2],
-  29: [20, 9, 2], 30: [20, 10, 2],
+  5: [3, 2, 3], 6: [3, 3, 3], 7: [4, 3, 3], 8: [5, 3, 3], 9: [5, 4, 3], 10: [6, 4, 3], 11: [7, 4, 3], 12: [7, 5, 3], 13: [8, 5, 3], 14: [9, 5, 3], 15: [9, 6, 3], 16: [10, 6, 3], 17: [11, 6, 3], 18: [11, 7, 3], 19: [12, 7, 3], 20: [12, 8, 3], 21: [13, 8, 3], 22: [14, 8, 3], 23: [14, 9, 3], 24: [15, 9, 3], 25: [15, 10, 3], 26: [16, 10, 3], 27: [17, 10, 3], 28: [17, 11, 3], 29: [18, 11, 3], 30: [18, 12, 3],
 };
 export const MIN_PLAYERS = 5;
 export const MAX_PLAYERS = 30;

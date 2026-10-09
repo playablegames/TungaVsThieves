@@ -142,6 +142,9 @@ class Voice {
     this.applyRules();
   }
 
+  /** an update is being spoken on this phone: the table's voices drop under it */
+  duck(on: boolean) { for (const p of this.peers.values()) p.audio.volume = on ? DUCKED : 1; }
+
   // ------------------------------------------------------------ lifecycle
   get wanted() {
     try { return localStorage.getItem(PREF) !== "off"; } catch { return true; }
@@ -397,6 +400,9 @@ const voiceFor = (code: string) => {
   return voices.get(key)!;
 };
 
+/** how loud the table's voices stay while the Sutradhar speaks an update */
+export const DUCKED = 0.2;
+
 const OFF: VoiceSnap = { status: "unavailable", micOn: false, micBlocked: false, speaking: false, peers: {} };
 
 /**
@@ -428,6 +434,7 @@ export function useVoice(code: string, me: { seat: number; name: string } | null
     toggleMic: () => { void v.toggleMic(); },
     hush: (seat: number) => v.hush(seat),
     setHeld: (held: boolean) => v.setHeld(held),
+    duck: (on: boolean) => v.duck(on),
     clip: (label: string, ms: number) => { if ("clip" in v) (v as unknown as { clip: (l: string, m: number) => void }).clip(label, ms); },
   };
 }

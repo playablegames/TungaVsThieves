@@ -6,7 +6,7 @@
 // so the living can't hear the gone even if a phone misbehaves.
 import { Room, RoomEvent, Track, type Participant, type RemoteParticipant } from "livekit-client";
 import { loadToken } from "./client";
-import { playAndRecord, type VoicePeer, type VoiceSnap } from "./voice";
+import { DUCKED, playAndRecord, type VoicePeer, type VoiceSnap } from "./voice";
 
 const PREF = "tunga:voice";
 interface Passes { url: string; table: string; gone: string | null; alive: boolean }
@@ -207,8 +207,16 @@ export class LiveKitVoice {
   /** mute one player for you only */
   hush(seat: number) {
     if (this.hushed.has(seat)) this.hushed.delete(seat); else this.hushed.add(seat);
-    for (const room of this.rooms) for (const p of room.remoteParticipants.values()) if (seatOf(p) === seat) p.setVolume(this.hushed.has(seat) ? 0 : 1);
+    this.applyVolume();
     this.refresh();
+  }
+
+  private ducked = false;
+  /** an update is being spoken on this phone: the table's voices drop under it */
+  duck(on: boolean) { this.ducked = on; this.applyVolume(); }
+  private applyVolume() {
+    for (const room of this.rooms) for (const p of room.remoteParticipants.values())
+      p.setVolume(this.hushed.has(seatOf(p)) ? 0 : this.ducked ? DUCKED : 1);
   }
 }
 

@@ -12,6 +12,13 @@ export const QUICK_LINES = ["Trust me 🙏", "I'm with the village", "Vote with 
 export type WhisperBody = { kind: "v"; audio: string } | { kind: "t"; text: string } | { kind: "k"; about: number; role: string };
 export interface Whisper { from: number; to: number; body: WhisperBody | null }
 
+/** a spoken sentence, written down by the speaker's own phone (live captions) */
+export const CAPTION_PREFIX = `${SYSTEM}s|`;
+/** a ready-made line ("Not me!") — tap your own seat */
+export const QUICK_PREFIX = `${SYSTEM}q|`;
+export const isCaption = (t: string) => t.startsWith(CAPTION_PREFIX);
+export const isQuick = (t: string) => t.startsWith(QUICK_PREFIX);
+
 export const isSystemMessage = (text: string) => text.startsWith(SYSTEM);
 export const isWhisper = (text: string) => text.startsWith(WHISPER_PREFIX);
 

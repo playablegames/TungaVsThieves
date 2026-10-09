@@ -25,6 +25,8 @@ const ALL: Config[] = [
     { name: `${k} hidden`, skill: SKILLS[k], publicRoles: false },
     { name: `${k} shown`, skill: SKILLS[k], publicRoles: true },
   ]),
+  // stage 1 of the DeepRole-style bots (deduce.ts): exact deduction over every placement of the thieves
+  ...(["casual", "average", "sharp"] as const).map((k) => ({ name: `${k} exact`, skill: { ...SKILLS[k], exact: true }, publicRoles: false })),
 ];
 const pickCols = process.argv[4]?.split(",");
 const CONFIGS = pickCols ? ALL.filter((c) => pickCols.includes(c.name)) : ALL;
@@ -47,7 +49,7 @@ export function play(n: number, gameSeed: number, c: Config): Tally {
   const claims = s.events.filter((e) => e.type === "claim");
   const lies = claims.filter((e) => {
     const t = s.players[e.data!.target as number];
-    return e.data!.kind !== "accuse" && t && t.side !== e.data!.side; // (sides can move under Dal Badal: approximate)
+    return e.data!.kind !== "accuse" && e.data!.kind !== "stone" && t && t.side !== e.data!.side; // (sides can move under Dal Badal: approximate)
   }).length;
   return { winner: s.phase.winner, claims: claims.length, lies };
 }

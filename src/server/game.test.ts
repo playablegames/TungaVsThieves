@@ -98,7 +98,7 @@ describe("room service (memory store)", () => {
     expect((await getState(code, tokens[0], 0)).messages.map((m) => m.text)).toEqual(["hello"]);
   });
 
-  it("only the host adds or removes bots, and only bot seats can be removed", async () => {
+  it("only the host adds bots or removes seats — any seat but the host's own (2026-10-09)", async () => {
     const { code, tokens } = await room(2);
     await err(addBot(code, tokens[1]), 403);
     await addBot(code, tokens[0]);
@@ -106,11 +106,14 @@ describe("room service (memory store)", () => {
     let lobby = (await getState(code, tokens[0], 0)).lobby!;
     expect(lobby.bots).toEqual([false, false, true, true]);
     expect(new Set(lobby.names).size).toBe(4);
-    await err(removeBot(code, tokens[0], 1), 400);         // a human seat
+    await err(removeBot(code, tokens[0], 0), 400);         // the host's own seat
     await err(removeBot(code, tokens[1], 2), 403);
     await removeBot(code, tokens[0], 2);
     lobby = (await getState(code, tokens[0], 0)).lobby!;
     expect(lobby.bots).toEqual([false, false, true]);
+    await removeBot(code, tokens[0], 1);                     // a human who shouldn't be there
+    lobby = (await getState(code, tokens[0], 0)).lobby!;
+    expect(lobby.bots).toEqual([false, true]);
   });
 
   it("one human and a table of bots play whole games; bots never hold up a vote or time out", async () => {

@@ -13,7 +13,9 @@ export interface GameRow {
   status: "lobby" | "playing" | "over";
   hostToken: string;
   /** bot = a bot seat from the lobby · away = a player who timed out twice; a stand-in plays safe for them */
-  lobby: { name: string; token: string; bot?: boolean; away?: boolean; strikes?: number }[];
+  lobby: { name: string; token: string; bot?: boolean; away?: boolean; strikes?: number;
+    /** TURN ALERTS: this phone's web-push subscription, and whether it has switched away from the game right now */
+    push?: { endpoint: string; keys: { p256dh: string; auth: string } } | null; hidden?: boolean }[];
   state: GameState | null;
   deadline: number | null;
   timers: Timers;

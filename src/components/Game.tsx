@@ -2,19 +2,19 @@
 /* Hallmark · genre: atmospheric · macrostructure: Workbench (app, portrait spotlight) · design-system: DESIGN.md · designed-as-app */
 // The table, phone-first and portrait: a status line everyone reads the same way (BGA's "${actplayer} must…"),
 // a seat strip where the spotlight glows, the table centre, and a dock with your role, your hand and your move.
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
-import { api, useGame, useHydrated } from "@/lib/client";
-import { CARD } from "@/lib/cards";
-import { beatsFor, type Beat } from "@/lib/beats";
+import { useRouter } from "next/navigation";
+import { api, saveToken, useGame, useHydrated } from "@/lib/client";
+import { beatsFor } from "@/lib/beats";
 import type { Action, Card, Side } from "@/engine/types";
 import { MIN_PLAYERS } from "@/engine/setup";
 import type { PlayerView, PublicPlayer } from "@/engine/view";
 import type { ClientState } from "@/server/game";
 import { useStage } from "@/lib/stage";
 import { Stage } from "./Stage";
-import { Decide, PlayerChip } from "./Decide";
-import { HandRow, PlayedPair } from "./Hand";
+import { Decide } from "./Decide";
+import { HandRow } from "./Hand";
 import { CardIcon } from "./CardIcon";
 import { Eject, thievesRemaining } from "./Eject";
 import { Confetti, ShareResult } from "./Share";
@@ -29,11 +29,16 @@ import { TimerRing } from "./ui";
 import { useVoice } from "@/lib/voice";
 import { useBotSpeech } from "@/lib/botspeech";
 import type { ChatMessage } from "@/server/store";
+import { useFeed, CAPTION_PREFIX, QUICK_PREFIX, type FeedItem } from "@/lib/feed";
+import { useCaptions } from "@/lib/captions";
+import { cut, say, setQuiet, useReading } from "@/lib/speech";
+import { alertSupport, disableAlerts, enableAlerts, useAlertPresence } from "@/lib/alerts";
 
 type VoiceCtl = ReturnType<typeof useVoice>;
 
 export default function Game({ code }: { code: string }) {
   const g = useGame(code);
+  const router = useRouter();
   const st = g.state;
   // voice moments: SAFAI DO (one player holds the floor) and LAST WORDS (the one just put out speaks)
   const [, rerender] = useState(0);
@@ -56,7 +61,15 @@ export default function Game({ code }: { code: string }) {
   );
   const ptt = usePtt();
   const me = st?.you.seat ?? -1;
-  const held = Boolean((fl && fl.seat !== me) || (lw && lw.seat !== me) || (ptt.on && !ptt.down));
+  // you + bots only: nobody can hear you, so no mic, no talk button (designer 2026-10-09)
+  const solo = st?.status === "playing" && (st.view?.players.filter((p) => !isBot(p.name)).length ?? 2) <= 1;
+  // a line read aloud on this phone holds the mic, so the call never carries it back (designer 2026-10-09, option 1)
+  const reading = useReading();
+  useEffect(() => { if (ptt.down) cut(); }, [ptt.down]);
+  // an update (the Sutradhar) has priority over voice chat: mic held, the table ducked under it — even mid push-to-talk
+  const held = Boolean((fl && fl.seat !== me) || (lw && lw.seat !== me) || (ptt.on && !ptt.down) || reading === "update" || (reading === "talk" && !ptt.down));
+  const duckTable = voice.duck;
+  useEffect(() => { duckTable(reading === "update"); }, [reading, duckTable]);
   const setHeld = voice.setHeld;
   useEffect(() => { setHeld(held); }, [held, setHeld]);
   const clip = voice.clip;
@@ -64,6 +77,14 @@ export default function Game({ code }: { code: string }) {
   const lwKey = lw ? `${lw.seat}:${lw.until}` : "", flKey = fl ? `${fl.seat}:${fl.until}` : "";
   useEffect(() => { if (lw) clip(`${nameOf(lw.seat)} — last words`, Math.max(0, lw.until - g.now())); }, [lwKey]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (fl) clip(`${nameOf(fl.seat)} takes the floor`, Math.max(0, fl.until - g.now())); }, [flKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  useAlertPresence(code, g.token, Boolean(st?.you.alerts));
+  // PLAY AGAIN: the host moved the group to a new table — every phone follows, same seat token
+  const nextTable = st?.next ?? null;
+  useEffect(() => {
+    if (!nextTable || !g.token) return;
+    saveToken(nextTable, g.token);
+    router.replace(`/g/${nextTable}`);
+  }, [nextTable, g.token, router]);
   // the role reveal opens the game on every phone, once
   const [revealed, setRevealed] = useState(() => revealSeen(code));
   if (!g.hydrated) return <Centered>Connecting…</Centered>;
@@ -84,13 +105,13 @@ export default function Game({ code }: { code: string }) {
         </button>
       )}
       {g.error && <button onClick={() => g.setError(null)} className="m-3 mb-0 rounded-xl bg-crimson-deep p-3 text-left text-[14px]">{g.error} — tap to dismiss</button>}
-      <VoiceBanner voice={voice} />
+      {!solo && <VoiceBanner voice={voice} />}
       {s.status === "playing" && s.view && !revealed && (
         <RoleReveal code={code} role={s.view.me.role} side={s.view.me.side} names={s.view.players.map((p) => p.name)} mySeat={s.view.me.seat} onDone={() => setRevealed(true)} />
       )}
       {s.status === "lobby"
         ? <Lobby s={s} code={code} token={g.token!} onError={g.setError} voice={voice} />
-        : s.view && <Table s={s} v={s.view} act={g.act} now={g.now} extend={s.you.host ? g.extend : undefined} code={code} token={g.token!} voice={voice} messages={g.messages} />}
+        : s.view && <Table s={s} v={s.view} act={g.act} now={g.now} extend={s.you.host ? g.extend : undefined} code={code} token={g.token!} voice={voice} messages={g.messages} solo={solo} />}
     </main>
   );
 }
@@ -170,8 +191,8 @@ function Lobby({ s, code, token, onError, voice }: { s: ClientState; code: strin
               style={{ left: `${50 + 36 * Math.cos(angle)}%`, top: `${48 + 37 * Math.sin(angle)}%` }}>
               <span className={`relative grid place-items-center rounded-full font-medium text-card-ink ${big ? "h-11 w-11 text-[20px]" : "h-[60px] w-[60px] text-[30px]"} ${AVATAR[i % AVATAR.length]} ${speaking ? "speaking" : ""} ${i === s.you.seat ? "outline-[3px] outline-offset-[3px] outline-jade shadow-[0_0_22px_4px_#2ecc7166]" : ""}`}>
                 {bots[i] ? "🤖" : name.slice(0, 1).toUpperCase()}
-                {s.you.host && bots[i] && (
-                  <button type="button" aria-label={`Remove ${plain(name, true)}`} onClick={() => api.removeBot(code, token, i).catch((e) => onError(e.message))}
+                {s.you.host && i !== s.you.seat && (
+                  <button type="button" aria-label={`Remove ${plain(name, bots[i])}`} onClick={() => api.removeBot(code, token, i).catch((e) => onError(e.message))}
                     className="absolute -right-2 -top-2 grid h-7 w-7 place-items-center rounded-full bg-ember text-stock ring-1 ring-brass/70">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" aria-hidden><path d="M6 6l12 12M18 6L6 18" /></svg>
                   </button>
@@ -183,7 +204,7 @@ function Lobby({ s, code, token, onError, voice }: { s: ClientState; code: strin
                 <span className="truncate">{plain(name, bots[i])}</span>
                 {can(i) && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-brass" aria-hidden><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>}
               </button>
-              {i === 0 && <span className="-mt-0.5 rounded-full bg-[#f5a623] px-3 py-0.5 text-[11px] font-bold uppercase tracking-wide text-card-ink">Host</span>}
+              {i === s.host && <span className="-mt-0.5 rounded-full bg-[#f5a623] px-3 py-0.5 text-[11px] font-bold uppercase tracking-wide text-card-ink">Host</span>}
             </div>
           );
         })}
@@ -209,7 +230,7 @@ function Lobby({ s, code, token, onError, voice }: { s: ClientState; code: strin
             Start game
           </button>
         </div>
-      ) : <p className={`py-4 text-center ${ENGRAVED} text-[14px] font-semibold uppercase tracking-[0.15em] text-stock/85`}>Waiting for {names[0]} to start…</p>}
+      ) : <p className={`py-4 text-center ${ENGRAVED} text-[14px] font-semibold uppercase tracking-[0.15em] text-stock/85`}>Waiting for {plain(names[s.host] ?? "the host", bots[s.host])} to start…</p>}
       </div>
 
       {editing !== null && names[editing] !== undefined && (
@@ -296,23 +317,20 @@ function initialsOf(names: string[]) {
   });
 }
 
-function Table({ s, v, act, now, extend, code, token, voice, messages }: {
+function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
   s: ClientState; v: PlayerView; act: (a: Action) => void; now: () => number;
-  extend?: () => void; code: string; token: string; voice: VoiceCtl; messages: ChatMessage[];
+  extend?: () => void; code: string; token: string; voice: VoiceCtl; messages: ChatMessage[]; solo: boolean;
 }) {
   const stage = useStage(v.events, v.players.map((p) => p.name));
   const bots = useBotSpeech(messages);
   const [menu, setMenu] = useState(false);
-  const [sheet, setSheet] = useState<null | "claim" | "history">(null);
+  const [sheet, setSheet] = useState<null | "history">(null);
   const myMove = v.decision?.kind ?? null;
-  // playtest 2026-10-07: the last BIG play stays in the panel until the next big play replaces it; passes and
-  // the like go on a one-line ticker under it, and the last claim out loud stays on its own line
   const shown = stage.current?.n ?? stage.last?.n ?? -1;
   const beats = useMemo(() => beatsFor(v.events, v.players.map((p) => p.name)).filter((b) => !b.private), [v.events, v.players]);
   const seen = beats.filter((b) => b.n <= shown);
-  const headline = [...seen].reverse().find((b) => !TICKER.has(b.type) && b.type !== "claim") ?? null;
-  const ticker = [...seen].reverse().find((b) => TICKER.has(b.type) && b.n > (headline?.n ?? -1)) ?? null;
-  const said = [...seen].reverse().find((b) => b.type === "claim") ?? null;
+  // the last play's who → whom tags on the seats (passes and talk don't move them)
+  const headline = [...seen].reverse().find((b) => !TAGLESS.has(b.type) && b.type !== "claim") ?? null;
   // playtest 2026-10-07 ("it doesn't show who received how many votes"): the last vote's counts stay on the seats and
   // in the panel — through the elimination it caused — until the next card is played or passed
   const lastVote = [...seen].reverse().find((b) => b.type === "vote_result") ?? null;
@@ -320,6 +338,69 @@ function Table({ s, v, act, now, extend, code, token, voice, messages }: {
   // open voting: every ballot counts on the table the moment it is cast (weighted by the voter's votes)
   const live = v.ballots ? liveTally(v) : null;
   const names = useMemo(() => v.players.map((p) => p.name), [v.players]);
+  // THE CENTRE FEED (designer 2026-10-09, option A): every update, claim, accusation, line and ballot, in order
+  const seenAll = useMemo(() => beatsFor(v.events, names).filter((b) => b.n <= shown), [v.events, names, shown]);
+  const readAloud = useRef(bots.voice);
+  useEffect(() => { readAloud.current = bots.voice; }, [bots.voice]);
+  const onFresh = useCallback((it: FeedItem) => {
+    // read aloud: what someone says or claims (bots and the Villager/Thief/Role/Stone taps) — not your own, not captions
+    if (!readAloud.current || it.old || it.seat === v.me.seat || (it.kind !== "talk" && it.kind !== "claim")) return;
+    const seat = it.seat ?? 0;
+    const text = it.kind === "talk" ? `${names[seat]?.replace(/\s*🤖$/, "") ?? ""}: ${it.text}` : it.text;
+    say({ text, lang: "en-IN", pitch: 0.75 + ((seat * 37) % 60) / 100, rate: 0.95 + ((seat * 13) % 20) / 100 });
+  }, [names, v.me.seat]);
+  const caughtUp = shown >= (beats.at(-1)?.n ?? -1);
+  const feed = useFeed(seenAll, messages, v.ballots, names, caughtUp, onFresh);
+  const [feedOpen, setFeedOpen] = useState(false);
+  // PRIVATE MARKS (2026-10-09, Town of Salem's notepad / Clocktower's reminder tokens): your own ✓ ! ? on a seat —
+  // kept on this phone for this table only, never sent anywhere
+  const [marks, setMarks] = useState<Record<number, Mark>>(() => { try { return JSON.parse(localStorage.getItem(`tunga:marks:${code}`) ?? "{}"); } catch { return {}; } });
+  const setMark = (seat: number, m: Mark | null) => setMarks((was) => {
+    const next = { ...was };
+    if (m) next[seat] = m; else delete next[seat];
+    try { localStorage.setItem(`tunga:marks:${code}`, JSON.stringify(next)); } catch {}
+    return next;
+  });
+  const ptt = usePtt();
+  // FIRST-TIME TIPS (designer 2026-10-09): one short line at a time, each once per phone — your first turn, debate and
+  // vote, how to talk to the table, and at a table of humans AND bots that the bots can't hear voice
+  const mixed = !solo && v.players.some((p) => isBot(p.name));
+  const [tipsSeen, setTipsSeen] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem(TIPS) ?? "[]"); } catch { return []; } });
+  const seeTips = (...ids: string[]) => setTipsSeen((was) => {
+    const next = [...new Set([...was, ...ids])];
+    try { localStorage.setItem(TIPS, JSON.stringify(next)); } catch {}
+    return next;
+  });
+  const now_ = v.decision?.kind === "vote" ? "vote" : v.decision?.kind === "debate" ? "debate" : v.decision && v.phase.startsWith("turn") ? "turn" : null;
+  // LEARN BY PLAYING: in a guided first game the coach takes the tips' place (lib-free: coachFor below)
+  const [coachOff, setCoachOff] = useState(false);
+  const [coachSeen, setCoachSeen] = useState<string[]>([]);
+  const coach = v.tutorial && !coachOff ? coachFor(v, coachSeen, solo) : null;
+  const lastCoach = useRef<string | null>(null);
+  useEffect(() => {
+    // a coach line is done once its moment has passed
+    const was = lastCoach.current;
+    if (was && was !== coach?.id) queueMicrotask(() => setCoachSeen((xs) => (xs.includes(was) ? xs : [...xs, was])));
+    lastCoach.current = coach?.id ?? null;
+  });
+  const tip = v.me.alive && !v.tutorial ? [now_, mixed ? "bots" : null, "seats"].find((t): t is string => t !== null && !tipsSeen.includes(t)) ?? null : null;
+  const lastTip = useRef<string | null>(null);
+  useEffect(() => {
+    // the moment the tip was about has passed: don't show it again next time
+    if (lastTip.current && lastTip.current !== now_ && ["turn", "debate", "vote"].includes(lastTip.current) && !tipsSeen.includes(lastTip.current)) {
+      const id = lastTip.current;
+      queueMicrotask(() => seeTips(id));
+    }
+    lastTip.current = now_;
+  });
+  const claimAt = (kind: "accuse" | "trust" | "kundli" | "stone", seat: number, role?: string, has?: boolean) => {
+    seeTips("seats", "bots");
+    setCoachSeen((xs) => [...xs, "tell"]);
+    api.claim(code, token, { kind, target: seat, ...(role ? { role } : {}), ...(has !== undefined ? { has } : {}) }).catch(() => {});
+  };
+  // live captions (menu switch, off by default): your sentences go in the centre under your name
+  const captions = useCaptions(voice.status === "on" && voice.micOn && !voice.micBlocked && v.me.alive && (!ptt.on || ptt.down),
+    useCallback((t: string) => { api.chat(code, token, CAPTION_PREFIX + t).catch(() => {}); }, [code, token]));
   const root = useRef<HTMLDivElement>(null);
   const [throws] = useState(() => new ThrowQueue());
   useEffect(() => { throws.feed(messages, v.me.seat); }, [throws, messages, v.me.seat]);
@@ -345,7 +426,7 @@ function Table({ s, v, act, now, extend, code, token, voice, messages }: {
     };
     if (beat.type === "teer_kaman") play("arrow", beat.result === "hit");
     else if (SOUND[beat.type]) play(SOUND[beat.type]!);
-    narrate(beat, names);
+    narrate(beat);
     const hard = beat.type === "eliminated" || beat.type === "batwara" || (beat.type === "teer_kaman" && beat.result === "hit");
     if (hard && root.current) {
       root.current.classList.remove("shake");
@@ -357,6 +438,10 @@ function Table({ s, v, act, now, extend, code, token, voice, messages }: {
   // talking? the effects step back so voices stay on top
   const talkingNow = voice.speaking || Object.values(voice.peers).some((p) => p.speaking && !p.hushed);
   useEffect(() => { duck(talkingNow); musicDuck(talkingNow); }, [talkingNow]);
+  // a line read aloud waits for a gap: nobody talking, your talk button not held
+  const busyTalk = useRef(false);
+  useEffect(() => { busyTalk.current = talkingNow || ptt.down; }, [talkingNow, ptt.down]);
+  useEffect(() => { setQuiet(() => !busyTalk.current); return () => setQuiet(() => true); }, []);
   // the score follows the game (music.ts): calm on turns, tense through a Faisla, the last vote and the surrender,
   // and it steps aside for the ejection and the end
   const mood: Mood = s.status === "over" || beat?.type === "eliminated" ? "silent"
@@ -384,7 +469,8 @@ function Table({ s, v, act, now, extend, code, token, voice, messages }: {
     return () => { document.title = was; };
   }, [myMove]);
 
-  if (s.status === "over") return (<><Stage stage={stage} skip={stage.skip} names={v.players.map((p) => p.name)} /><Final v={v} clips={voice.clips ?? []} /></>);
+  if (s.status === "over") return (<><Stage stage={stage} skip={stage.skip} names={v.players.map((p) => p.name)} /><Final v={v} clips={voice.clips ?? []} host={s.you.host} hostName={(s.view?.players[s.host]?.name ?? "the host").replace(/\s*🤖$/, "")}
+    onRematch={() => api.rematch(code, token)} /></>);
 
   const living = v.players.filter((p) => p.alive);
   const ejected = beat?.type === "eliminated" && beat.target !== undefined ? v.players[beat.target] : null;
@@ -401,52 +487,58 @@ function Table({ s, v, act, now, extend, code, token, voice, messages }: {
         <button type="button" onClick={() => setMenu(true)} aria-label="Menu" className="grid h-11 w-11 place-items-center text-stock">
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden><path d="M4 6h16M4 12h16M4 18h16" /></svg>
         </button>
-        <MicButton voice={voice} />
+        {!solo && <MicButton voice={voice} />}
         <button type="button" onClick={() => setSheet("history")} aria-label="What happened so far" className="grid h-11 w-11 place-items-center text-brass">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5M12 7v5l3 2" /></svg>
         </button>
         <p className="flex-1 text-center font-[family-name:var(--font-engraved)] text-[12px] font-semibold uppercase tracking-[0.18em] text-brass">Round {v.round} of {v.rounds}</p>
         <TimerRing deadline={s.deadline} now={now} size={52} brass />
       </header>
-      <LiveStrip seen={seen} onOpen={() => setSheet("history")} />
 
       <Ring v={v} voice={voice} talking={bots.current?.seat ?? null} floorSeat={s.floor && s.floor.until > now() ? s.floor.seat : null} actor={headline?.actor} target={headline?.target} pick={v.decision?.kind === "vote" ? v.decision.mine ?? null : null} tally={live ?? voteShown?.tally}
         flying={flying} onThrow={v.me.alive ? throwAt : undefined}
-        onWhisper={v.me.alive && !whisperedThisRound(v) ? setWhisperTo : undefined}>
+        onWhisper={v.me.alive && !whisperedThisRound(v) ? setWhisperTo : undefined}
+        away={s.away} marks={marks} onMark={setMark}
+        onClaim={v.me.alive && s.status === "playing" ? claimAt : undefined}
+        onQuick={v.me.alive && s.status === "playing" ? (l) => { seeTips("seats"); api.chat(code, token, QUICK_PREFIX + l).catch(() => {}); } : undefined}>
         {stage.current?.big
           ? <Stage stage={stage} skip={stage.skip} names={v.players.map((p) => p.name)} inline small={v.players.length > 8} />
-          : <Centre v={v} last={headline} floor={s.floor && s.floor.until > now() ? s.floor : null} canFloor={v.me.alive && !s.floorUsed.includes(v.me.seat)}
-            takeFloor={() => api.floor(code, token).catch(() => {})} now={now} lastVote={voteShown} live={live} ticker={ticker} compact={Boolean(myMove && myMove !== "vote" && myMove !== "debate")} living={living.length} extend={extend}
+          : <Centre v={v} feed={feed} onOpen={() => setFeedOpen(true)} floor={s.floor && s.floor.until > now() ? s.floor : null} canFloor={v.me.alive && !s.floorUsed.includes(v.me.seat)}
+            takeFloor={() => api.floor(code, token).catch(() => {})} now={now} compact={Boolean(myMove && myMove !== "vote" && myMove !== "debate")} living={living.length} extend={extend}
           ready={() => act({ type: "ready" })} />}
       </Ring>
-      <div className="mx-3 flex min-h-11 items-center" aria-live="polite">
-        {bots.current ? (
-          <p key={`${bots.current.seat}:${bots.current.text}`} className="stage-in w-full rounded-xl bg-black/40 px-3 py-1.5 text-[13px] leading-snug ring-1 ring-jade/50">
-            <b className="text-jade-soft">{bots.current.name}:</b> <span className="italic">&ldquo;{bots.current.text}&rdquo;</span>
-          </p>
-        ) : said ? (
-          <p key={said.n} className={`stage-in w-full rounded-xl bg-black/40 px-3 py-1.5 text-[13px] leading-snug ${said.tone === "lethal" ? "text-crimson-soft" : "text-[#f3c66b]"}`}>🗣 {said.title}</p>
-        ) : null}
-      </div>
-      {v.me.alive && <TalkButton />}
-      <Tray v={v} act={act} live={live} onClaim={v.me.alive ? () => setSheet("claim") : undefined} />
+      {v.me.alive && !solo && <TalkButton />}
+      {/* the coach (a guided first game) or a first-time tip sits INSIDE the tray, so the cards never cover it */}
+      <Tray v={v} act={act} live={live} banner={coach
+        ? <Coach key={coach.id} text={coach.text} onNext={() => setCoachSeen((xs) => [...xs, coach.id])} onSkip={() => setCoachOff(true)} />
+        : tip ? <Tip key={tip} text={TIP_TEXT[tip]} onDone={() => seeTips(tip)} /> : null} />
       {whisperTo !== null && <WhisperSheet v={v} code={code} token={token} to={whisperTo} onClose={() => setWhisperTo(null)} />}
       {inbox[0] && <WhisperBubble key={inbox[0].id} w={inbox[0]} names={names} onDone={() => throws.dismiss(inbox[0].id)} />}
-      {sheet === "claim" && <Claim v={v} code={code} token={token} onClose={() => setSheet(null)} />}
+      {feedOpen && <Sheet title="Everything at the table" onClose={() => setFeedOpen(false)}><FeedList items={[...feed].reverse()} names={names} me={v.me.seat} /></Sheet>}
       {sheet === "history" && <Sheet title="What happened" onClose={() => setSheet(null)}><Story v={v} /></Sheet>}
 
       {menu && (
         <Sheet title="Menu" onClose={() => setMenu(false)}>
           <RolePeek v={v} />
-          <div className="flex items-center gap-3">
-            <MicButton voice={voice} />
-            <p className="flex-1 text-[14px] text-stock/80">Your mic. Tap a player&rsquo;s seat to mute them for you only.</p>
-          </div>
-          <Toggles />
+          {!solo && (
+            <div className="flex items-center gap-3">
+              <MicButton voice={voice} />
+              <p className="flex-1 text-[14px] text-stock/80">Your mic. Tap a player&rsquo;s seat to mute them for you only.</p>
+            </div>
+          )}
+          <AlertsToggle code={code} token={token} on={s.you.alerts} />
+          <Toggles solo={solo} />
           <button type="button" onClick={() => bots.setVoice(!bots.voice)} aria-pressed={bots.voice}
             className="flex min-h-12 items-center gap-3 rounded-2xl border border-brass/40 px-4 text-left text-[14px] text-stock">
-            <span className="text-[18px]" aria-hidden>{bots.voice ? "🔊" : "🔈"}</span>{bots.voice ? "Bots speak aloud" : "Bots speak as text only"}
+            <span className="text-[18px]" aria-hidden>{bots.voice ? "🔊" : "🔈"}</span>{bots.voice ? "Lines read aloud" : "Lines as text only"}
           </button>
+          {captions.supported && !solo && (
+            <button type="button" onClick={() => captions.setOn(!captions.on)} aria-pressed={captions.on}
+              className="flex min-h-12 items-center gap-3 rounded-2xl border border-brass/40 px-4 text-left text-[14px] text-stock">
+              <span className="text-[18px]" aria-hidden>{captions.on ? "💬" : "🔇"}</span>
+              {captions.on ? (captions.broken ? "Captions — this phone can't (mic busy)" : "Live captions of my voice on") : "Live captions of my voice off"}
+            </button>
+          )}
           <Story v={v} />
           <Link href="/" className="text-center text-[13px] text-stock/60 underline">Leave this table</Link>
         </Sheet>
@@ -456,7 +548,7 @@ function Table({ s, v, act, now, extend, code, token, voice, messages }: {
 }
 
 /** menu switches for the game's sound and the narrator (remembered on this phone) */
-function Toggles() {
+function Toggles({ solo }: { solo: boolean }) {
   const [snd, setSnd] = useState(soundOn);
   const [nar, setNar] = useState(narratorOn);
   const [mus, setMus] = useState(musicOn);
@@ -465,7 +557,7 @@ function Toggles() {
     <>
       <button type="button" aria-pressed={snd} onClick={() => { setSound(!snd); setSnd(!snd); }} className={row}><span className="text-[18px]" aria-hidden>{snd ? "🥁" : "🔕"}</span>{snd ? "Game sounds on" : "Game sounds off"}</button>
       <button type="button" aria-pressed={mus} onClick={() => { setMusic(!mus); setMus(!mus); }} className={row}><span className="text-[18px]" aria-hidden>{mus ? "🎵" : "🔇"}</span>{mus ? "Music on" : "Music off"}</button>
-      <PttSwitch row={row} />
+      {!solo && <PttSwitch row={row} />}
       <button type="button" aria-pressed={nar} onClick={() => { setNarrator(!nar); setNar(!nar); }} className={row}><span className="text-[18px]" aria-hidden>{nar ? "🎙️" : "🤐"}</span>{nar ? "Sutradhar (narrator) on" : "Sutradhar off"}</button>
     </>
   );
@@ -502,15 +594,20 @@ function RolePeek({ v }: { v: PlayerView }) {
 }
 
 /** Seats on an oval in turn order, you at the bottom, a thin brass line joining them. */
-function Ring({ v, voice, talking, floorSeat = null, actor, target, pick, tally, flying = [], onThrow, onWhisper, onPick, children }: {
+function Ring({ v, voice, talking, floorSeat = null, actor, target, pick, tally, flying = [], away = [], marks = {}, onMark, onThrow, onWhisper, onPick, onClaim, onQuick, children }: {
   v: PlayerView; voice: VoiceCtl; talking: number | null; floorSeat?: number | null; actor?: number; target?: number; pick: number | null; tally?: Record<string, number>;
-  flying?: Throw[]; onThrow?: (seat: number, emoji: string) => void; onWhisper?: (seat: number) => void; onPick?: (seat: number) => void; children: React.ReactNode;
+  flying?: Throw[]; away?: number[]; marks?: Record<number, Mark>; onMark?: (seat: number, m: Mark | null) => void; onThrow?: (seat: number, emoji: string) => void; onWhisper?: (seat: number) => void; onPick?: (seat: number) => void;
+  onClaim?: (kind: "accuse" | "trust" | "kundli" | "stone", seat: number, role?: string, has?: boolean) => void; onQuick?: (line: string) => void; children: React.ReactNode;
 }) {
   const n = v.players.length;
   const voteOpen = v.phase.endsWith("_vote");
   const size: SeatSize = n <= 8 ? "lg" : n <= 16 ? "md" : "sm";
   const ini = initialsOf(v.players.map((p) => p.name));
-  const [picker, setPicker] = useState<number | null>(null);
+  const [picker, setPickerRaw] = useState<number | null>(null);
+  // the claims (designer 2026-10-09): 🌾 Villager · 🫵 Thief · 🔮 Role (name it exactly — true or a lie) · 💎 Stone
+  // (has one / has none). 🔮 and 💎 open their choices in the same strip — no window.
+  const [reading, setReadingRoles] = useState<false | "role" | "stone">(false);
+  const setPicker = (seat: number | null) => { setPickerRaw(seat); setReadingRoles(false); };
   /** where a seat sits on the oval, in % of the table — you at the bottom */
   const pos = (seat: number) => {
     const a = Math.PI / 2 + (((seat - v.me.seat + n) % n) * 2 * Math.PI) / n;
@@ -524,6 +621,7 @@ function Ring({ v, voice, talking, floorSeat = null, actor, target, pick, tally,
     return `50,50 ${t.x + (-dy / len) * w},${t.y + (dx / len) * w} ${t.x - (-dy / len) * w},${t.y - (dx / len) * w}`;
   })() : null;
   const peerOf = (seat: number) => voice.peers[seat];
+  const said = useMemo(() => saidAbout(v), [v]);
   return (
     <section className="relative mx-2 mt-5 min-h-[440px] flex-1" aria-label="The table">
       <div className="absolute inset-x-[9%] inset-y-[8%] rounded-[50%] border border-brass/35" aria-hidden />
@@ -552,14 +650,65 @@ function Ring({ v, voice, talking, floorSeat = null, actor, target, pick, tally,
               speaking={me ? voice.speaking : Boolean(peer?.speaking && !peer.hushed) || talking === p.seat}
               micOff={me ? !voice.micOn || voice.micBlocked : Boolean(peer?.muted)}
               hushed={Boolean(peer?.hushed)}
-              onTap={onPick && p.alive ? () => onPick(p.seat) : !me && (onThrow || onWhisper || peer) ? () => setPicker(picker === p.seat ? null : p.seat) : undefined} />
+              away={away.includes(p.seat)} mark={marks[p.seat]} said={said[p.seat]}
+              onTap={onPick && p.alive ? () => onPick(p.seat) : (me ? onQuick : onThrow || onWhisper || onClaim || peer) ? () => setPicker(picker === p.seat ? null : p.seat) : undefined} />
           </div>
         );
       })}
       {/* tap a seat: throw something at them (everyone sees it fly), or mute them for you */}
       {picker !== null && (
-        <div className="pop absolute z-30 flex -translate-x-1/2 -translate-y-[130%] gap-1 rounded-full border border-brass/60 bg-ember/95 p-1 shadow-[0_8px_20px_rgba(0,0,0,.7)]"
-          style={{ left: "50%", top: `${Math.max(14, pos(picker).y)}%` }} role="menu" aria-label={`React to ${v.players[picker]?.name}`}>
+        <div className="pop absolute z-30 flex w-[min(92%,340px)] -translate-x-1/2 -translate-y-[115%] flex-col gap-1 rounded-2xl border border-brass/60 bg-ember/95 p-1.5 shadow-[0_8px_20px_rgba(0,0,0,.7)]"
+          style={{ left: "50%", top: `${Math.max(24, pos(picker).y)}%` }} role="menu" aria-label={`${v.players[picker]?.name}`}>
+          {/* your own seat: a ready-made line, straight into the centre */}
+          {picker === v.me.seat && onQuick && (
+            <div className="grid grid-cols-2 gap-1">
+              {QUICK_LINES.map((l) => (
+                <button key={l} type="button" role="menuitem" onClick={() => { onQuick(l); setPicker(null); }}
+                  className="min-h-11 rounded-xl bg-black/40 px-2 text-[14px] font-bold text-stock ring-1 ring-brass/50 active:scale-95">{l}</button>
+              ))}
+            </div>
+          )}
+          {/* accuse / vouch / a Kundli read — straight into the centre, one tap */}
+          {/* 💎 Stone: after a Talashi — "has a Stone" / "has no Stone" */}
+          {picker !== v.me.seat && onClaim && v.players[picker]?.alive && reading === "stone" && (
+            <div className="grid grid-cols-2 gap-1" role="group" aria-label={`Does ${v.players[picker]?.name} hold a Stone?`}>
+              <button type="button" role="menuitem" onClick={() => { onClaim("stone", picker, undefined, true); setPicker(null); }}
+                className="min-h-11 rounded-xl bg-[#3a240c] text-[14px] font-bold text-[#f3c66b] ring-1 ring-[#f0a32e]/60 active:scale-95">💎 Has a Stone</button>
+              <button type="button" role="menuitem" onClick={() => { onClaim("stone", picker, undefined, false); setPicker(null); }}
+                className="min-h-11 rounded-xl bg-black/40 text-[14px] font-bold text-stock ring-1 ring-brass/50 active:scale-95">No Stone</button>
+            </div>
+          )}
+          {picker !== v.me.seat && onClaim && v.players[picker]?.alive && reading !== "stone" && (reading === "role" ? (
+            <div className="flex flex-wrap justify-center gap-1" role="group" aria-label={`Which role is ${v.players[picker]?.name}?`}>
+              {v.rolesInPlay.map((r) => (
+                <button key={r} type="button" role="menuitem" onClick={() => { onClaim("kundli", picker, r); setPicker(null); }}
+                  className="min-h-10 rounded-full bg-black/40 px-3 text-[13px] font-bold text-stock ring-1 ring-brass/50 active:scale-95">{r}</button>
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-4 gap-1">
+              <button type="button" role="menuitem" onClick={() => { onClaim("trust", picker); setPicker(null); }}
+                className="min-h-11 rounded-xl bg-jade-deep/60 text-[14px] font-bold text-jade-soft ring-1 ring-jade/60 active:scale-95">🌾 Villager</button>
+              <button type="button" role="menuitem" onClick={() => { onClaim("accuse", picker); setPicker(null); }}
+                className="min-h-11 rounded-xl bg-crimson-deep text-[14px] font-bold text-ink active:scale-95">🫵 Thief</button>
+              <button type="button" role="menuitem" onClick={() => setReadingRoles("role")}
+                className="min-h-11 rounded-xl bg-black/40 text-[14px] font-bold text-stock ring-1 ring-brass/50 active:scale-95">🔮 Role</button>
+              <button type="button" role="menuitem" onClick={() => setReadingRoles("stone")}
+                className="min-h-11 rounded-xl bg-[#3a240c] text-[14px] font-bold text-[#f3c66b] ring-1 ring-[#f0a32e]/60 active:scale-95">💎 Stone</button>
+            </div>
+          ))}
+          {!reading && picker !== v.me.seat && onMark && (
+            <div className="flex items-center justify-center gap-1 border-t border-brass/30 pt-1" role="group" aria-label="Your private mark — only you see it">
+              <span className="mr-1 text-[12px] text-stock/70">Mark</span>
+              {(Object.keys(MARK) as Mark[]).map((m) => (
+                <button key={m} type="button" role="menuitemradio" aria-label={`Mark ${MARK[m].label}`} aria-checked={marks[picker] === m}
+                  onClick={() => { onMark(picker, marks[picker] === m ? null : m); setPicker(null); }}
+                  className={`grid h-9 w-9 place-items-center rounded-full text-[13px] font-black ${MARK[m].dot} ${marks[picker] === m ? "ring-2 ring-stock" : ""}`}>{MARK[m].glyph}</button>
+              ))}
+              {marks[picker] && <button type="button" role="menuitem" aria-label="Clear mark" onClick={() => { onMark(picker, null); setPicker(null); }} className="grid h-9 w-9 place-items-center rounded-full text-[14px] text-stock/80 ring-1 ring-brass/50">✕</button>}
+            </div>
+          )}
+          {!reading && picker !== v.me.seat && <div className="flex justify-center gap-1">
           {onThrow && REACTIONS.map((e) => (
             <button key={e} type="button" role="menuitem" onClick={() => { onThrow(picker, e); setPicker(null); }} className="grid h-10 w-10 place-items-center rounded-full text-[22px] active:scale-90">{e}</button>
           ))}
@@ -571,6 +720,7 @@ function Ring({ v, voice, talking, floorSeat = null, actor, target, pick, tally,
             <button type="button" role="menuitem" aria-label={peerOf(picker)!.hushed ? "Unmute for me" : "Mute for me"} onClick={() => { voice.hush(picker); setPicker(null); }}
               className="grid h-10 w-10 place-items-center rounded-full text-[20px]">{peerOf(picker)!.hushed ? "🔊" : "🔇"}</button>
           )}
+          </div>}
         </div>
       )}
       {flying.map((t) => {
@@ -578,7 +728,7 @@ function Ring({ v, voice, talking, floorSeat = null, actor, target, pick, tally,
         return <span key={t.id} aria-hidden className="throw z-40 text-[34px]"
           style={{ ["--fx" as string]: `${f.x}%`, ["--fy" as string]: `${f.y}%`, ["--tx" as string]: `${to.x}%`, ["--ty" as string]: `${to.y}%` }}>{t.emoji}</span>;
       })}
-      <div className="absolute left-1/2 top-1/2 max-h-[50%] w-[54%] max-w-[240px] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl [scrollbar-width:none]">{children}</div>
+      <div className="absolute left-1/2 top-1/2 max-h-[56%] w-[60%] max-w-[260px] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl [scrollbar-width:none]">{children}</div>
     </section>
   );
 }
@@ -590,12 +740,12 @@ const SEAT: Record<SeatSize, { disc: string; tag: string; w: string }> = {
   sm: { disc: "h-9 w-9 text-[14px]", tag: "px-1.5 py-px text-[10px] max-w-[60px]", w: "w-[60px]" },
 };
 
-function Seat({ p, me, size, initials, got, tag, spot, voted, picked, speaking, micOff, hushed, onTap }: {
+function Seat({ p, me, size, initials, got, tag, spot, voted, picked, speaking, micOff, hushed, away = false, mark, said, onTap }: {
   p: PublicPlayer; me: boolean; size: SeatSize; initials: string; got?: number; tag?: "played" | "target"; spot: boolean; voted: boolean; picked: boolean;
-  speaking: boolean; micOff: boolean; hushed: boolean; onTap?: () => void;
+  speaking: boolean; micOff: boolean; hushed: boolean; away?: boolean; mark?: Mark; said?: SaidAbout; onTap?: () => void;
 }) {
   const z = SEAT[size];
-  const label = `${p.name}${me ? " (you)" : ""}${got ? `, got ${got} vote${got === 1 ? "" : "s"}` : ""}: ${p.handSize} cards, ${p.votes} vote${p.votes === 1 ? "" : "s"}${p.alive ? "" : p.revealedRole ? `, out — was ${p.revealedRole}` : ", out"}${spot ? ", their move" : ""}${speaking ? ", talking" : ""}${voted ? ", has voted" : ""}`;
+  const label = `${p.name}${me ? " (you)" : ""}${got ? `, got ${got} vote${got === 1 ? "" : "s"}` : ""}: ${p.handSize} cards, ${p.votes} vote${p.votes === 1 ? "" : "s"}${p.alive ? "" : p.revealedRole ? `, out — was ${p.revealedRole}` : ", out"}${spot ? ", their move" : ""}${speaking ? ", talking" : ""}${voted ? ", has voted" : ""}${away ? ", away" : ""}${mark ? `, you marked ${MARK[mark].label}` : ""}${said?.accuse ? `, called a thief ${said.accuse} times` : ""}${said?.trust ? `, called a villager ${said.trust} times` : ""}${said?.role ? `, read as ${said.role}` : ""}${said?.stone !== undefined ? (said.stone ? ", said to hold a Stone" : ", said to hold no Stone") : ""}`;
   return (
     <div className={`relative flex flex-col items-center text-center ${z.w} ${p.alive ? "" : "opacity-45 grayscale"}`}>
       {/* the play in the centre panel, on the ring: who played it, and at whom (12-player playtest: "who did what to whom") */}
@@ -610,11 +760,24 @@ function Seat({ p, me, size, initials, got, tag, spot, voted, picked, speaking, 
         {(micOff || hushed) && <span className="absolute -left-1 -top-1 grid h-4 w-4 place-items-center rounded-full bg-ember ring-1 ring-brass/50"><MicOff small crossed={hushed} /></span>}
         {Boolean(got) && <span key={got} className="pop absolute -left-2 -top-2 z-10 grid h-6 min-w-6 place-items-center rounded-full bg-crimson px-1 text-[12px] font-black text-ink ring-2 ring-ember" aria-hidden>{got}</span>}
         {voted && <span className="absolute -right-1 -top-1 grid h-5 w-5 place-items-center rounded-full bg-[#f0a32e] text-[11px] font-black text-card-ink" aria-hidden>✓</span>}
+        {/* a stand-in is playing for them */}
+        {away && <span className="absolute -bottom-1 -left-1.5 grid h-5 w-5 place-items-center rounded-full bg-ember text-[11px] ring-1 ring-brass/60" aria-hidden>💤</span>}
+        {/* your private mark — only this phone knows */}
+        {mark && <span className={`absolute -left-2.5 top-1/2 grid h-4 w-4 -translate-y-1/2 place-items-center rounded-full text-[10px] font-black ring-2 ring-ember ${MARK[mark].dot}`} aria-hidden>{MARK[mark].glyph}</span>}
       </button>
       <span className={`relative z-10 -mt-1 truncate rounded-full border bg-ember font-medium ${z.tag} ${me ? "border-2 border-jade text-jade-soft" : spot ? "border-[#f0a32e] text-[#f3c66b]" : "border-brass/60 text-stock"}`}>{p.name}</span>
       {p.alive
         ? <span className="mt-0.5 flex h-1.5 gap-0.5" aria-hidden>{Array.from({ length: p.votes }).map((_, i) => <span key={i} className="h-1.5 w-1.5 rounded-full bg-[#f0a32e]" />)}</span>
         : <span className="text-[10px] leading-tight text-crimson-soft">{p.revealedRole ?? "out"}</span>}
+      {/* what the table has said ABOUT them — kept on the seat once the feed has scrolled on (Town of Salem's notepad, BGA's player panels) */}
+      {p.alive && said && (said.accuse || said.trust || said.role || said.stone !== undefined) && (
+        <span className="mt-0.5 flex max-w-full items-center gap-1 truncate rounded-full bg-black/50 px-1.5 text-[11px] leading-[16px] text-stock" aria-hidden>
+          {said.accuse ? <span className="text-crimson-soft">🫵{said.accuse}</span> : null}
+          {said.trust ? <span className="text-jade-soft">🌾{said.trust}</span> : null}
+          {said.role ? <span className="truncate text-stock">🔮{said.role}</span> : null}
+          {said.stone !== undefined ? <span className="text-[#f3c66b]">💎{said.stone ? "✓" : "✗"}</span> : null}
+        </span>
+      )}
       {spot && <span aria-hidden className="absolute -bottom-3 text-[12px] leading-none text-[#f0a32e]">▲</span>}
     </div>
   );
@@ -685,10 +848,13 @@ function nextUp(v: PlayerView): string | null {
   return null;
 }
 
-const TICKER = new Set(["pass", "away", "back", "floor_extended", "timeout", "gift", "dal_badal_done", "whisper", "whisper_private"]);
+const TAGLESS = new Set(["pass", "away", "back", "floor_extended", "timeout", "gift", "dal_badal_done", "whisper", "whisper_private"]);
 
-function Centre({ v, last, lastVote, live, ticker, compact, living, extend, ready, floor = null, canFloor = false, takeFloor, now }: {
-  v: PlayerView; last: Beat | null; lastVote: Beat | null; live: Record<string, number> | null; ticker: Beat | null; compact: boolean; living: number;
+/** THE CENTRE (designer 2026-10-09, option A — "every little thing must be displayed at the center"): a status line,
+ *  then the running feed — newest at the bottom and biggest, older lines smaller and fainter — then the debate's
+ *  controls. Tap the feed for everything that was said and done. */
+function Centre({ v, feed, onOpen, compact, living, extend, ready, floor = null, canFloor = false, takeFloor, now }: {
+  v: PlayerView; feed: FeedItem[]; onOpen: () => void; compact: boolean; living: number;
   extend?: () => void; ready: () => void;
   floor?: { seat: number; until: number } | null; canFloor?: boolean; takeFloor?: () => void; now?: () => number;
 }) {
@@ -697,154 +863,76 @@ function Centre({ v, last, lastVote, live, ticker, compact, living, extend, read
   const debate = v.phase.endsWith("_debate");
   const name = (seat: number) => v.players[seat]?.name ?? "?";
   const btn = "min-h-11 rounded-full border-2 border-brass/70 px-3 font-[family-name:var(--font-engraved)] text-[13px] font-bold uppercase tracking-wide";
+  const names = v.players.map((p) => p.name);
+  // the debate's buttons and your move need the room: 3 lines then
+  const lines = feed.slice(compact || debate ? -3 : -6);
   return (
-    <div className="relative rounded-2xl border border-brass/70 bg-[#1a0e06]/90 px-2.5 pb-2.5 pt-4 text-center shadow-[0_10px_30px_-10px_rgba(0,0,0,.8)]">
+    <div className="relative rounded-2xl border border-brass/70 bg-[#1a0e06]/90 px-2.5 pb-2.5 pt-3 text-center shadow-[0_10px_30px_-10px_rgba(0,0,0,.8)]">
       <Ornament className="absolute -top-2 left-1/2 -translate-x-1/2" />
       <Ornament className="absolute -bottom-2 left-1/2 -translate-x-1/2" />
-      <Ornament className="absolute -left-2.5 top-1/2 -translate-y-1/2" />
-      <Ornament className="absolute -right-2.5 top-1/2 -translate-y-1/2" />
 
-      {voteOpen || debate ? (
-        <>
-          <p className="font-display text-[19px] font-bold leading-tight text-stock">{debate ? (v.phase.startsWith("final") ? "Last debate" : "Faisla") : "Vote"}</p>
-          <p className="mt-1 text-[13px] leading-snug text-stock/75">
-            {debate ? "The floor is open — accuse, defend, claim." : `${living - v.waitingOn.length} of ${living} voted`}
-          </p>
-          {voteOpen && live && <Tally v={v} tally={live} ballots={v.ballots ?? {}} />}
-          {debate && floor && (
-            // SAFAI DO: one voice, everyone else held
-            <p key={floor.seat} className="pop mt-2 rounded-xl border border-[#f0a32e]/70 bg-[#3a240c] px-2 py-1.5 text-[14px] font-bold text-[#f3c66b]">
-              🎤 {floor.seat === v.me.seat ? "You have the floor" : `${name(floor.seat)} has the floor`} · <FloorClock until={floor.until} now={now!} />
-            </p>
-          )}
-          {debate && !floor && canFloor && takeFloor && (
-            <button type="button" onClick={takeFloor} className="mt-2 min-h-10 w-full rounded-full border-2 border-[#f0a32e]/70 bg-black/30 text-[13px] font-bold text-[#f3c66b] active:translate-y-px">
-              🎤 Take the floor · 15s
-            </button>
-          )}
-          {debate && d?.kind === "debate" && (
-            <div className="mt-2 flex flex-col items-center gap-1.5">
-              <p className="text-[12px] text-stock/60">{d.ready.length} of {living} ready</p>
-              <button type="button" onClick={ready} className={`${btn} w-full bg-[linear-gradient(180deg,var(--color-rust)_0%,var(--color-rust-deep)_100%)] text-stock`}>Ready to vote</button>
-              {extend && <button type="button" onClick={extend} className="min-h-8 text-[11px] text-stock/60 underline">+30s (host, once)</button>}
-            </div>
-          )}
-
-        </>
-      ) : last && compact ? (
-        // your move: the cards and buttons need the room, so the panel shrinks to one play and one line (decision 2a)
-        <div key={last.n} className="stage-in">
-          {last.card && last.actor !== undefined
-            ? <p className="font-display text-[13px] leading-snug text-stock/75">{name(last.actor)} played <b className="font-bold uppercase text-[#f3c66b]">{CARD[last.card].name} ×2</b></p>
-            : null}
-          <p className="mt-0.5 line-clamp-2 font-display text-[13px] leading-snug text-stock/90">{last.title}</p>
-        </div>
-      ) : last ? (
-        <div key={last.n} className="stage-in">
-          {last.card && last.actor !== undefined ? (
-            <>
-              {/* designer's mockup 2026-10-07: who played · the card in gold ×2 · the pair · what it did · what follows */}
-              <p className="font-display text-[14px] leading-tight text-stock/75">{name(last.actor)} played</p>
-              <p className="mt-0.5 font-display text-[clamp(18px,5.5vw,24px)] font-bold uppercase leading-none tracking-wide text-[#f3c66b]">{CARD[last.card].name} <span className="text-[0.75em]">×2</span></p>
-              {v.players.length <= 8 && <div className="mt-2"><PlayedPair c={last.card} /></div>}
-              <Divider />
-              <p className="font-display text-[14px] leading-snug text-stock/90">{last.title}</p>
-              {last.cards && last.cards.length > 0 && (
-                <ul className="mt-1.5 flex flex-wrap justify-center gap-1">
-                  {last.cards.map((c, i) => <li key={i} className="flex items-center gap-1 rounded-full border border-brass/40 bg-black/30 py-0.5 pl-0.5 pr-2 text-[11px] text-stock"><CardIcon c={c} className="w-4" />{CARD[c].name}</li>)}
-                </ul>
-              )}
-            </>
-          ) : <p className="font-display text-[17px] font-bold leading-snug text-stock">{last.title}</p>}
-          {lastVote?.tally && (last.type === "vote_result" || last.n > lastVote.n) && <Tally v={v} tally={lastVote.tally} ballots={lastVote.ballots ?? {}} />}
-          {last.detail && (
-            last.card
-              ? <p className="mt-1.5 flex items-center gap-2 rounded-lg border border-brass/40 bg-black/30 px-2 py-1 text-left font-display text-[12px] leading-snug text-stock/85">
-                  <svg width="18" height="16" viewBox="0 0 18 16" className="shrink-0" aria-hidden><rect x="1" y="3" width="9" height="12" rx="1.5" transform="rotate(-10 5 9)" fill="#6b4520" stroke="#e0a24a" /><rect x="7" y="1" width="9" height="12" rx="1.5" transform="rotate(8 11 7)" fill="#8a5a1c" stroke="#e0a24a" /></svg>
-                  <span className="line-clamp-2">{last.detail}</span>
-                </p>
-              : <><Divider /><p className="line-clamp-2 font-display text-[13px] leading-snug text-stock/80">{last.detail}</p></>
-          )}
-        </div>
-      ) : (
-        <p className="font-display text-[17px] leading-snug text-stock">The cards are dealt.</p>
-      )}
-
-      {ticker && !voteOpen && !debate && !compact && <p className="mt-2 truncate text-[12px] text-stock/55">{ticker.title}</p>}
-      {!voteOpen && !debate && <p className={`mt-1.5 text-[12px] font-semibold leading-snug ${d ? "text-jade-soft" : "text-stock/60"}`}>{status(v)}{nextUp(v) ? <span className="text-stock/50"> · next: <b className="text-[#f3c66b]">{nextUp(v)}</b></span> : null}</p>}
-
-
-    </div>
-  );
-}
-
-/** after a vote: everyone's count, and who voted whom (votes are cast in the open) */
-function Tally({ v, tally, ballots }: { v: PlayerView; tally: Record<string, number>; ballots: Record<string, number | null> }) {
-  const [open, setOpen] = useState(false);
-  const name = (x: string | number) => v.players[Number(x)]?.name ?? "?";
-  const rows = Object.entries(tally).filter(([, k]) => k > 0).sort((a, b) => b[1] - a[1]);
-  const abstained = Object.entries(ballots).filter(([, t]) => t === null).map(([x]) => name(x));
-  return (
-    <div className="mt-2 text-center">
-      <ul className="flex flex-wrap justify-center gap-1.5">
-        {rows.map(([x, k]) => (
-          <li key={x} className="rounded-full border border-brass/50 bg-black/30 px-2 py-0.5 text-[12px] text-stock"><b className="text-[#f3c66b]">{k}</b> {name(x)}</li>
-        ))}
-        {!rows.length && <li className="text-[12px] text-stock/60">Nobody got a vote.</li>}
-      </ul>
-      <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} className="mx-auto mt-1 block min-h-8 text-[11px] text-stock/60 underline">{open ? "Hide" : "Who voted whom"}</button>
-      {open && (
-        <ul className="mt-1 flex max-h-32 flex-col items-center overflow-y-auto text-[12px] leading-snug text-stock/80">
-          {Object.entries(ballots).filter(([, t]) => t !== null).map(([x, t]) => <li key={x}>{name(x)} → {name(t!)}</li>)}
-          {abstained.length > 0 && <li className="text-stock/50">Abstained: {abstained.join(", ")}</li>}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-/** Say something to the whole table — the bots hear it too. A claim can be true or a lie, like at a real table. */
-function Claim({ v, code, token, onClose }: { v: PlayerView; code: string; token: string; onClose: () => void }) {
-  const [kind, setKind] = useState<"kundli" | "accuse" | "trust">("kundli");
-  const [target, setTarget] = useState<number | null>(null);
-  const [role, setRole] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const others = v.players.filter((p) => p.alive && p.seat !== v.me.seat);
-  const ready = target !== null && (kind !== "kundli" || role !== null);
-  const send = () => {
-    setBusy(true); setErr(null);
-    api.claim(code, token, { kind, target: target!, ...(kind === "kundli" ? { role: role! } : {}) })
-      .then(onClose).catch((e) => { setErr((e as Error).message); setBusy(false); });
-  };
-  const tab = (k: typeof kind, label: string) => (
-    <button type="button" onClick={() => setKind(k)} aria-pressed={kind === k}
-      className={`min-h-11 flex-1 rounded-full border-2 text-[12px] font-bold uppercase tracking-wide ${kind === k ? "border-[#f0a32e] bg-[#3a240c] text-[#f3c66b]" : "border-brass/40 text-stock/70"}`}>{label}</button>
-  );
-  return (
-    <Sheet title="Tell the table" onClose={onClose}>
-      <div className="flex gap-2">{tab("kundli", "Kundli read")}{tab("accuse", "A thief")}{tab("trust", "Trust")}</div>
-      <p className="text-center text-[13px] text-stock/70">
-        {kind === "kundli" ? "Who did you read, and what did you see?" : kind === "accuse" ? "Who is a thief?" : "Who is with the village?"}
+      <p className={`text-[12px] font-semibold leading-snug ${debate || voteOpen ? "text-[#f3c66b]" : d ? "text-jade-soft" : "text-stock/70"}`}>
+        {debate ? `${v.phase.startsWith("final") ? "Last debate" : "Faisla"} — accuse, defend, claim`
+          : voteOpen ? `Vote · ${living - v.waitingOn.length} of ${living} voted`
+          : <>{status(v)}{nextUp(v) ? <span className="text-stock/50"> · next: <b className="text-[#f3c66b]">{nextUp(v)}</b></span> : null}</>}
       </p>
-      <div className="grid max-h-48 grid-cols-2 gap-2 overflow-y-auto">
-        {others.map((p) => <PlayerChip key={p.seat} p={p} selected={target === p.seat} onClick={() => setTarget(p.seat)} />)}
-      </div>
-      {kind === "kundli" && (
-        <div className="flex flex-wrap justify-center gap-2" role="group" aria-label="The role you saw">
-          {v.rolesInPlay.map((r) => (
-            <button key={r} type="button" onClick={() => setRole(r)} aria-pressed={role === r}
-              className={`min-h-10 rounded-full px-3 text-[13px] font-bold ${role === r ? "bg-[#f0a32e] text-card-ink" : "bg-black/40 text-stock ring-1 ring-brass/40"}`}>{r}</button>
-          ))}
+
+      <button type="button" onClick={onOpen} aria-label="Everything at the table" className="mt-1.5 block w-full text-left" aria-live="polite">
+        {lines.length === 0
+          ? <p className="py-2 text-center font-display text-[15px] text-stock/80">The cards are dealt.</p>
+          : <ul className="flex flex-col gap-1">
+              {lines.map((it, i) => <FeedLine key={it.id} it={it} names={names} me={v.me.seat} rank={lines.length - 1 - i} />)}
+            </ul>}
+      </button>
+
+      {debate && floor && (
+        // SAFAI DO: one voice, everyone else held
+        <p key={floor.seat} className="pop mt-2 rounded-xl border border-[#f0a32e]/70 bg-[#3a240c] px-2 py-1.5 text-[14px] font-bold text-[#f3c66b]">
+          🎤 {floor.seat === v.me.seat ? "You have the floor" : `${name(floor.seat)} has the floor`} · <FloorClock until={floor.until} now={now!} />
+        </p>
+      )}
+      {debate && !floor && canFloor && takeFloor && (
+        <button type="button" onClick={takeFloor} className="mt-2 min-h-10 w-full rounded-full border-2 border-[#f0a32e]/70 bg-black/30 text-[13px] font-bold text-[#f3c66b] active:translate-y-px">
+          🎤 Take the floor · 15s
+        </button>
+      )}
+      {debate && d?.kind === "debate" && (
+        <div className="mt-2 flex flex-col items-center gap-1.5">
+          <p className="text-[12px] text-stock/60">{d.ready.length} of {living} ready</p>
+          <button type="button" onClick={ready} className={`${btn} w-full bg-[linear-gradient(180deg,var(--color-rust)_0%,var(--color-rust-deep)_100%)] text-stock`}>Ready to vote</button>
+          {extend && <button type="button" onClick={extend} className="min-h-8 text-[11px] text-stock/60 underline">+30s (host, once)</button>}
         </div>
       )}
-      {err && <p role="alert" className="rounded-xl bg-crimson-deep p-3 text-center text-[14px]">{err}</p>}
-      <button type="button" disabled={!ready || busy} onClick={send}
-        className="min-h-12 rounded-full border-2 border-brass/80 bg-[linear-gradient(180deg,var(--color-rust)_0%,var(--color-rust-deep)_100%)] font-[family-name:var(--font-engraved)] text-[16px] font-bold uppercase tracking-[0.08em] text-stock disabled:opacity-40">
-        Say it
-      </button>
-    </Sheet>
+    </div>
   );
+}
+
+const TONE_TEXT: Record<string, string> = { lethal: "text-crimson-soft", vote: "text-[#f3c66b]", relic: "text-jade-soft", gold: "text-[#f3c66b]", neutral: "text-stock" };
+const KIND_ICON: Partial<Record<FeedItem["kind"], string>> = { vote: "🗳", caption: "🎙", react: "", whisper: "🤫" };
+
+/** one line of the feed: who (in their seat colour) → what. rank 0 = newest (biggest), then smaller and fainter */
+function FeedLine({ it: raw, names, me, rank, full = false }: { it: FeedItem; names: string[]; me: number; rank: number; full?: boolean }) {
+  // the 🤖 badge belongs on the seat, not in every sentence
+  const it = { ...raw, text: raw.text.replace(/\s*🤖/g, ""), detail: raw.detail?.replace(/\s*🤖/g, "") };
+  // (2026-10-09, research: stream/phone readability) a step bigger than before: 16 / 14 / 13
+  const size = full ? "text-[15px]" : rank === 0 ? "text-[16px] font-semibold" : rank === 1 ? "text-[14px]" : "text-[13px]";
+  const fade = full || rank <= 1 ? "" : rank === 2 ? "opacity-75" : "opacity-55";
+  const who = (seat?: number) => seat === undefined ? null
+    : <b style={{ color: SEAT_COLOURS[seat % SEAT_COLOURS.length] }}>{seat === me ? "You" : names[seat]?.replace(/\s*🤖$/, "")}</b>;
+  let body: React.ReactNode;
+  if (it.kind === "talk" || it.kind === "caption") body = <>{KIND_ICON[it.kind] ? `${KIND_ICON[it.kind]} ` : ""}{who(it.seat)}: <span className="italic">&ldquo;{it.text}&rdquo;</span></>;
+  else if (it.kind === "claim") body = <span className={TONE_TEXT[it.tone]}>{it.tone === "lethal" ? "🫵" : it.tone === "gold" ? "💎" : "🌾"} {it.text}</span>;
+  else body = <span className={it.mine ? "text-jade-soft" : it.kind === "event" ? TONE_TEXT[it.tone] : "text-stock/90"}>
+    {it.mine ? "🔒 Only you: " : KIND_ICON[it.kind] ? `${KIND_ICON[it.kind]} ` : ""}{it.text}
+    {it.detail && (rank === 0 || full) && <span className="mt-0.5 block text-[12px] font-normal text-stock/70">{it.detail}</span>}
+  </span>;
+  // in the centre a line is two rows at most — the whole of it is one tap away
+  return <li className={`stage-in leading-snug text-stock ${size} ${fade} ${full ? "" : "line-clamp-2"}`}>{body}</li>;
+}
+
+function FeedList({ items, names, me }: { items: FeedItem[]; names: string[]; me: number }) {
+  if (!items.length) return <p className="text-center text-[14px] text-stock/60">Nothing yet.</p>;
+  return <ul className="flex max-h-[60dvh] flex-col gap-2 overflow-y-auto">{items.map((it) => <FeedLine key={it.id} it={it} names={names} me={me} rank={0} full />)}</ul>;
 }
 
 function Ornament({ className = "" }: { className?: string }) {
@@ -864,12 +952,13 @@ function Divider() {
 }
 
 /** "Your Cards": the tiles, and — when it's your move — the pair buttons or the next step. */
-function Tray({ v, act, live, onClaim }: { v: PlayerView; act: (a: Action) => void; live: Record<string, number> | null; onClaim?: () => void }) {
+function Tray({ v, act, live, banner = null }: { v: PlayerView; act: (a: Action) => void; live: Record<string, number> | null; banner?: React.ReactNode }) {
   const d = v.decision;
-  if (d?.kind === "vote") return <Ballot v={v} mine={d.mine} live={live ?? {}} act={act} />;
+  if (d?.kind === "vote") return <>{banner && <div className="relative z-20">{banner}</div>}<Ballot v={v} mine={d.mine} live={live ?? {}} act={act} /></>;
   const inTray = d && d.kind !== "debate";
   return (
     <section className="sticky bottom-0 z-20 flex flex-col gap-2 rounded-t-3xl border-t border-brass/30 bg-ember px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-14px_30px_-6px_rgba(0,0,0,.75)]">
+      {banner && <div className="-mx-3">{banner}</div>}
       <div className="flex items-center gap-3" aria-hidden>
         <span className="h-px flex-1 bg-brass/40" /><Ornament /><span className="h-px flex-1 bg-brass/40" />
       </div>
@@ -878,9 +967,6 @@ function Tray({ v, act, live, onClaim }: { v: PlayerView; act: (a: Action) => vo
         <h2 className="text-center font-display text-[24px] font-bold leading-tight text-stock">
           {!v.me.alive ? "You're out" : inTray ? "Your move" : "Your Cards"}
         </h2>
-        {onClaim && (
-          <button type="button" onClick={onClaim} className="justify-self-end rounded-full border border-brass/60 px-3 py-1.5 text-[12px] font-bold text-stock">🗣 Tell</button>
-        )}
       </div>
       {!v.me.alive && <p className="text-center text-[12px] text-stock/60">Gone room — you hear the table; only the gone hear you.</p>}
       {inTray ? <Decide key={v.phase} v={v} act={act} /> : v.me.alive && <HandRow cards={v.me.hand} />}
@@ -904,7 +990,10 @@ function Story({ v }: { v: PlayerView }) {
 // ---------------------------------------------------------------- the end: every role flips, the whole story opens
 /** Game over (2026-10-07): the verdict, then the whole table turns its role cards over, round the same ring, with
  *  the two Stones in the middle saying where they ended up — the question the whole game was about. */
-function Final({ v, clips = [] }: { v: PlayerView; clips?: { label: string; url: string }[] }) {
+function Final({ v, clips = [], host = false, hostName = "the host", onRematch }: {
+  v: PlayerView; clips?: { label: string; url: string }[]; host?: boolean; hostName?: string; onRematch?: () => Promise<unknown>;
+}) {
+  const [again, setAgain] = useState<"idle" | "busy" | "error">("idle");
   const [story, setStory] = useState(false);
   const reveal = v.finalReveal!;
   const village = v.winner === "V";
@@ -917,8 +1006,16 @@ function Final({ v, clips = [] }: { v: PlayerView; clips?: { label: string; url:
   // and the cards of anyone the mandatory vote put out)
   const stoneAt = (c: Card) => {
     const r = reveal.find((x) => x.hand.includes(c) && v.players[x.seat].alive);
-    return r ? { who: name(r.seat), side: r.side as Side } : { who: "The village", side: "V" as Side };
+    return r ? { who: name(r.seat), side: r.side as Side, role: r.role } : { who: "The village", side: "V" as Side, role: null };
   };
+  // WHY (2026-10-09 — Among Us players ask the end screen for the reason, not just the result): Thieves win only if a
+  // living thief holds a Stone
+  const STONES: Card[] = ["STONE_1", "STONE_2"];
+  const held = STONES.map((c) => ({ c, ...stoneAt(c) }));
+  const plainName = (w: string) => w.replace(/\s*🤖$/, "");
+  const why = !village
+    ? held.filter((h) => h.side === "T").map((h) => `${plainName(h.who)} (${h.role}) kept the ${STONE_NAME[h.c]}`).join(" · ")
+    : held.every((h) => h.role === null) ? "Both Stones ended with the village." : "No thief kept a Stone.";
   const n = reveal.length;
   const size: SeatSize = n <= 8 ? "lg" : n <= 16 ? "md" : "sm";
   // the mandatory vote decided the game: everyone sees how many votes each player got
@@ -936,7 +1033,8 @@ function Final({ v, clips = [] }: { v: PlayerView; clips?: { label: string; url:
         <h1 className={`mt-1 font-display text-[clamp(34px,11vw,46px)] font-bold uppercase leading-none tracking-wide ${village ? "text-[#f3c66b]" : "text-crimson-soft"}`}>
           {village ? "Tunga wins" : "Thieves win"}
         </h1>
-        <p className={`mt-2 font-display text-[16px] ${won ? "text-jade-soft" : "text-stock/70"}`}>{won ? "You won" : "You lost"} — you were {mine.role}</p>
+        <p className="mt-2 font-display text-[16px] text-stock/90">{why}</p>
+        <p className={`mt-1 font-display text-[15px] ${won ? "text-jade-soft" : "text-stock/70"}`}>{won ? "You won" : "You lost"} — you were {mine.role}</p>
       </header>
 
       {/* everyone turns their role over, round the same ring as the table */}
@@ -1002,8 +1100,17 @@ function Final({ v, clips = [] }: { v: PlayerView; clips?: { label: string; url:
       {won && <Confetti />}
       <div className="mt-3 grid grid-cols-2 gap-2">
         <ShareResult won={won} village={village} role={mine.role} thief={mine.side === "T"} caught={reveal.filter((r) => r.side === "T" && !v.players[r.seat].alive).length} />
-        <Link href="/" className={`${btn} inline-flex items-center justify-center bg-[linear-gradient(180deg,var(--color-rust)_0%,var(--color-rust-deep)_100%)] text-stock`}>Play again</Link>
+        {host && onRematch ? (
+          // PLAY AGAIN keeps the table: same group, back to the lobby (everyone's phone follows)
+          <button type="button" disabled={again === "busy"} onClick={() => { setAgain("busy"); onRematch().catch(() => setAgain("error")); }}
+            className={`${btn} bg-[linear-gradient(180deg,var(--color-rust)_0%,var(--color-rust-deep)_100%)] text-stock disabled:opacity-60`}>
+            {again === "busy" ? "…" : again === "error" ? "Try again" : "Play again"}
+          </button>
+        ) : (
+          <Link href="/" className={`${btn} inline-flex items-center justify-center border-brass/40 text-stock/80`}>Leave</Link>
+        )}
       </div>
+      {!host && <p className="mt-2 text-center text-[14px] text-stock/70">Waiting for {hostName} to start the next game…</p>}
       <div className="mt-2 flex justify-center gap-6 text-[13px] text-stock/60">
         <button type="button" onClick={() => setStory(true)} className="min-h-10 underline-offset-2 hover:underline">The whole story</button>
       </div>
@@ -1049,23 +1156,130 @@ function VoiceBanner({ voice }: { voice: VoiceCtl }) {
   return null;
 }
 
-/** LIVE (designer 2026-10-09: "live updates at the top of the latest thing that happened"): the newest public moment
- *  in one bold line, the one before it faint underneath. It follows the stage — a vote result shows here only once the
- *  table has watched it — so it never spoils a beat. Tap for the whole story. */
-function LiveStrip({ seen, onOpen }: { seen: Beat[]; onOpen: () => void }) {
-  const [now, before] = [seen.at(-1) ?? null, seen.at(-2) ?? null];
-  const line = (b: Beat) => (b.detail && b.detail.length <= 42 && b.type !== "claim" ? `${b.title} — ${b.detail}` : b.title);
+// ---------------------------------------------------------------- humans and bots at one table
+const TIPS = "tunga:tips";
+const STONE_NAME: Partial<Record<Card, string>> = { STONE_1: "Bhadra Stone", STONE_2: "Tunga Stone" };
+const TIP_TEXT: Record<string, React.ReactNode> = {
+  turn: <>Your turn: play a glowing pair, or pass your cards on.</>,
+  debate: <>Faisla: talk it out, then tap <b>Ready to vote</b>.</>,
+  vote: <>Tap who goes out. You can change your vote.</>,
+  bots: <>🤖 Bots can&rsquo;t hear voice — tap a seat: <b>🌾 Villager · 🫵 Thief · 🔮 Role · 💎 Stone</b></>,
+  seats: <>Tap anyone to say <b>🌾 Villager, 🫵 Thief, 🔮 Role or 💎 Stone</b> — true or a lie. Tap <b>yourself</b> for quick lines.</>,
+};
+/** tap your own seat: lines anyone says at a real table (designer 2026-10-09) */
+const QUICK_LINES = ["🙋 Not me!", "🌾 I'm with the village", "🪨 I have no Stone", "⏳ Wait"];
+const isBot = (name: string) => /🤖$/.test(name);
+
+/** a first-time tip: shown once per phone, gone on ✕ or once you do the thing */
+function Tip({ text, onDone }: { text: React.ReactNode; onDone: () => void }) {
   return (
-    <button type="button" onClick={onOpen} aria-label={now ? `Live: ${line(now)}. Tap for everything that happened` : "Live updates"}
-      className="relative z-20 mx-3 mt-1 flex h-[46px] shrink-0 items-center gap-2.5 rounded-xl border border-brass/30 bg-[#170d06] px-3 text-left shadow-[0_6px_14px_-6px_rgba(0,0,0,.8)]">
-      <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-crimson-deep/80 px-2 py-0.5 font-[family-name:var(--font-engraved)] text-[10px] font-bold uppercase tracking-[0.18em] text-ink">
-        <span className="live-dot h-1.5 w-1.5 rounded-full bg-ink" aria-hidden />Live
-      </span>
-      <span className="flex min-w-0 flex-1 flex-col leading-tight">
-        {now ? <span key={now.n} className="stage-in truncate text-[14px] font-semibold text-stock">{line(now)}</span>
-          : <span className="truncate text-[14px] text-stock/60">The game is on — watch here</span>}
-        {before && <span key={before.n} className="truncate text-[12px] text-stock/50">{line(before)}</span>}
-      </span>
+    <button type="button" onClick={onDone} className="stage-in mx-3 mb-2 flex min-h-11 items-center gap-2 rounded-xl border border-jade/60 bg-jade-deep/40 px-3 text-left text-[14px] leading-snug text-jade-soft">
+      <span className="flex-1">{text}</span>
+      <span aria-label="Got it" className="text-[16px]">✕</span>
     </button>
+  );
+}
+
+// ---------------------------------------------------------------- what's been said about each seat, and your own marks
+type Mark = "trust" | "sus" | "unsure";
+const MARK: Record<Mark, { label: string; glyph: string; dot: string }> = {
+  trust: { label: "trusted", glyph: "✓", dot: "bg-jade text-card-ink" },
+  sus: { label: "suspect", glyph: "!", dot: "bg-crimson text-ink" },
+  unsure: { label: "unsure", glyph: "?", dot: "bg-[#f0a32e] text-card-ink" },
+};
+interface SaidAbout { accuse: number; trust: number; role?: string; stone?: boolean }
+/** every public claim about a seat: how often called a thief, how often vouched for, the last role named for them */
+function saidAbout(v: PlayerView): Record<number, SaidAbout> {
+  const out: Record<number, SaidAbout> = {};
+  for (const e of v.events) {
+    if (e.type !== "claim" || e.to !== "all") continue;
+    const t = e.data?.target as number | undefined;
+    if (t === undefined) continue;
+    const a = (out[t] ??= { accuse: 0, trust: 0 });
+    if (e.data?.kind === "kundli") a.role = String(e.data?.role ?? "");
+    else if (e.data?.kind === "stone") a.stone = Boolean(e.data?.has);
+    else if (e.data?.side === "T") a.accuse++;
+    else a.trust++;
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- turn alerts
+/** 🔔 a push when it's your move and your phone is on something else (lib/alerts.ts) */
+function AlertsToggle({ code, token, on }: { code: string; token: string; on: boolean }) {
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const support = alertSupport();
+  const row = "flex min-h-12 items-center gap-3 rounded-2xl border border-brass/40 px-4 text-left text-[14px] text-stock disabled:opacity-60";
+  if (support === "no") return null;
+  if (support === "home-screen")
+    return <p className="rounded-2xl border border-brass/30 px-4 py-3 text-[13px] text-stock/75">🔔 For turn alerts on iPhone: Share → <b>Add to Home Screen</b>, then open the game from there.</p>;
+  const flip = async () => {
+    setBusy(true); setNote(null);
+    try {
+      if (on) await disableAlerts(code, token);
+      else if (!(await enableAlerts(code, token))) setNote("Alerts are blocked — allow notifications for this site in your browser.");
+    } catch { setNote("Couldn't turn alerts on here."); }
+    setBusy(false);
+  };
+  return (
+    <>
+      <button type="button" disabled={busy} aria-pressed={on} onClick={flip} className={row}>
+        <span className="text-[18px]" aria-hidden>{on ? "🔔" : "🔕"}</span>{on ? "Turn alerts on" : "Turn alerts off"}
+      </button>
+      {note && <p role="alert" className="text-[13px] text-crimson-soft">{note}</p>}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------- learn by playing
+/** The coach's line for this moment of a guided first game (designer 2026-10-09, option A). One line at a time, in
+ *  the order a new player meets things; each is shown until its moment passes, then never again. */
+function coachFor(v: PlayerView, seen: string[], solo = false): { id: string; text: React.ReactNode } | null {
+  const d = v.decision;
+  const me = v.me.seat;
+  const stone = v.me.hand.some((c) => c === "STONE_1" || c === "STONE_2");
+  const read = v.events.some((e) => e.type === "kundli_private" && Array.isArray(e.to) && e.to.includes(me));
+  const steps: [string, boolean, React.ReactNode][] = [
+    ["over", v.winner !== null, <>That&rsquo;s the game! Tap <b>Play again</b> for another — or go back and <b>play with friends</b>.</>],
+    ["final", v.phase.startsWith("final") && d?.kind === "vote", <>The last vote. Vote out the player you think is a <b>thief holding a Stone</b> — their cards go to the village.</>],
+    ["surrender", d?.kind === "surrender", <>The rounds are over. <b>Surrender your Stone</b> to the village — a thief holding one wins it for the thieves.</>],
+    ["vote", d?.kind === "vote", <>Tap the player you think is a <b>thief</b>. You can change your vote until the clock runs out.</>],
+    ["debate", d?.kind === "debate", <>A <b>Faisla</b>! Everyone talks. Say what you know, then tap <b>Ready to vote</b>.</>],
+    ["tell", read && !d, <>Only <b>you</b> saw that role. Tell the table — tap their seat → <b>🌾 Villager · 🫵 Thief · 🔮 Role</b>. Or keep it secret.</>],
+    ["turn", d?.kind === "turn", <>Your turn! The two <b>glowing cards</b> are a pair — tap <b>Play</b> to use its power. Or pass.</>],
+    ["steps", Boolean(d) && d?.kind !== "turn", <>Follow the steps under your cards — pick a player, then the cards you pass on.</>],
+    ["stone", stone, <>💎 You hold a <b>Stone</b>. Keep it away from thieves — at the end both Stones must be with villagers.</>],
+    // THE SCREEN TOUR (designer 2026-10-09: "every feature should be explained"): while others play, one thing at a time
+    ...TOUR.filter(([id]) => !(solo && id === "voice")).map(([id, text]) => [id, !d && v.phase.startsWith("turn"), text] as [string, boolean, React.ReactNode]),
+  ];
+  const s = steps.find(([id, when]) => when && !seen.includes(id));
+  return s ? { id: s[0], text: s[2] } : null;
+}
+
+/** the screen, one feature at a time — also listed in How to play ("The screen") */
+export const TOUR: [string, React.ReactNode][] = [
+  ["centre", <>The <b>middle of the table</b> is its diary: every move, claim and vote, newest at the bottom. Tap it to see everything.</>],
+  ["claims", <>Tap any player to tell the table <b>🌾 Villager · 🫵 Thief · 🔮 Role · 💎 Stone</b> — true or a lie. Bots listen.</>],
+  ["marks", <>In that menu, <b>Mark ✓ ! ?</b> is your private note on a player. Only you see it.</>],
+  ["counts", <>Under a name: <b>🫵</b> times called a thief, <b>🌾</b> called a villager, <b>💎✓/✗</b> said to hold a Stone or not.</>],
+  ["badges", <>On each player: the <b>number</b> is cards held, the <b>dots</b> are their votes, <b>💤</b> means away.</>],
+  ["self", <>Tap <b>yourself</b> for quick lines like &ldquo;Not me!&rdquo;</>],
+  ["react", <>From a player&rsquo;s menu, throw <b>🍅 😂 🔥</b> — or <b>🤫 whisper</b> to just them, once a round.</>],
+  ["voice", <>Your <b>mic is on</b> — just talk. The 🎙 button at the top mutes you.</>],
+  ["clock", <>The <b>circle at the top right</b> is the clock for the move being made.</>],
+  ["history", <>The <b>clock-arrow</b> at the top shows everything that happened so far.</>],
+  ["menu", <><b>☰ Menu</b>: hold to peek at your role, turn alerts, sound and music.</>],
+];
+
+function Coach({ text, onNext, onSkip }: { text: React.ReactNode; onNext: () => void; onSkip: () => void }) {
+  return (
+    <div className="stage-in mx-3 mb-1 rounded-2xl border-2 border-[#f0a32e]/80 bg-[#2a1a08] px-3 pb-1 pt-2 text-[15px] leading-snug text-stock shadow-[0_8px_20px_-8px_rgba(0,0,0,.8)]" role="status">
+      <p><span aria-hidden className="mr-1">🧑‍🏫</span>{text}</p>
+      <div className="flex justify-end gap-4 text-[13px] font-semibold">
+        <button type="button" onClick={onSkip} className="min-h-9 text-stock/60 underline underline-offset-2">Skip tutorial</button>
+        <button type="button" onClick={onNext} className="min-h-9 text-[#f3c66b]">Got it ›</button>
+      </div>
+    </div>
   );
 }

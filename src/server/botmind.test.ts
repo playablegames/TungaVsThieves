@@ -38,9 +38,9 @@ describe("bot minds", () => {
 
   it("speak at the moments that matter: a Faisla, an elimination, the end", () => {
     const texts = games.flatMap((g) => g.batches.flat().map((l) => l.text));
-    expect(texts.some((t) => /Faisla bulaya/.test(t))).toBe(true);
-    expect(texts.some((t) => /gaon wala tha|main chor tha/i.test(t))).toBe(true);
-    expect(texts.some((t) => /jeet gaye|jeet gaya/.test(t))).toBe(true);
+    expect(texts.some((t) => /I called the Faisla/.test(t))).toBe(true);
+    expect(texts.some((t) => /I was a villager|I was a thief/i.test(t))).toBe(true);
+    expect(texts.some((t) => /village wins|thieves win/i.test(t))).toBe(true);
   });
 
   it("a villager bot that saw a thief in its Kundli says so and votes for them", () => {
@@ -52,7 +52,7 @@ describe("bot minds", () => {
       const reader = (e.to as number[])[0], thief = e.data!.target as number;
       const s: GameState = { ...g.s, events: g.s.events.slice(0, e.n + 1), players: g.s.players.map((p) => ({ ...p, alive: true })) };
       expect(botVote(s, reader, 1, fixed(3))).toBe(thief);
-      expect(debateLine(mindOf(s, reader, 1), false, fixed(3))).toMatch(new RegExp(`${g.s.players[thief].name}.*(CHOR|chor)`));
+      expect(debateLine(mindOf(s, reader, 1), false, fixed(3))).toMatch(new RegExp(`${g.s.players[thief].name}.*(THIEF|thief)`));
       checked++;
     }
     expect(checked).toBeGreaterThan(3);
@@ -103,9 +103,9 @@ describe("bot minds", () => {
     for (const g of games) for (const bot of g.bots) {
       const s: GameState = { ...g.s, players: g.s.players.map((p) => (p.seat === bot ? { ...p, alive: true, hand: ["STONE_1", "FAISLA", "TALASHI"] } : p)) };
       const line = debateLine(mindOf(s, bot, 3), true, fixed(2));
-      if (/CHOR hai|chor hai, Kundli|Mujh pe shak\?|Galat aadmi/.test(line)) continue; // a stronger priority spoke first
-      if (s.players[bot].side === "T") { expect(line).not.toMatch(/Stone mere paas hai|Ek Stone mere paas/); thief++; }
-      else { expect(line).toMatch(/Stone mere paas/); villager++; }
+      if (/a THIEF|is a thief, the Kundli|^Me\? I'm a villager|wrong person/.test(line)) continue; // a stronger priority spoke first
+      if (s.players[bot].side === "T") { expect(line).not.toMatch(/I have a Stone|One Stone is safe with me/); thief++; }
+      else { expect(line).toMatch(/I have a Stone|One Stone is safe with me/); villager++; }
     }
     expect(villager).toBeGreaterThan(5);
     expect(thief).toBeGreaterThan(2);

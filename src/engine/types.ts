@@ -80,6 +80,8 @@ export interface GameEvent {
 
 export interface GameState {
   seed: number;
+  /** PLAY AGAIN (2026-10-09): the table code the same group moved on to — this game's log stays where it was */
+  next?: string;
   rng: number;
   players: Player[];
   deck: Card[];
@@ -111,6 +113,8 @@ export interface GameState {
   /** BALANCE PROBE ONLY: show every eliminated player's role to the table (the old way), to measure what hiding costs.
    *  The game never sets it. */
   publicRoles?: boolean;
+  /** LEARN BY PLAYING (2026-10-09): a guided first game — the phone shows a coach; the rules are the same */
+  tutorial?: boolean;
   deadOrder: number[];
   rolesInPlay: string[];
   events: GameEvent[];

@@ -28,15 +28,24 @@ function rate(n: number, thieves: number, rounds: number, skill: Skill, games: n
   return (100 * wins) / games;
 }
 
-console.log("players | today (T, rounds → Tunga%) | best (T, rounds → Tunga%) | casual · sharp at best | all options tried");
+// (designer 2026-10-09) ROUNDS FIXED AT 3; thieves chosen per count by the mean distance from TARGET across all three
+// skills (casual = score-nudging, average and sharp = exact deduction)
+const SK = [SKILLS.casual, SKILLS.average, SKILLS.sharp];
+const picked: Record<number, [number, number, number]> = {};
+console.log("players | today | best (casual / average / sharp) | all options (mean)");
 for (let n = lo; n <= hi; n++) {
   const [, t0, r0] = ROLE_TABLE[n];
-  const tried: { t: number; r: number; w: number }[] = [];
-  for (let t = 1; t <= Math.ceil(n / 2) - 1; t++) for (const r of [2, 3]) tried.push({ t, r, w: rate(n, t, r, SKILLS.average, GAMES) });
-  const today = tried.find((x) => x.t === t0 && x.r === r0);
-  const best = [...tried].sort((a, b) => Math.abs(a.w - TARGET) - Math.abs(b.w - TARGET))[0];
-  const cas = rate(n, best.t, best.r, SKILLS.casual, GAMES), shp = rate(n, best.t, best.r, SKILLS.sharp, GAMES);
-  const f = (x: { t: number; r: number; w: number }) => `${x.t}T ${x.r}r → ${Math.round(x.w)}%`;
-  console.log(`${n}p | ${today ? f(today) : `${t0}T ${r0}r → ?`} | ${f(best)} | ${Math.round(cas)}% · ${Math.round(shp)}% | ${tried.map(f).join(", ")}`);
+  const tried: { t: number; ws: number[]; m: number }[] = [];
+  for (let t = 1; t <= Math.ceil(n / 2) - 1; t++) {
+    const ws = SK.map((k) => rate(n, t, 3, k, GAMES));
+    tried.push({ t, ws, m: ws.reduce((a, b) => a + b, 0) / ws.length });
+  }
+  const dist = (x: { ws: number[] }) => x.ws.reduce((a, w) => a + Math.abs(w - TARGET), 0);
+  const best = [...tried].sort((a, b) => dist(a) - dist(b))[0];
+  picked[n] = [n - best.t, best.t, 3];
+  const f = (x: { t: number; ws: number[] }) => `${x.t}T ${x.ws.map((w) => Math.round(w)).join("/")}`;
+  console.log(`${n}p | was ${t0}T ${r0}r | ${f(best)} | ${tried.map((x) => `${x.t}T ${Math.round(x.m)}%`).join(", ")}`);
 }
-console.log(`\n${GAMES} games per option (±${Math.round(100 / Math.sqrt(GAMES))} points), average bots, roles hidden. Target ${TARGET}%.`);
+console.log(`
+${GAMES} games per option per skill (±${Math.round(100 / Math.sqrt(GAMES))} points), roles hidden, 3 rounds. Target ${TARGET}%.`);
+console.log("PICKED", JSON.stringify(picked));

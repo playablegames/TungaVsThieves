@@ -6,11 +6,13 @@ import { apply, closeVote, start, waitingOn } from "@/engine/engine";
 import { botAction, defaultAction } from "@/engine/decisions";
 import { botTalk, botVote } from "./botmind";
 import { pushBotClaim } from "./belief";
+import { hear } from "./hear";
+import { sendPush, type Alert } from "./push";
 import { MIN_PLAYERS, ROLE_TABLE, THIEF_ROLES } from "@/engine/setup";
 import { RuleError, type Action, type Card, type GameState } from "@/engine/types";
 import { viewFor, type PlayerView } from "@/engine/view";
 import { LAST_WORDS_MS, PACE, holdFor } from "@/lib/beats";
-import { WHISPER_MAX_AUDIO, encodeWhisper, isWhisper, redactWhisper, decodeWhisper, type WhisperBody } from "@/lib/whisper";
+import { CAPTION_PREFIX, isCaption, WHISPER_MAX_AUDIO, encodeWhisper, isWhisper, redactWhisper, decodeWhisper, type WhisperBody } from "@/lib/whisper";
 import { ping, store, type ChatMessage, type GameRow, type Timers } from "./store";
 
 export class HttpError extends Error {
@@ -64,11 +66,57 @@ function deadlineFor(state: GameState, timers: Timers): number | null {
   return Date.now() + secs * 1000;
 }
 
+/** TURN ALERTS (2026-10-09): a player who must now decide, whose phone has switched away from the game, gets a web
+ *  push — "Your turn", "Faisla — talk, then vote", "Vote now". Never for bots or a seat a stand-in plays. */
+async function alertNewlyWaiting(row: GameRow, before: number[]) {
+  const s = row.state;
+  if (!s || s.phase.kind === "over") return;
+  const fresh = waitingOn(s).filter((x) => !before.includes(x));
+  const ph = s.phase;
+  const body = ph.kind === "turn" ? "Your turn — play a pair or pass."
+    : ph.kind === "vote" && ph.debate ? "Faisla! Talk it out, then vote."
+    : ph.kind === "vote" ? "Vote now — who goes out?"
+    : "Your move.";
+  const gone: number[] = [];
+  await Promise.all(fresh.map(async (seat) => {
+    const p = row.lobby[seat];
+    if (!p || p.bot || p.away || !p.push || !p.hidden) return;
+    const a: Alert = { title: "Tunga vs Thieves", body, url: `/g/${row.code}`, tag: `tunga-${row.code}` };
+    if (!(await sendPush(p.push, a))) gone.push(seat);
+  }));
+  if (gone.length) await mutate(row.code, (r) => { for (const x of gone) if (r.lobby[x]) r.lobby[x].push = null; return r; }).catch(() => {});
+}
+
+/** A phone turns its alerts on or off, or tells the table it switched away / came back. A write only when it changes. */
+export async function setAlerts(code: string, token: string | null, body: { sub?: unknown; hidden?: unknown }) {
+  const row = await load(code);
+  const seat = seatOf(row, token);
+  const p = row.lobby[seat];
+  const sub = body.sub === undefined ? undefined : body.sub === null ? null : body.sub as GameRow["lobby"][number]["push"];
+  if (sub && (typeof sub.endpoint !== "string" || !sub.endpoint.startsWith("https://") || !sub.keys?.p256dh || !sub.keys?.auth)) throw new HttpError(400, "Bad subscription");
+  const hidden = body.hidden === undefined ? undefined : Boolean(body.hidden);
+  if ((sub === undefined || JSON.stringify(sub) === JSON.stringify(p.push ?? null)) && (hidden === undefined || hidden === Boolean(p.hidden))) return;
+  await mutate(code, (r) => {
+    const q = r.lobby[seatOf(r, token)];
+    if (sub !== undefined) q.push = sub;
+    if (hidden !== undefined) q.hidden = hidden;
+    return r;
+  });
+}
+
 /** read-modify-write with optimistic concurrency; retried on a lost race */
 /** A state change at a table with bots: after it lands, the bots say what they make of it (botmind). */
 async function play(code: string, f: (row: GameRow) => GameRow): Promise<GameRow> {
   let from = 0;
-  const next = await mutate(code, (row) => { from = row.state?.events.length ?? 0; return f(row); });
+  let waitingBefore: number[] = [];
+  const next = await mutate(code, (row) => {
+    from = row.state?.events.length ?? 0;
+    waitingBefore = row.state ? waitingOn(row.state) : [];
+    const out = f(row);
+    botsSayWhatTheyFound(out, from);
+    return out;
+  });
+  await alertNewlyWaiting(next, waitingBefore);
   const bots = next.lobby.flatMap((p, seat) => (p.bot ? [seat] : []));
   if (!next.state || !bots.length) return next;
   const lines = botTalk(next.state, from, bots, next.state.seed, Math.random);
@@ -153,15 +201,75 @@ export async function renameSeat(code: string, token: string | null, index: unkn
   });
 }
 
+/** The host takes a seat away in the lobby — a bot, or a player who left or shouldn't be there (2026-10-09). */
 export async function removeBot(code: string, token: string | null, index: unknown) {
   await mutate(code, (row) => {
-    if (row.hostToken !== token) throw new HttpError(403, "Only the host can remove bots");
+    if (row.hostToken !== token) throw new HttpError(403, "Only the host can remove players");
     if (row.status !== "lobby") throw new HttpError(409, "This game has already started");
     const i = Number(index);
-    if (!row.lobby[i]?.bot) throw new HttpError(400, "That seat isn't a bot");
+    if (!row.lobby[i]) throw new HttpError(400, "No such seat");
+    if (row.lobby[i].token === row.hostToken) throw new HttpError(400, "The host can't remove themselves");
     row.lobby.splice(i, 1);
     return row;
   });
+}
+
+/** LEARN BY PLAYING (designer 2026-10-09, option A — "the game isn't understandable"): a guided first game against 5
+ *  bots, started at once. The deal is CHOSEN so the coach has something to teach on turn one: the player is a villager,
+ *  sits in the first seat to act, and holds a Kundli pair. Same rules as any game; the clocks are longer. */
+export const TUTORIAL_BOTS = 5;
+const TUTORIAL_TIMERS: Timers = { turn: 180, vote: 120, elim: 120, debate: 120 };
+export async function createTutorial(name: unknown) {
+  const token = newToken();
+  const human = { name: cleanName(name), token };
+  const bots = BOT_NAMES.slice(0, TUTORIAL_BOTS).map((n) => ({ name: `${n} 🤖`, token: newToken(), bot: true }));
+  // the first seat to act is seat 0
+  const lobby = [human, ...bots];
+  const names = lobby.map((p) => p.name);
+  let first: GameState | null = null;
+  for (let seed = 1; seed < 200_000 && !first; seed++) {
+    const s = start(names, seed);
+    const me = s.players[0];
+    if (me.side === "V" && me.hand.filter((c) => c === "KUNDLI").length >= 2) first = s;
+  }
+  if (!first) first = start(names, randomInt(2 ** 31));
+  first.voteUntilClock = true;
+  first.tutorial = true;
+  for (let i = 0; i < 10; i++) {
+    const row: GameRow = {
+      code: newCode(), version: 1, status: "lobby", hostToken: token, lobby,
+      state: null, deadline: null, timers: TUTORIAL_TIMERS, createdAt: new Date().toISOString(),
+    };
+    if (!(await store.create(row))) continue;
+    await play(row.code, (r) => {
+      const next = commitState(r, structuredClone(first!));
+      if (next.deadline !== null) next.deadline += INTRO_MS;
+      return next;
+    });
+    return { code: row.code, token };
+  }
+  throw new HttpError(500, "Could not allocate a room code");
+}
+
+/** PLAY AGAIN (2026-10-09, Among Us / Jackbox): the host takes the same group — players and bots, same names, same
+ *  phones — to a fresh table. A new code keeps the finished game's log intact; the old table points at the new one,
+ *  and every phone follows it. Calling it twice returns the same table. */
+export async function rematch(code: string, token: string | null): Promise<{ code: string }> {
+  const row = await load(code);
+  if (row.hostToken !== token) throw new HttpError(403, "Only the host can start the next game");
+  if (row.status !== "over" || !row.state) throw new HttpError(409, "The game isn't over yet");
+  if (row.state.next) return { code: row.state.next };
+  for (let i = 0; i < 10; i++) {
+    const fresh: GameRow = {
+      code: newCode(), version: 1, status: "lobby", hostToken: row.hostToken,
+      lobby: row.lobby.map((p) => ({ name: p.name, token: p.token, ...(p.bot ? { bot: true } : {}), ...(p.push ? { push: p.push } : {}) })),
+      state: null, deadline: null, timers: row.timers, createdAt: new Date().toISOString(),
+    };
+    if (!(await store.create(fresh))) continue;
+    const moved = await mutate(code, (r) => { if (r.state && !r.state.next) r.state.next = fresh.code; return r; });
+    return { code: moved.state!.next! };
+  }
+  throw new HttpError(500, "Could not allocate a room code");
 }
 
 export async function startGame(code: string, token: string | null) {
@@ -338,7 +446,7 @@ export interface ClientState {
   code: string;
   version: number;
   status: GameRow["status"];
-  you: { seat: number; name: string; host: boolean; away: boolean };
+  you: { seat: number; name: string; host: boolean; away: boolean; alerts: boolean };
   lobby: { names: string[]; bots: boolean[]; roleTable: Record<number, [number, number, number]>; max: number } | null;
   view: PlayerView | null;
   deadline: number | null;
@@ -351,6 +459,12 @@ export interface ClientState {
   floor: { seat: number; until: number } | null;
   /** who has already had the floor in this debate */
   floorUsed: number[];
+  /** which lobby seat is the host's (seats are shuffled at the start, so it isn't always 0) */
+  host: number;
+  /** seats a stand-in is playing for — everyone sees 💤 on them */
+  away: number[];
+  /** PLAY AGAIN: the table the group moved on to */
+  next: string | null;
   /** LAST WORDS: the player just put out, speaking until … */
   lastWords: { seat: number; until: number } | null;
 }
@@ -362,7 +476,7 @@ export async function getState(code: string, token: string | null, sinceMsg: num
     code: row.code,
     version: row.version,
     status: row.status,
-    you: { seat, name: row.lobby[seat].name, host: row.hostToken === token, away: Boolean(row.lobby[seat].away) },
+    you: { seat, name: row.lobby[seat].name, host: row.hostToken === token, away: Boolean(row.lobby[seat].away), alerts: Boolean(row.lobby[seat].push) },
     lobby: row.status === "lobby" ? { names: row.lobby.map((p) => p.name), bots: row.lobby.map((p) => Boolean(p.bot)), roleTable: ROLE_TABLE, max: ONLINE_MAX_PLAYERS } : null,
     view: row.state ? viewFor(row.state, seat) : null,
     deadline: row.deadline,
@@ -377,6 +491,9 @@ export async function getState(code: string, token: string | null, sinceMsg: num
     floor: row.state?.floor && row.state.floor.until > Date.now() ? { seat: row.state.floor.seat, until: row.state.floor.until } : null,
     floorUsed: row.state?.floor?.used ?? [],
     lastWords: row.state?.lastWords && row.state.lastWords.until > Date.now() ? row.state.lastWords : null,
+    host: row.lobby.findIndex((p) => p.token === row.hostToken),
+    away: row.lobby.flatMap((p, i) => (p.away ? [i] : [])),
+    next: row.state?.next ?? null,
   };
 }
 
@@ -388,20 +505,35 @@ export async function chat(code: string, token: string | null, text: unknown) {
   const s = row.state;
   if (s && s.phase.kind !== "over" && !s.players[seat].alive) throw new HttpError(403, "Eliminated players stay silent");
   await store.addMessage(row.code, { seat, name: row.lobby[seat].name, text: t, phase: s ? s.phase.kind : "lobby" });
-  await ping(row.code, row.version);
+  // bots hear captions: a plain accusation / vouch / role read becomes the claim a tap would make — for the bots only
+  // (humans already read the caption), so the table never sees it twice
+  const botSeats = row.lobby.flatMap((p, i) => (p.bot ? [i] : []));
+  const h = s && s.phase.kind !== "over" && isCaption(t) && botSeats.length
+    ? hear(t.slice(CAPTION_PREFIX.length), seat, s.players.map((p) => ({ name: p.name, alive: p.alive })), s.rolesInPlay) : null;
+  if (!h) { await ping(row.code, row.version); return; }
+  await play(code, (r) => {
+    const st = r.state;
+    if (!st || st.phase.kind === "over" || !st.players[seat].alive || !st.players[h.target]?.alive) return r;
+    st.events.push({ n: st.events.length, type: "claim", to: botSeats, msg: `${st.players[seat].name} (said): "${t.slice(CAPTION_PREFIX.length)}"`,
+      data: { seat, kind: h.kind, target: h.target, role: h.role ?? null, side: h.side, ...(h.kind === "stone" ? { has: h.has } : {}), heard: true } });
+    r.state = st;
+    return r;
+  });
 }
 
 /** A claim out loud — "I read X's Kundli: Lootera", "X is a thief", "X is with the village". A public event the
  *  whole table (and every bot) reads; it changes nothing in the game itself, and a claim may be a lie. */
-export type ClaimKind = "kundli" | "accuse" | "trust";
-export async function claim(code: string, token: string | null, body: { kind?: unknown; target?: unknown; role?: unknown }) {
+export type ClaimKind = "kundli" | "accuse" | "trust" | "stone";
+/** (2026-10-09) "stone": after a Talashi (or any time — a claim may be a lie) — "X has a Stone" / "X has no Stone".
+ *  It says nothing about sides, so `side` is null; the seat shows it as 💎✓ / 💎✗. */
+export async function claim(code: string, token: string | null, body: { kind?: unknown; target?: unknown; role?: unknown; has?: unknown }) {
   await play(code, (row) => {
     const s = row.state;
     if (!s || s.phase.kind === "over") throw new HttpError(409, "No game in progress");
     const seat = seatOf(row, token);
     if (!s.players[seat].alive) throw new HttpError(403, "Eliminated players stay silent");
     const kind = String(body.kind) as ClaimKind;
-    if (!["kundli", "accuse", "trust"].includes(kind)) throw new HttpError(400, "Unknown claim");
+    if (!["kundli", "accuse", "trust", "stone"].includes(kind)) throw new HttpError(400, "Unknown claim");
     const target = Number(body.target);
     if (!s.players[target]?.alive || target === seat) throw new HttpError(400, "Pick another living player");
     let role: string | undefined;
@@ -409,14 +541,40 @@ export async function claim(code: string, token: string | null, body: { kind?: u
       role = String(body.role ?? "");
       if (!s.rolesInPlay.includes(role)) throw new HttpError(400, "Name a role in this game");
     }
-    const side = kind === "accuse" ? "T" : kind === "trust" ? "V" : THIEF_ROLES.includes(role!) ? "T" : "V";
     const me = s.players[seat].name, them = s.players[target].name;
-    const msg = kind === "kundli" ? `${me}: "I read ${them}'s Kundli — ${role}, ${side === "T" ? "a thief" : "a villager"}."`
-      : kind === "accuse" ? `${me}: "${them} is a thief."` : `${me}: "${them} is with the village."`;
+    if (kind === "stone") {
+      pushStoneClaim(s, seat, target, Boolean(body.has));
+      row.state = s;
+      return row;
+    }
+    const side = kind === "accuse" ? "T" : kind === "trust" ? "V" : THIEF_ROLES.includes(role!) ? "T" : "V";
+    const msg = kind === "kundli" ? `${me}: "${them} is ${role} — ${side === "T" ? "a thief" : "a villager"}."`
+      : kind === "accuse" ? `${me}: "${them} is a thief."` : `${me}: "${them} is a villager."`;
     s.events.push({ n: s.events.length, type: "claim", to: "all", msg, data: { seat, kind, target, role: role ?? null, side } });
     row.state = s;
     return row;
   });
+}
+
+/** "X has a Stone" / "X has no Stone", on the table for everyone */
+export function pushStoneClaim(s: GameState, seat: number, target: number, has: boolean) {
+  const me = s.players[seat].name, them = s.players[target].name;
+  s.events.push({ n: s.events.length, type: "claim", to: "all", msg: `${me}: "${them} ${has ? "has a Stone" : "has no Stone"}."`,
+    data: { seat, kind: "stone", target, has, role: null, side: null } });
+}
+
+/** a bot that just searched someone tells the table what it found — a villager truthfully, a thief sometimes lies */
+function botsSayWhatTheyFound(row: GameRow, from: number) {
+  const s = row.state;
+  if (!s) return;
+  for (const e of s.events.slice(from)) {
+    if (e.type !== "talashi_private") continue;
+    const actor = e.data?.seat as number, target = e.data?.target as number;
+    if (!row.lobby[actor]?.bot || !s.players[actor]?.alive || !s.players[target]?.alive) continue;
+    const found = ((e.data?.hand as string[]) ?? []).some((c) => c === "STONE_1" || c === "STONE_2");
+    const lie = s.players[actor].side === "T" && Math.random() < 0.4;
+    pushStoneClaim(s, actor, target, lie ? !found : found);
+  }
 }
 
 /** DEVELOPMENT ONLY — screen checks: give the caller a chosen hand and, if a turn is on, the turn. Refuses to run

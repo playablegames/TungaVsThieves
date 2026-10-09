@@ -1,10 +1,11 @@
 "use client";
-// Bot lines on the phone: shown one at a time on the centre stage (the speaking seat lights up), and — if the
-// player turns it on — read aloud by the phone's own voice (free, no AI). A plain external store so React never
+// Bot lines on the phone: one at a time, the speaking seat lights up. The words themselves go in the centre feed,
+// which also reads them aloud (lib/feed.ts). A plain external store so React never
 // sets state inside an effect.
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { ChatMessage } from "@/server/store";
 import { isSystemMessage } from "./whisper";
+import { hush } from "./speech";
 
 const SHOW_MS = 3400;
 const PREF = "tunga:botvoice";
@@ -17,10 +18,12 @@ class SpeechQueue {
   private current: Speech | null = null;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private listeners = new Set<() => void>();
-  voice = false;
+  /** read the table aloud (designer 2026-10-09: "no voice is heard") — ON unless this phone turned it off.
+   *  The reading itself happens in the table feed (lib/feed.ts → lib/speech.ts), one queue with the narrator. */
+  voice = true;
 
   constructor() {
-    try { this.voice = localStorage.getItem(PREF) === "on"; } catch {}
+    try { this.voice = localStorage.getItem(PREF) !== "off"; } catch {}
   }
 
   subscribe = (fn: () => void) => { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; };
@@ -43,33 +46,19 @@ class SpeechQueue {
   private next() {
     this.current = this.queue.shift() ?? null;
     if (this.current) {
-      this.speak(this.current);
       this.timer = setTimeout(() => this.next(), SHOW_MS);
     }
     this.emit();
   }
 
-  private speak(s: Speech) {
-    if (!this.voice || typeof speechSynthesis === "undefined") return;
-    const u = new SpeechSynthesisUtterance(`${s.name}: ${s.text}`.replace(/\p{Extended_Pictographic}/gu, ""));
-    const voices = speechSynthesis.getVoices();
-    u.voice = voices.find((v) => v.lang === "en-IN") ?? voices.find((v) => v.lang.startsWith("hi")) ?? voices.find((v) => v.lang.startsWith("en")) ?? null;
-    u.lang = u.voice?.lang ?? "en-IN";
-    // every bot sounds a little different
-    u.pitch = 0.75 + ((s.seat * 37) % 60) / 100;
-    u.rate = 0.95 + ((s.seat * 13) % 20) / 100;
-    speechSynthesis.cancel();
-    speechSynthesis.speak(u);
-  }
-
   setVoice(on: boolean) {
     this.voice = on;
     try { localStorage.setItem(PREF, on ? "on" : "off"); } catch {}
-    if (!on && typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
+    if (!on) hush();
     this.emit();
   }
 
-  dispose() { clearTimeout(this.timer); if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel(); }
+  dispose() { clearTimeout(this.timer); }
 }
 
 export function useBotSpeech(messages: ChatMessage[]) {
