@@ -350,6 +350,9 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
     say({ text, lang: "en-IN", pitch: 0.75 + ((seat * 37) % 60) / 100, rate: 0.95 + ((seat * 13) % 20) / 100 });
   }, [names, v.me.seat]);
   const caughtUp = shown >= (beats.at(-1)?.n ?? -1);
+  // (2026-10-09, "eliminated screen and whom to give vote collided"): your last decision waits until YOUR ejection has
+  // played — the full-screen ejection used to cover it and swallow the taps
+  const myExitPending = beats.some((b) => b.type === "eliminated" && b.target === v.me.seat && (b.n > shown || stage.current?.n === b.n));
   const feed = useFeed(seenAll, messages, v.ballots, names, caughtUp, onFresh);
   const [feedOpen, setFeedOpen] = useState(false);
   // PRIVATE MARKS (2026-10-09, Town of Salem's notepad / Clocktower's reminder tokens): your own ✓ ! ? on a seat —
@@ -509,7 +512,7 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
       </Ring>
       {v.me.alive && !solo && <TalkButton />}
       {/* the coach (a guided first game) or a first-time tip sits INSIDE the tray, so the cards never cover it */}
-      <Tray v={v} act={act} live={live} banner={coach
+      <Tray v={v} act={act} live={live} waitForExit={myExitPending} banner={coach
         ? <Coach key={coach.id} text={coach.text} onNext={() => setCoachSeen((xs) => [...xs, coach.id])} onSkip={() => setCoachOff(true)} />
         : tip ? <Tip key={tip} text={TIP_TEXT[tip]} onDone={() => seeTips(tip)} /> : null} />
       {whisperTo !== null && <WhisperSheet v={v} code={code} token={token} to={whisperTo} onClose={() => setWhisperTo(null)} />}
@@ -952,8 +955,9 @@ function Divider() {
 }
 
 /** "Your Cards": the tiles, and — when it's your move — the pair buttons or the next step. */
-function Tray({ v, act, live, banner = null }: { v: PlayerView; act: (a: Action) => void; live: Record<string, number> | null; banner?: React.ReactNode }) {
+function Tray({ v, act, live, banner = null, waitForExit = false }: { v: PlayerView; act: (a: Action) => void; live: Record<string, number> | null; banner?: React.ReactNode; waitForExit?: boolean }) {
   const d = v.decision;
+  const exitFirst = waitForExit && (d?.kind === "gift" || d?.kind === "handoff");
   if (d?.kind === "vote") return <>{banner && <div className="relative z-20">{banner}</div>}<Ballot v={v} mine={d.mine} live={live ?? {}} act={act} /></>;
   const inTray = d && d.kind !== "debate";
   return (
@@ -969,7 +973,8 @@ function Tray({ v, act, live, banner = null }: { v: PlayerView; act: (a: Action)
         </h2>
       </div>
       {!v.me.alive && <p className="text-center text-[12px] text-stock/60">Gone room — you hear the table; only the gone hear you.</p>}
-      {inTray ? <Decide key={v.phase} v={v} act={act} /> : v.me.alive && <HandRow cards={v.me.hand} />}
+      {exitFirst ? <p className="py-3 text-center font-display text-[16px] text-stock/80">Your last decision comes next…</p>
+        : inTray ? <Decide key={v.phase} v={v} act={act} /> : v.me.alive && <HandRow cards={v.me.hand} />}
     </section>
   );
 }
