@@ -22,7 +22,7 @@ describe("bots hear captions at a mixed table", () => {
     expect(heard[0].to).toEqual(bots);
     // the humans read the caption itself; the claim is not on their screens twice
     const asha = await getState(host.code, host.token, 0);
-    expect(asha.view!.events.some((e) => e.type === "claim")).toBe(false);
+    expect(asha.view!.events.some((e) => e.type === "claim" && e.data?.heard)).toBe(false);
     expect(asha.messages.some((m) => m.text.endsWith("Meera is a thief"))).toBe(true);
     // unclear speech is ignored
     await chat(host.code, vik.token, `${CAPTION_PREFIX}hmm I don't know`);

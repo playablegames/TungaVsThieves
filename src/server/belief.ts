@@ -314,6 +314,12 @@ export function botClaim(s: GameState, seat: number, seed: number, r: R, skill: 
     for (const o of outs) if (fresh("was", o.target)) return { kind: "was", ...o };
     for (const k of reads) if (k.side === "T" && fresh("kundli", k.target)) return { kind: "kundli", ...k };
     for (const k of reads) if (k.side === "V" && fresh("kundli", k.target) && r() < 0.5) return { kind: "kundli", ...k };
+    // (playtest LLE3Q 2026-10-09: no bot ever accused anyone) a villager says who it suspects when the suspicion stands
+    // out — well above the rest — the way a real player speaks up
+    const bel = beliefOf(s, seat, seed, skill);
+    const order = s.players.filter((p) => p.alive && p.seat !== seat).map((p) => p.seat).sort((x, y) => (bel.p.get(y) ?? 0) - (bel.p.get(x) ?? 0));
+    const [a, b] = order.map((x) => bel.p.get(x) ?? 0);
+    if (order.length && a >= 0.5 && a - (b ?? 0) >= 0.1 && fresh("accuse", order[0])) return { kind: "accuse", target: order[0], role: null, side: "T" };
     return null;
   }
   for (const o of outs) if (fresh("was", o.target) && r() < skill.lie) {
@@ -363,7 +369,8 @@ export function skilledAction(s: GameState, seat: number, seed: number, r: R, sk
   if (ph.kind === "vote" && ph.debate) return { type: "ready" };
   if (ph.kind === "vote") return { type: "vote", target: beliefVote(s, seat, seed, r, skill) };
   if (ph.kind === "surrender") return { type: "surrender", give: s.players[seat].side === "V" };
-  const a = randomAction(s, seat, r, skill.activity, true);
+  let a = randomAction(s, seat, r, skill.activity, true);
+  if (a.type === "play" && a.card !== "TEER_KAMAN") a = withReason(s, seat, seed, r, skill, a);
   if (a.type !== "play" || a.card !== "TEER_KAMAN") return a;
   const me = s.players[seat];
   const foes = [...readsOf(s, seat)].filter(([x, k]) => k.side !== me.side && s.players[x].alive);
@@ -380,4 +387,46 @@ export function skilledAction(s: GameState, seat: number, seed: number, r: R, sk
     }
   }
   return { type: "pass", pass: a.pass };
+}
+
+/** PLAYS WITH A REASON (playtest LLE3Q 2026-10-09: a Faisla in round 1 with no suspect; random targets). The pair the
+ *  random policy picked keeps its card, but:
+ *   · Faisla only when there is someone to vote out (a villager: a suspect who stands out; a thief: a villager the table
+ *     already suspects) — or in the last round. Otherwise the bot passes instead.
+ *   · Kundli reads the most suspected player not yet read (a thief: the one the table suspects least — a likely partner)
+ *   · Talashi searches whoever most likely holds a Stone it isn't sure of
+ *   · Hera Pheri: a thief steals from the likeliest Stone holder; a villager from the likeliest thief holding a Stone */
+function withReason(s: GameState, seat: number, seed: number, r: R, skill: Skill, a: Extract<Action, { type: "play" }>): Action {
+  const me = s.players[seat];
+  const thief = me.side === "T";
+  const others = s.players.filter((p) => p.alive && p.seat !== seat).map((p) => p.seat);
+  const bel = beliefOf(s, seat, seed, skill, thief);
+  const p = (x: number) => bel.p.get(x) ?? 0;
+  const best = (xs: number[], f: (x: number) => number) => [...xs].sort((x, y) => f(y) - f(x))[0];
+  const lastRound = s.round >= s.rounds;
+  switch (a.card) {
+    case "FAISLA": {
+      const top = best(others, p);
+      const ok = lastRound || (top !== undefined && (thief ? me.side !== s.players[top]?.side && p(top) >= 0.45 : p(top) >= 0.5));
+      return ok ? a : randomAction(s, seat, r, 0, true);
+    }
+    case "KUNDLI": {
+      const read = readsOf(s, seat);
+      const fresh = others.filter((x) => !read.has(x));
+      const pool = fresh.length ? fresh : others;
+      return { ...a, target: thief ? best(pool, (x) => -p(x)) : best(pool, p) };
+    }
+    case "TALASHI": {
+      const st = stoneOdds(s, seat, seed, skill);
+      const unsure = others.filter((x) => (st.get(x) ?? 0) > 0.02 && (st.get(x) ?? 0) < 0.98);
+      return { ...a, target: best(unsure.length ? unsure : others, (x) => st.get(x) ?? 0) };
+    }
+    case "HERA_PHERI": {
+      const st = stoneOdds(s, seat, seed, skill);
+      const withCards = others.filter((x) => s.players[x].hand.length > 0);
+      if (!withCards.length) return a;
+      return { ...a, target: thief ? best(withCards, (x) => st.get(x) ?? 0) : best(withCards, (x) => p(x) * (0.3 + (st.get(x) ?? 0))) };
+    }
+    default: return a;
+  }
 }

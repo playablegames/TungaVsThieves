@@ -120,6 +120,19 @@ async function play(code: string, f: (row: GameRow) => GameRow): Promise<GameRow
   const bots = next.lobby.flatMap((p, seat) => (p.bot ? [seat] : []));
   if (!next.state || !bots.length) return next;
   const lines = botTalk(next.state, from, bots, next.state.seed, Math.random);
+  // what a line asserts goes on the table as a claim — every bot reads it, the seat counts it (playtest LLE3Q)
+  const said = lines.flatMap((l) => (l.claims ?? []).map((c) => ({ seat: l.seat, c })));
+  if (said.length) await mutate(code, (r) => {
+    const st = r.state;
+    if (!st || st.phase.kind === "over") return r;
+    for (const { seat, c } of said) {
+      if (!st.players[c.target]) continue;
+      st.events.push({ n: st.events.length, type: "claim", to: "all", msg: `${st.players[seat].name}: ${c.kind === "stone" ? (c.has ? "has a Stone" : "no Stone") : c.side === "T" ? "a thief" : "a villager"} (${st.players[c.target].name})`,
+        data: { seat, kind: c.kind, target: c.target, role: c.role ?? null, side: c.side, ...(c.kind === "stone" ? { has: c.has } : {}), fromLine: true } });
+    }
+    r.state = st;
+    return r;
+  }).catch(() => {});
   for (const l of lines) await store.addMessage(next.code, { seat: l.seat, name: next.lobby[l.seat].name, text: l.text, phase: next.state.phase.kind });
   if (lines.length) await ping(next.code, next.version);
   return next;

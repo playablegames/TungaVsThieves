@@ -127,6 +127,7 @@ function rawBeat(e: GameEvent, names: string[]): Beat | null {
     case "whisper_private":
       return { ...base, title: e.msg, tone: "relic", big: false, hold: 900 };
     case "claim":
+      if (d?.fromLine) return null; // a bot's spoken line already says it (the claim is for the seat counts and the bots)
       return { ...base, title: e.msg, tone: d?.kind === "stone" ? "gold" : d?.side === "T" ? "lethal" : "vote", big: false, hold: 2200 };
     case "timeout":
       return { ...base, title: "Time ran out", detail: "The default was played for anyone still deciding.", tone: "neutral", big: false, hold: SMALL };

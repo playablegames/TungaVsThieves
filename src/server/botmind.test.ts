@@ -49,6 +49,8 @@ describe("bot minds", () => {
       // replay to the moment after the first Kundli read by a villager on a thief
       const e = g.s.events.find((x) => x.type === "kundli_private" && x.data?.side === "T" && Array.isArray(x.to) && g.s.players[x.to[0]].side === "V");
       if (!e) continue;
+      // the snapshot takes sides from the end of the game: a Dal Badal later would have moved them
+      if (g.s.events.some((x) => x.type === "dal_badal")) continue;
       const reader = (e.to as number[])[0], thief = e.data!.target as number;
       const s: GameState = { ...g.s, events: g.s.events.slice(0, e.n + 1), players: g.s.players.map((p) => ({ ...p, alive: true })) };
       expect(botVote(s, reader, 1, fixed(3))).toBe(thief);

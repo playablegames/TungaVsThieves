@@ -25,9 +25,14 @@
 import type { ActionCard, Card, GameEvent, GameState, Side } from "@/engine/types";
 import { viewFor, type PlayerView } from "@/engine/view";
 import { beliefVote } from "./belief";
+import { THIEF_ROLES } from "@/engine/setup";
 
 type R = () => number;
-export interface BotLine { seat: number; text: string }
+/** what a line ASSERTS, as a claim (playtest LLE3Q 2026-10-09: "Adi took my Stone! A thief, for sure." was chat only —
+ *  no other bot learned it and Adi's seat showed nothing). The server puts it on the table as a claim every bot reads
+ *  and the seat counts; the centre shows the line itself, not the claim twice. */
+export interface LineClaim { kind: "accuse" | "trust" | "kundli" | "was" | "stone"; target: number; side: Side | null; role?: string | null; has?: boolean }
+export interface BotLine { seat: number; text: string; claims?: LineClaim[] }
 interface Read { score: number; why: string | null }
 
 const pick = <T,>(r: R, xs: T[]): T => xs[Math.floor(r() * xs.length)];
@@ -178,7 +183,13 @@ const THREAT: Partial<Record<ActionCard, (t: string) => string>> = {
   HERA_PHERI: (t) => `${t}, I've got my eye on your cards.`,
 };
 
-export function debateLine(m: Mind, final: boolean, r: R): string {
+export function debateLine(m: Mind, final: boolean, r: R): string { return debate(m, final, r).text; }
+
+const T = (target: number, kind: LineClaim["kind"] = "accuse"): LineClaim => ({ kind, target, side: "T" });
+const V = (target: number, kind: LineClaim["kind"] = "trust"): LineClaim => ({ kind, target, side: "V" });
+
+function debate(m: Mind, final: boolean, r: R): { text: string; claim?: LineClaim | LineClaim[] } {
+  const say = (text: string, claim?: LineClaim) => ({ text, claim });
   const t = top(m);
   const tn = t ? m.name(t[0]) : "someone";
   // a villager who SAW a thief says so, every time
@@ -186,34 +197,34 @@ export function debateLine(m: Mind, final: boolean, r: R): string {
   if (seen.length) {
     const t0 = m.name(seen[0]);
     return m.known.get(seen[0])?.how === "swap"
-      ? pick(r, [`After the Dal Badal I know for sure — ${t0} is a THIEF. Everyone vote ${t0}!`, `I know the truth about ${t0} — a thief, I guarantee it.`])
-      : pick(r, [`I read ${t0}'s Kundli — a THIEF. Everyone vote ${t0}!`, `${t0} is a thief, the Kundli was clear. End of debate.`]);
+      ? say(pick(r, [`After the Dal Badal I know for sure — ${t0} is a THIEF. Everyone vote ${t0}!`, `I know the truth about ${t0} — a thief, I guarantee it.`]), T(seen[0], "kundli"))
+      : say(pick(r, [`I read ${t0}'s Kundli — a THIEF. Everyone vote ${t0}!`, `${t0} is a thief, the Kundli was clear. End of debate.`]), T(seen[0], "kundli"));
   }
   // a thief whose swap partner is a villager: that partner KNOWS — discredit them before they speak
   const partner = m.swapPartner !== null && aliveSeat(m, m.swapPartner) ? m.swapPartner : null;
   if (m.thief && partner !== null && m.known.get(partner)?.side === "V")
-    return pick(r, [`Don't trust ${m.name(partner)} — after the Dal Badal they'll falsely accuse me.`, `Watch, ${m.name(partner)} will call me a thief now. They're the real thief!`]);
+    return say(pick(r, [`Don't trust ${m.name(partner)} — after the Dal Badal they'll falsely accuse me.`, `Watch, ${m.name(partner)} will call me a thief now. They're the real thief!`]), T(partner));
   // a thief under suspicion turns it around
-  if (m.thief && m.suspected && t) return pick(r, [`Me? I'm a villager! The real thief is ${tn} — ${t[1].why ?? "look how quiet they are"}.`, `You're chasing the wrong person. Look at ${tn} — ${t[1].why ?? "they're the clever one"}.`]);
+  if (m.thief && m.suspected && t) return say(pick(r, [`Me? I'm a villager! The real thief is ${tn} — ${t[1].why ?? "look how quiet they are"}.`, `You're chasing the wrong person. Look at ${tn} — ${t[1].why ?? "they're the clever one"}.`]), T(t[0]));
   if (final) {
-    if (!m.thief && m.stones) return `I have a Stone, and I'm a villager. Who has the other Stone? Speak up!`;
-    if (m.thief && m.stones) return pick(r, [`I don't have a Stone. I suspect ${tn}.`, "The villagers must have the Stones… I certainly don't."]);
-    if (!m.thief) return `Last vote. Both Stones must end with the village — ${tn}, what are you holding?`;
+    if (!m.thief && m.stones) return say(`I have a Stone, and I'm a villager. Who has the other Stone? Speak up!`);
+    if (m.thief && m.stones) return say(pick(r, [`I don't have a Stone. I suspect ${tn}.`, "The villagers must have the Stones… I certainly don't."]));
+    if (!m.thief) return say(`Last vote. Both Stones must end with the village — ${tn}, what are you holding?`);
   }
   // Stones: a villager wants protection, a thief wants nobody to know
-  if (m.stones && r() < 0.6) return m.thief
+  if (m.stones && r() < 0.6) return say(m.thief
     ? pick(r, ["A Stone? Not me, I swear.", `I don't have a Stone. ${tn} might.`])
-    : pick(r, ["I have a Stone and I'm a villager — don't vote me out, that's how the village wins.", "One Stone is safe with me. Trust me."]);
-  if (t && t[1].score >= 2 && t[1].why) return pick(r, [`I suspect ${tn} — ${t[1].why}.`, `My vote goes to ${tn}. ${cap(t[1].why)}.`, `${tn}, explain this: ${t[1].why}.`]);
+    : pick(r, ["I have a Stone and I'm a villager — don't vote me out, that's how the village wins.", "One Stone is safe with me. Trust me."]));
+  if (t && t[1].score >= 2 && t[1].why) return say(pick(r, [`I suspect ${tn} — ${t[1].why}.`, `My vote goes to ${tn}. ${cap(t[1].why)}.`, `${tn}, explain this: ${t[1].why}.`]), T(t[0]));
   const threat = m.pairs.find((c) => THREAT[c]) ?? (m.thief && r() < 0.25 ? "TEER_KAMAN" : undefined);
-  if (threat && r() < 0.6) return THREAT[threat]!(tn);
+  if (threat && r() < 0.6) return say(THREAT[threat]!(tn));
   const vouch = m.thief ? m.sawThief : m.sawVillager;
   const clean = vouch.filter((x) => aliveSeat(m, x));
-  if (clean.length) return m.known.get(clean[0])?.how === "swap" ? `${m.name(clean[0])} is clean — the Dal Badal showed me.` : `${m.name(clean[0])} is clean, I read their Kundli.`;
-  if (t && r() < 0.4) return `I'm a little suspicious of ${tn}… not sure.`;
-  return pick(r, r() < 0.5
+  if (clean.length) return say(m.known.get(clean[0])?.how === "swap" ? `${m.name(clean[0])} is clean — the Dal Badal showed me.` : `${m.name(clean[0])} is clean, I read their Kundli.`, V(clean[0], "kundli"));
+  if (t && r() < 0.4) return say(`I'm a little suspicious of ${tn}… not sure.`);
+  return say(pick(r, r() < 0.5
     ? ["I'm a villager, I swear.", "Don't suspect me, I'm straight.", "I'm just playing my cards, friends."]
-    : ["Nothing certain yet… why is everyone so quiet?", "Something is off here.", "The quietest one is the thief.", "Think before you vote."]);
+    : ["Nothing certain yet… why is everyone so quiet?", "Something is off here.", "The quietest one is the thief.", "Think before you vote."]));
 }
 
 // ------------------------------------------------------------------ everything else
@@ -223,10 +234,11 @@ export function botTalk(s: GameState, from: number, bots: number[], seed: number
   const spoke = new Set<number>();
   const living = (x: number | null) => x !== null && Boolean(s.players[x]?.alive);
   const isBot = (x: number | null): x is number => x !== null && bots.includes(x);
-  const say = (x: number | null, text: string | null) => {
+  const say = (x: number | null, text: string | null, claim?: LineClaim | LineClaim[]) => {
     if (!isBot(x) || !text || out.length >= 3 || spoke.has(x)) return;
     spoke.add(x);
-    out.push({ seat: x, text });
+    const claims = claim === undefined ? [] : Array.isArray(claim) ? claim : [claim];
+    out.push({ seat: x, text, ...(claims.length ? { claims } : {}) });
   };
   const nm = (x: number | null) => (x === null ? "someone" : s.players[x]?.name ?? "?");
   const mind = (x: number) => mindOf(s, x, seed);
@@ -262,7 +274,7 @@ export function botTalk(s: GameState, from: number, bots: number[], seed: number
       case "faisla": {
         // the caller speaks first, then up to two more — S12
         const talkers = [actor, ...bots.filter((b) => b !== actor && living(b)).sort(() => r() - 0.5)].filter((b): b is number => isBot(b) && living(b)).slice(0, 3);
-        for (const b of talkers) say(b, b === actor ? `I called the Faisla. ${debateLine(mind(b), false, r)}` : debateLine(mind(b), false, r));
+        for (const b of talkers) { const l = debate(mind(b), false, r); say(b, b === actor ? `I called the Faisla. ${l.text}` : l.text, l.claim); }
         break;
       }
       // someone made a claim: the one it is aimed at answers; a villager bot may back a thief claim
@@ -271,10 +283,10 @@ export function botTalk(s: GameState, from: number, bots: number[], seed: number
         if (isBot(target) && living(target) && saysThief) {
           say(target, side(target) === "V"
             ? pick(r, ["Lies! I'm a villager.", `Wrong, ${nm(actor)}. I'm not a thief.`])
-            : pick(r, [`${nm(actor)} is lying — watch them!`, "I'm being framed."]));
+            : pick(r, [`${nm(actor)} is lying — watch them!`, "I'm being framed."]), side(target) === "T" && actor !== null ? T(actor) : undefined);
         } else if (saysThief && r() < 0.6) {
           const b = someBot([actor, target]);
-          if (b !== null && side(b) === "V") say(b, d?.kind === "kundli" ? `That's a Kundli read — ${nm(target)}, what do you say now?` : `Hmm, I suspect ${nm(target)} too.`);
+          if (b !== null && side(b) === "V") say(b, d?.kind === "kundli" ? `That's a Kundli read — ${nm(target)}, what do you say now?` : `Hmm, I suspect ${nm(target)} too.`, d?.kind === "kundli" || target === null ? undefined : T(target));
         }
         break;
       }
@@ -283,7 +295,7 @@ export function botTalk(s: GameState, from: number, bots: number[], seed: number
         if (isBot(target) && living(target) && r() < 0.6) say(target, pick(r, [`${nm(actor)} whispered something to me… 🤔`, "Psst? Okay, got it.", `Hmm, ${nm(actor)}, we'll see.`]));
         break;
       case "final_vote":
-        for (const b of bots.filter(living).sort(() => r() - 0.5).slice(0, 3)) say(b, debateLine(mind(b), true, r));
+        for (const b of bots.filter(living).sort(() => r() - 0.5).slice(0, 3)) { const l = debate(mind(b), true, r); say(b, l.text, l.claim); }
         break;
       // (2026-10-09) Talashi is private: a bot that searched says what it found as a Stone CLAIM (server/game.ts
       // botsSayWhatTheyFound) — on the table, on the seat, read aloud — not as a chat line here
@@ -302,7 +314,8 @@ export function botTalk(s: GameState, from: number, bots: number[], seed: number
         const tookStone = nxt?.type === "hera_pheri_private" && stonesIn(nxt.data?.taken) > 0;
         if (isBot(target)) say(target, tookStone
           ? (side(target) === "V" ? `${nm(actor)} took my Stone! A thief, for sure.` : pick(r, [`Hey ${nm(actor)}! Give my cards back!`, `I'll remember that Hera Pheri, ${nm(actor)}.`]))
-          : pick(r, [`Hey ${nm(actor)}! Give my cards back!`, `I'll remember that Hera Pheri, ${nm(actor)}.`, `${nm(actor)} grabs cards like a thief…`]));
+          : pick(r, [`Hey ${nm(actor)}! Give my cards back!`, `I'll remember that Hera Pheri, ${nm(actor)}.`, `${nm(actor)} grabs cards like a thief…`]),
+          tookStone && side(target) === "V" && actor !== null ? [T(actor), { kind: "stone", target: actor, side: null, has: true }] : undefined);
         if (isBot(actor) && r() < 0.5) say(actor, pick(r, [`Thanks for the cards, ${nm(target)} 😏`, "Nice cards, thank you."]));
         break;
       }
@@ -313,7 +326,7 @@ export function botTalk(s: GameState, from: number, bots: number[], seed: number
       case "teer_kaman":
         // a miss puts the shooter out (2026-10-09); a hit tells only the shooter the role
         if (isBot(actor)) say(actor, d?.hit ? `Hit! I was right about ${nm(target)}.` : "Missed… I'm out.");
-        if (isBot(target) && !d?.hit) say(target, pick(r, [`You missed, ${nm(actor)}!`, `An arrow at me? ${nm(actor)}, you're the thief.`])); // S8
+        if (isBot(target) && !d?.hit && actor !== null) say(target, pick(r, [`You missed, ${nm(actor)}!`, `An arrow at me? ${nm(actor)}, you're the thief.`]), T(actor)); // S8
         break;
       // S7 Kundli
       case "kundli":
@@ -326,8 +339,12 @@ export function botTalk(s: GameState, from: number, bots: number[], seed: number
         const reader = Array.isArray(e.to) ? e.to[0] : null;
         if (!isBot(reader) || r() > 0.8) break;
         const thiefSeen = d?.side === "T";
-        if (side(reader) === "V") say(reader, thiefSeen ? `I read ${nm(target)}'s Kundli — a THIEF!` : `${nm(target)}'s Kundli is clean. A villager.`);
-        else say(reader, thiefSeen ? `${nm(target)} is clean, I read the Kundli.` : r() < 0.6 ? `I read ${nm(target)}'s Kundli — a thief, for sure!` : null);
+        if (target === null) break;
+        const role = String(d?.role ?? "");
+        if (side(reader) === "V") say(reader, thiefSeen ? `I read ${nm(target)}'s Kundli — ${role}, a THIEF!` : `${nm(target)}'s Kundli is clean — ${role}, a villager.`,
+          { kind: "kundli", target, side: thiefSeen ? "T" : "V", role });
+        else if (thiefSeen) say(reader, `${nm(target)} is clean, I read the Kundli.`, V(target, "kundli"));
+        else if (r() < 0.6) say(reader, `I read ${nm(target)}'s Kundli — a thief, for sure!`, T(target, "kundli"));
         break;
       }
       // S14
@@ -338,10 +355,17 @@ export function botTalk(s: GameState, from: number, bots: number[], seed: number
       case "eliminated": {
         const withStone = stonesIn(d?.hand) > 0;
         if (d?.side === undefined) {
-          // a hidden exit: last words claim the village whatever the truth; the table only wonders
-          say(actor, side(actor ?? 0) === "V" || r() < 0.8
-            ? pick(r, ["I was a villager! You got the wrong one.", "Remember — I was telling the truth.", withStone ? "Look after my Stone, villagers." : "The real thief is still among you."])
-            : "Now you'll never know who I was…");
+          // a hidden exit: LAST WORDS NAME THE ROLE (playtest LLE3Q: "Remember — I was telling the truth" said nothing).
+          // A villager tells the truth; a thief usually names a villager role (a lie), else stays dark
+          if (actor !== null && isBot(actor)) {
+            const me = s.players[actor];
+            const villagerRoles = s.rolesInPlay.filter((x) => !THIEF_ROLES.includes(x) && x !== me.role);
+            const lie = me.side === "T" && r() < 0.75 && villagerRoles.length ? pick(r, villagerRoles) : null;
+            const role = me.side === "V" ? me.role : lie;
+            say(actor, role
+              ? `I was the ${role} — a villager! ${withStone ? "Look after my Stone." : pick(r, ["You got the wrong one.", "The real thief is still among you."])}`
+              : "Now you'll never know who I was…", role ? { kind: "was", target: actor, side: "V", role } : undefined);
+          }
           say(someBot([actor]), pick(r, [`${nm(actor)} is gone… thief or not, who knows.`, "One fewer. Right or wrong?"]));
           break;
         }
