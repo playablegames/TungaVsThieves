@@ -125,26 +125,29 @@ describe("THE CARDS", () => {
     expect(n.players[1].hand).toHaveLength(2 + 3); // drew 2, and is next: picked up the pass
     expect(n.events.find((e) => e.type === "hera_pheri_private")!.to).toEqual([0, 1]);
   });
-  it("BHUKAMP (2026-10-09): pass 3 like any pair, then every living player passes 1 card CLOCKWISE (to the next seat); nobody draws", () => {
-    const s = rig(5, { hands: [[B, B, F, K, H, T], [S1, T], [F, K], [T, H], [K, F]] });
+  it("BHUKAMP (2026-10-09): pass 3 like any pair, DRAW 2, then every living player passes 1 card CLOCKWISE — everyone ends with 2", () => {
+    const s = rig(5, { hands: [[B, B, F, K, H], [S1, T], [F, K], [T, H], [K, F]] });
     let n = apply(s, 0, { type: "play", card: "BATWARA", pass: [F, K, H] });
     expect(n.phase.kind).toBe("batwara");
-    expect(n.players[0].hand).toEqual([T]); // the pair and the pass are gone
+    // the pair and the pass are gone; the player drew 2, so they give and get like everyone else
+    expect(n.players[0].hand).toHaveLength(2);
     expect(waitingOn(n).sort()).toEqual([0, 1, 2, 3, 4]);
     expect(() => apply(n, 1, { type: "batwara", card: H })).toThrow(RuleError); // only a card you hold
-    n = apply(n, 0, { type: "batwara", card: T });
+    const drawn = [...n.players[0].hand];
+    n = apply(n, 0, { type: "batwara", card: drawn[0] });
     n = apply(n, 1, { type: "batwara", card: S1 }); // a Stone CAN move by Bhukamp
     n = apply(n, 2, { type: "batwara", card: F });
     n = apply(n, 3, { type: "batwara", card: H });
     n = apply(n, 4, { type: "batwara", card: K });
     // each card went to the next seat clockwise, the way the turn goes (seat x → seat x+1, wrapping)
-    expect(n.players[0].hand).toEqual([K]);
+    expect(n.players[0].hand.sort()).toEqual([drawn[1], K].sort());
     expect(n.players[2].hand.sort()).toEqual([K, S1].sort()); // the Stone moved on
     expect(n.players[3].hand.sort()).toEqual([F, T].sort());
     expect(n.players[4].hand.sort()).toEqual([F, H].sort());
-    // seat 1, next, got T from seat 0 and picked up the 3 passed
-    expect(n.players[1].hand.sort()).toEqual([F, H, K, T, T].sort());
-    expect(totalCards(n)).toBe(totalCards(s)); // nothing drawn, nothing lost
+    // every living player holds 2 after the Bhukamp — seat 1, next, then picked up the 3 passed
+    for (const x of [0, 2, 3, 4]) expect(n.players[x].hand).toHaveLength(2);
+    expect(n.players[1].hand.sort()).toEqual([drawn[0], T, F, K, H].sort());
+    expect(totalCards(n)).toBe(totalCards(s)); // 2 came from the deck, nothing lost
   });
   it("TEER KAMAN miss (2026-10-09): the shooter is OUT, role hidden; the target stays", () => {
     const s = rig(5, { sides: ["V", "T", "V", "T", "V"], hands: [[TK, TK, F, K, H], [B, B], [F], [T], [K]] });

@@ -9,7 +9,7 @@ export const CARD: Record<Card, { name: string; sub: string; text: string; voice
   TALASHI: { name: "Talashi", sub: "See action cards", text: "Choose a player and secretly see their cards — never their role. Draw 2.", voice: "relic" },
   KUNDLI: { name: "Kundli", sub: "See role", text: "Secretly see one player's role card. Say anything — or nothing. Draw 2.", voice: "relic" },
   HERA_PHERI: { name: "Hera Pheri", sub: "Swap action cards", text: "Steal 2 cards face down from any one player. They draw 2.", voice: "lethal" },
-  BATWARA: { name: "Bhukamp", sub: "Pass clockwise", text: "Everyone — you too — passes 1 card to the next player, clockwise.", voice: "gold" },
+  BATWARA: { name: "Bhukamp", sub: "Pass clockwise", text: "Draw 2, then everyone — you too — passes 1 card to the next player, clockwise.", voice: "gold" },
   TEER_KAMAN: { name: "Teer Kaman", sub: "Eliminate a player", text: "Pick a player, name two roles. Either is theirs: they're out, and only you see their role. Draw 2. Miss: you're out.", voice: "lethal" },
   DAL_BADAL: { name: "Dal Badal", sub: "Thieves only", text: "A thief's whole turn: pass 3, show your role, and shuffle role cards with 2 players — each picks one back face down. Draw 1. Then it leaves the game.", voice: "neutral" },
   STONE_1: { name: "Bhadra Stone", sub: "Villagers need both · Thieves need one", text: "Can be passed, never discarded.", voice: "bhadra" },

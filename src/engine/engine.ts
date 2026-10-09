@@ -352,7 +352,9 @@ function doPlay(s: GameState, seat: number, a: Extract<Action, { type: "play" }>
     }
     case "BATWARA": {
       // Bhukamp (designer 2026-10-09): every living player passes 1 card to the next player clockwise — the way the
-      // turn goes — in secret
+      // turn goes — in secret. The player draws 2 FIRST (their pair went down and their other 3 were passed), so they
+      // give and get like everyone else: after a Bhukamp every living player holds 2 cards (designer 2026-10-09)
+      p.hand.push(...draw(s, 2));
       const givers = living(s).filter((x) => x.hand.length > 0).map((x) => x.seat);
       emit(s, "batwara", "all", `BHUKAMP — ${p.name} shakes the table: everyone passes 1 card clockwise.`, { seat });
       s.phase = { kind: "batwara", actor: seat, givers, picks: {} };
