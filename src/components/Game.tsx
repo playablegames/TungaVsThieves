@@ -462,6 +462,12 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
   // a vote lands: a note that climbs with every ballot
   const liveTotal = Object.values(v.ballots ?? {}).filter((t) => t !== null).length;
   useEffect(() => { if (liveTotal > 0) play("vote", liveTotal); }, [liveTotal]);
+  // (2026-10-09, collisions sweep) a new move of yours closes anything that would cover it: menu, history, the feed
+  // list, the whisper sheet (the seat menu closes itself on a phase change — Ring)
+  useEffect(() => {
+    if (!myMove) return;
+    queueMicrotask(() => { setMenu(false); setSheet(null); setFeedOpen(false); setWhisperTo(null); });
+  }, [myMove, v.phase]);
   // your move: a chime, a short buzz and a tab-title flag, so a phone face-down on the table still tells you
   useEffect(() => {
     if (!myMove) return;
@@ -510,13 +516,13 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
             takeFloor={() => api.floor(code, token).catch(() => {})} now={now} compact={Boolean(myMove && myMove !== "vote" && myMove !== "debate")} living={living.length} extend={extend}
           ready={() => act({ type: "ready" })} />}
       </Ring>
-      {v.me.alive && !solo && <TalkButton />}
+      {v.me.alive && !solo && <TalkButton up={Boolean(myMove && myMove !== "debate")} />}
       {/* the coach (a guided first game) or a first-time tip sits INSIDE the tray, so the cards never cover it */}
       <Tray v={v} act={act} live={live} waitForExit={myExitPending} banner={coach
         ? <Coach key={coach.id} text={coach.text} onNext={() => setCoachSeen((xs) => [...xs, coach.id])} onSkip={() => setCoachOff(true)} />
         : tip ? <Tip key={tip} text={TIP_TEXT[tip]} onDone={() => seeTips(tip)} /> : null} />
       {whisperTo !== null && <WhisperSheet v={v} code={code} token={token} to={whisperTo} onClose={() => setWhisperTo(null)} />}
-      {inbox[0] && <WhisperBubble key={inbox[0].id} w={inbox[0]} names={names} onDone={() => throws.dismiss(inbox[0].id)} />}
+      {inbox[0] && <WhisperBubble key={inbox[0].id} w={inbox[0]} names={names} onDone={() => throws.dismiss(inbox[0].id)} up={Boolean(myMove)} />}
       {feedOpen && <Sheet title="Everything at the table" onClose={() => setFeedOpen(false)}><FeedList items={[...feed].reverse()} names={names} me={v.me.seat} /></Sheet>}
       {sheet === "history" && <Sheet title="What happened" onClose={() => setSheet(null)}><Story v={v} /></Sheet>}
 
@@ -572,13 +578,14 @@ function PttSwitch({ row }: { row: string }) {
 }
 
 /** push-to-talk: hold the big button to speak */
-function TalkButton() {
+/** `up`: while you decide, the button moves to the top so it never covers a ballot tile or a card */
+function TalkButton({ up = false }: { up?: boolean }) {
   const p = usePtt();
   if (!p.on) return null;
   return (
     <button type="button" aria-label="Hold to talk" onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); setTalking(true); }}
       onPointerUp={() => setTalking(false)} onPointerCancel={() => setTalking(false)} onContextMenu={(e) => e.preventDefault()}
-      className={`fixed bottom-[34%] right-3 z-30 grid h-16 w-16 select-none place-items-center rounded-full border-2 text-[26px] shadow-[0_8px_20px_rgba(0,0,0,.7)] [-webkit-touch-callout:none] ${p.down ? "speaking border-jade bg-jade-deep" : "border-brass/70 bg-ember"}`}>
+      className={`fixed ${up ? "top-16" : "bottom-[34%]"} right-3 z-30 grid h-16 w-16 select-none place-items-center rounded-full border-2 text-[26px] shadow-[0_8px_20px_rgba(0,0,0,.7)] [-webkit-touch-callout:none] ${p.down ? "speaking border-jade bg-jade-deep" : "border-brass/70 bg-ember"}`}>
       🎙️
     </button>
   );
@@ -611,6 +618,10 @@ function Ring({ v, voice, talking, floorSeat = null, actor, target, pick, tally,
   // (has one / has none). 🔮 and 💎 open their choices in the same strip — no window.
   const [reading, setReadingRoles] = useState<false | "role" | "stone">(false);
   const setPicker = (seat: number | null) => { setPickerRaw(seat); setReadingRoles(false); };
+  // the table moved on (a new turn, a vote): a seat menu left open would cover the centre
+  const phaseKey = `${v.phase}:${v.turnSeat}`;
+  const [pickerPhase, setPickerPhase] = useState(phaseKey);
+  if (pickerPhase !== phaseKey) { setPickerPhase(phaseKey); if (picker !== null) setPicker(null); }
   /** where a seat sits on the oval, in % of the table — you at the bottom */
   const pos = (seat: number) => {
     const a = Math.PI / 2 + (((seat - v.me.seat + n) % n) * 2 * Math.PI) / n;

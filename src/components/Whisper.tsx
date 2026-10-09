@@ -117,7 +117,8 @@ export function WhisperSheet({ v, code, token, to, onClose }: { v: PlayerView; c
 }
 
 /** what was whispered to YOU: plays in your ear (voice), or shows the line — then it's gone */
-export function WhisperBubble({ w, names, onDone }: { w: Incoming; names: string[]; onDone: () => void }) {
+/** `up`: while it's your move the bubble sits under the header, clear of your choices (2026-10-09 collisions sweep) */
+export function WhisperBubble({ w, names, onDone, up = false }: { w: Incoming; names: string[]; onDone: () => void; up?: boolean }) {
   const [playing, setPlaying] = useState(false);
   const who = w.name.replace(/\s*🤖$/, "");
   const b = w.body!;
@@ -131,7 +132,7 @@ export function WhisperBubble({ w, names, onDone }: { w: Incoming; names: string
     a.play().catch(() => setPlaying(false));
   };
   return (
-    <div className="stage-in fixed inset-x-3 bottom-[42%] z-40 mx-auto max-w-sm rounded-2xl border-2 border-jade/70 bg-[#0e1a12]/95 p-4 text-center shadow-[0_12px_40px_rgba(0,0,0,.8)]" role="status">
+    <div className={`stage-in fixed inset-x-3 ${up ? "top-16" : "bottom-[42%]"} z-40 mx-auto max-w-sm rounded-2xl border-2 border-jade/70 bg-[#0e1a12]/95 p-4 text-center shadow-[0_12px_40px_rgba(0,0,0,.8)]`} role="status">
       <p className="font-[family-name:var(--font-engraved)] text-[11px] font-semibold uppercase tracking-[0.2em] text-jade-soft">Only you hear this</p>
       <p className="mt-1 font-display text-[18px] font-bold text-stock">🤫 {who} whispers…</p>
       {text && <p className="mt-2 font-display text-[17px] italic text-[#f3c66b]">&ldquo;{text}&rdquo;</p>}
