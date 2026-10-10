@@ -179,6 +179,7 @@ function HowToPlay({ onClose, onLearn }: { onClose: () => void; onLearn: () => v
         <section>
           <p className={h}>Your turn</p>
           <p className="mt-1">Pick up the cards passed to you. Play a <b>matching pair</b> to use its power — or play nothing. Then pass 3 cards to the next player.</p>
+          <p className="mt-1">Put out by a <b>Faisla</b> or a <b>Teer Kaman</b>? Your cards go to the player who called it or shot.</p>
         </section>
         <section>
           <p className={h}>The cards</p>
@@ -208,7 +209,7 @@ function HowToPlay({ onClose, onLearn }: { onClose: () => void; onLearn: () => v
         </section>
         <section>
           <p className={h}>The end</p>
-          <p className="mt-1">After 3 rounds, anyone holding a Stone may surrender it to the village. Then a last vote: the one voted out gives their cards to the village.</p>
+          <p className="mt-1">After 3 rounds, a last vote: the one voted out gives their cards to the village. Then every role and hand is shown — <b>Thieves win if a thief still holds a Stone.</b></p>
         </section>
         <button type="button" onClick={onClose} className="min-h-12 rounded-full border-2 border-brass/80 font-[family-name:var(--font-engraved)] text-[15px] font-bold uppercase tracking-[0.12em]">Got it</button>
       </div>

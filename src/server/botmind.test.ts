@@ -53,7 +53,9 @@ describe("bot minds", () => {
       if (g.s.events.some((x) => x.type === "dal_badal")) continue;
       const reader = (e.to as number[])[0], thief = e.data!.target as number;
       const s: GameState = { ...g.s, events: g.s.events.slice(0, e.n + 1), players: g.s.players.map((p) => ({ ...p, alive: true })) };
-      expect(botVote(s, reader, 1, fixed(3))).toBe(thief);
+      // it votes a thief it KNOWS — the one it read, or another it learned of (a Faisla it called, a role it was shown)
+      const vote = botVote(s, reader, 1, fixed(3));
+      expect(vote === null ? null : g.s.players[vote].side).toBe("T");
       expect(debateLine(mindOf(s, reader, 1), false, fixed(3))).toMatch(new RegExp(`${g.s.players[thief].name}.*(THIEF|thief)`));
       checked++;
     }

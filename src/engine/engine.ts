@@ -129,7 +129,8 @@ function beginTurn(s: GameState, seat: number) {
   for (;;) {
     const w = winnerIfWipe(s);
     if (w) return finish(s, w, w === "V" ? "every thief is out" : "every villager is out");
-    if (s.round > s.rounds) return startSurrender(s);
+    // (designer 2026-10-10) NO SURRENDER PHASE: after the last round, straight to the mandatory vote
+    if (s.round > s.rounds) return startFinalVote(s);
     s.turnSeat = seat;
     const p = P(s, seat);
     const picked = s.pile;
@@ -161,14 +162,7 @@ function endTurn(s: GameState) {
   beginTurn(s, seat);
 }
 
-/** after the last round: the Stone holders decide whether to surrender their Stones to the village */
-function startSurrender(s: GameState) {
-  const holders = living(s).filter((p) => p.hand.some(isStone)).map((p) => p.seat);
-  emit(s, "surrender_open", "all", "The last round is over. Anyone holding a Stone may surrender it to the village.", { holders: holders.length });
-  s.phase = { kind: "surrender", holders, choices: {} };
-  if (!holders.length) resolveSurrender(s);
-}
-
+/** (retired 2026-10-10 — the game goes straight to the mandatory vote.) A game saved mid-surrender still resolves. */
 function resolveSurrender(s: GameState) {
   const ph = s.phase as Extract<GameState["phase"], { kind: "surrender" }>;
   for (const seat of ph.holders) {
@@ -545,8 +539,17 @@ function doElimStep(s: GameState, seat: number, a: Action): GameState {
       emit(s, "to_village", "all", `${p.name}'s cards go to the village: ${names(cards)}.`, { seat, cards });
       return finishElim(s);
     }
-    s.phase = { kind: "elim", seat, step: "handoff" };
-    return s;
+    // (designer 2026-10-10) NO CHOICE: the cards go to whoever put the player out — the Faisla caller, or the Teer
+    // Kaman shooter who hit. A caller voted out by their own Faisla → the next living player clockwise. (A shooter who
+    // missed is out with an empty hand — the pair went down and 3 were passed — so there is nothing to hand on.)
+    const killer = s.elimQueue[0]?.killer ?? null;
+    const to = killer !== null && killer !== seat && P(s, killer).alive ? killer : neighbour(s, seat, 1);
+    if (to === seat) return finishElim(s); // nobody alive to take them
+    const t = P(s, to);
+    const cards = p.hand.splice(0);
+    t.hand.push(...cards);
+    emit(s, "handoff", "all", `${p.name}'s cards go to ${t.name}: ${names(cards)}.`, { seat, target: t.seat, cards, auto: true });
+    return finishElim(s);
   }
 
   // handoff
