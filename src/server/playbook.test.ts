@@ -2,7 +2,9 @@
 import { describe, expect, it } from "vitest";
 import { apply, start, waitingOn } from "@/engine/engine";
 import type { Card, GameState } from "@/engine/types";
-import { beliefOf, skilledAction, SKILLS } from "./belief";
+import { beliefOf, keptMyStone, skilledAction, SKILLS, stoneOdds } from "./belief";
+import { defaultAction } from "@/engine/decisions";
+import { rig } from "@/engine/__tests__/helpers";
 
 const NAMES = (n: number) => Array.from({ length: n }, (_, i) => `P${i}`);
 const counter = () => { let x = 0; return () => { x = (x + 0.6180339887) % 1; return x; }; };
@@ -76,5 +78,24 @@ describe("THE PLAYBOOK — beginners gamble, skilled players hold", () => {
       }
       expect(s.phase.kind).toBe("over");
     }
+  });
+});
+
+describe("DID IT COME BACK? (designer 2026-10-12 — anticlockwise Bhukamp)", () => {
+  it("a player whose Stone a Bhukamp handed on, and who gets the next pile without it, knows the neighbour kept it", () => {
+    const B: Card = "BATWARA", F: Card = "FAISLA", K: Card = "KUNDLI", H: Card = "HERA_PHERI", T: Card = "TALASHI", S1: Card = "STONE_1";
+    let s = rig(5, { hands: [[B, B, F, K, H], [S1, T], [F, K], [T, H], [K, F]] });
+    s = apply(s, 0, { type: "play", card: "BATWARA", pass: [F, K, H] });
+    expect(s.players[0].hand).toContain(S1); // seat 1's Stone moved one seat back, to seat 0
+    // round the table until seat 0 has played its turn (keeping the Stone) and seat 1 picks up seat 0's pile
+    for (let k = 0; k < 20 && !(s.phase.kind === "turn" && s.phase.seat === 1 && s.events.some((e) => e.type === "pass" && e.data?.seat === 0)); k++) {
+      const seat = waitingOn(s)[0];
+      s = apply(s, seat, defaultAction(s, seat));
+    }
+    const pick = [...s.events].reverse().find((e) => e.type === "pickup_private" && Array.isArray(e.to) && e.to[0] === 1)!;
+    expect(s.players[0].hand).toContain(S1);
+    expect(keptMyStone(s, 1, pick.n)).toBe(0);
+    // and the bots' Stone odds now put it on seat 0
+    expect(stoneOdds(s, 1, 1).get(0)!).toBeGreaterThan(0.9);
   });
 });

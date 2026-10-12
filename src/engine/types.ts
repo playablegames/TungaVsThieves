@@ -39,14 +39,6 @@ export type Phase =
       extended?: boolean;
     }
   | {
-      /** BHUKAMP (designer 2026-10-12): every living player — the one who played it too — passes 1 card LEFT (the next
-       *  player in turn order) and 1 RIGHT (the one before), each choosing which goes where, in secret */
-      kind: "batwara";
-      actor: number;
-      givers: number[];
-      picks: Record<number, { left: Card; right: Card | null }>;
-    }
-  | {
       /** DAL BADAL (designer 2026-10-09): the thief's whole turn — pass 3, show their role, then their role card and those
        *  of the 2 players they chose are shuffled face down; each picks one back in seat order from the thief; they draw 1. */
       kind: "dal_badal"; actor: number;
@@ -120,9 +112,6 @@ export interface GameState {
   /** BALANCE PROBE ONLY: show every eliminated player's role to the table (the old way), to measure what hiding costs.
    *  The game never sets it. */
   publicRoles?: boolean;
-  /** ANALYSIS ONLY (scripts/bhukamp.mts, 2026-10-12): "anti" = the designer's anticlockwise Bhukamp under test. Never
-   *  set by the online game — undefined = the rule as printed (everyone passes 1 left + 1 right). */
-  probeBhukamp?: "anti";
   /** LEARN BY PLAYING (2026-10-09): a guided first game — the phone shows a coach; the rules are the same */
   tutorial?: boolean;
   deadOrder: number[];
@@ -144,7 +133,6 @@ export type Action =
   | { type: "surrender"; give: boolean }
   | { type: "vote"; target: number | null }
   /** Bhukamp: `card` goes LEFT (the next player in turn order), `right` to the player before you (needed when you hold 2+) */
-  | { type: "batwara"; card: Card; right?: Card }
   /** Dal Badal. On your turn: 3 cards passed first. In the mandatory vote (debate, or voted out): `pass` is empty.
    *  Voted out and keeping it: `seats` empty. */
   | { type: "dal_badal"; seats: number[]; pass: Card[] }

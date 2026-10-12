@@ -220,7 +220,6 @@ export function waitingOn(s: GameState): number[] {
     case "vote": return ph.debate
       ? living(s).map((p) => p.seat).filter((x) => !ph.ready.includes(x))
       : ph.voters.filter((v) => !(v in ph.ballots));
-    case "batwara": return ph.givers.filter((g) => !(g in ph.picks));
     case "surrender": return ph.holders.filter((h) => !(h in ph.choices));
     case "dal_badal": return [ph.pickers[0]];
     case "elim": return [ph.seat];
@@ -278,16 +277,6 @@ export function apply(prev: GameState, seat: number, action: Action): GameState 
     if (action.type !== "surrender") throw new RuleError("Surrender your Stone, or keep it");
     ph.choices[seat] = Boolean(action.give);
     if (waitingOn(s).length === 0) resolveSurrender(s);
-    return s;
-  }
-  if (ph.kind === "batwara") {
-    if (action.type !== "batwara") throw new RuleError("Choose 1 card for your left and 1 for your right");
-    const h = P(s, seat).hand;
-    const give = h.length >= 2 ? [action.card, action.right] : [action.card];
-    if (give.some((c) => c === undefined)) throw new RuleError("Choose 1 card for your left and 1 for your right");
-    removeCards([...h], give as Card[]); // you must hold both (two of a kind if you name it twice)
-    ph.picks[seat] = { left: action.card, right: h.length >= 2 ? action.right! : null };
-    if (waitingOn(s).length === 0) resolveBatwara(s);
     return s;
   }
   if (ph.kind === "dal_badal") return doDalPick(s, action);
@@ -359,14 +348,21 @@ function doPlay(s: GameState, seat: number, a: Extract<Action, { type: "play" }>
       endTurn(s); return s;
     }
     case "BATWARA": {
-      // Bhukamp (designer 2026-10-12): the player draws 2 FIRST (their pair went down and their other 3 were passed),
-      // then every living player — them too — passes 1 card LEFT and 1 RIGHT, choosing which goes where, in secret.
-      // With 2 cards in hand you give both and get one from each side.
+      // BHUKAMP (designer 2026-10-12, measured: village +3 pts, 8,000 paired bot games): the player draws 2 FIRST (their
+      // pair went down and their other 3 were passed), then EVERY living player — them too — hands their whole hand,
+      // face down, ONE SEAT ANTICLOCKWISE: to the player before them in turn order. Nobody chooses. Every hand is new,
+      // yet everything the table knew still holds, one seat along — and the player you handed your cards to is the one
+      // whose pile comes back to you next: you will see whether your cards came back.
       p.hand.push(...draw(s, 2));
-      const givers = living(s).filter((x) => x.hand.length > 0).map((x) => x.seat);
-      emit(s, "batwara", "all", `BHUKAMP — ${p.name} shakes the table: everyone passes 1 card left and 1 right.`, { seat });
-      s.phase = { kind: "batwara", actor: seat, givers, picks: {} };
-      if (givers.length === 0) resolveBatwara(s);
+      emit(s, "batwara", "all", `BHUKAMP — ${p.name} shakes the table: every hand moves one seat anticlockwise.`, { seat });
+      const moves: [number, Card, number][] = [];
+      for (const x of living(s)) for (const c of x.hand.splice(0)) moves.push([x.seat, c, neighbour(s, x.seat, -1)]);
+      for (const [from, c, to] of moves) {
+        P(s, to).hand.push(c);
+        emit(s, "batwara_private", [from, to], `${P(s, from).name} passed ${CARD_NAME[c]} to ${P(s, to).name}.`, { from, to, card: c });
+      }
+      emit(s, "batwara_done", "all", "Bhukamp is done.");
+      endTurn(s);
       return s;
     }
     case "TEER_KAMAN": {
@@ -505,41 +501,6 @@ function resolveVote(s: GameState) {
 }
 
 // ---------------------------------------------------------------- Batwara
-function resolveBatwara(s: GameState) {
-  const ph = s.phase as Extract<GameState["phase"], { kind: "batwara" }>;
-  if (s.probeBhukamp === "anti") return probeBatwara(s, ph);
-  const moves: [number, Card, number][] = [];
-  // everything leaves before anything arrives, so a card never travels twice
-  for (const [g, pk] of Object.entries(ph.picks)) {
-    const seat = Number(g);
-    removeCards(P(s, seat).hand, pk.right ? [pk.left, pk.right] : [pk.left]);
-    moves.push([seat, pk.left, neighbour(s, seat, 1)]); // left = the next player in turn order
-    if (pk.right) moves.push([seat, pk.right, neighbour(s, seat, -1)]);
-  }
-  for (const [from, c, to] of moves) {
-    P(s, to).hand.push(c);
-    emit(s, "batwara_private", [from, to], `${P(s, from).name} passed ${CARD_NAME[c]} to ${P(s, to).name}.`, { from, to, card: c });
-  }
-  emit(s, "batwara_done", "all", "Bhukamp is done.");
-  endTurn(s);
-}
-
-/** ANALYSIS ONLY (scripts/bhukamp.mts, 2026-10-12): the designer's anticlockwise Bhukamp — every hand, whole, one seat
- *  anticlockwise, to the player before you in turn order (whose pile comes back to you on their next turn). */
-function probeBatwara(s: GameState, ph: Extract<GameState["phase"], { kind: "batwara" }>) {
-  const moves: [number, Card, number][] = [];
-  for (const g of Object.keys(ph.picks)) {
-    const seat = Number(g);
-    for (const c of P(s, seat).hand.splice(0)) moves.push([seat, c, neighbour(s, seat, -1)]);
-  }
-  for (const [from, c, to] of moves) {
-    P(s, to).hand.push(c);
-    emit(s, "batwara_private", [from, to], `${P(s, from).name} passed ${CARD_NAME[c]} to ${P(s, to).name}.`, { from, to, card: c });
-  }
-  emit(s, "batwara_done", "all", "Bhukamp is done.");
-  endTurn(s);
-}
-
 // ---------------------------------------------------------------- elimination
 // order: out (role seen only by the Teer Kaman shooter or the Faisla caller) -> dying power -> hand-off -> silent conduit
 function runElims(s: GameState) {

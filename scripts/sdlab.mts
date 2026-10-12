@@ -346,7 +346,6 @@ if (TEST === "pass") {
       const h = s.players[seat].hand;
       if (a.type === "pass") return { ...a, pass: sample(h, passSize(h), rnd2) };
       if (a.type === "play") { const rest = [...h]; rest.splice(rest.indexOf(a.card), 1); rest.splice(rest.indexOf(a.card), 1); return { ...a, pass: sample(rest, passSize(rest), rnd2) }; }
-      if (a.type === "batwara") return { ...a, card: sample(h, 1, rnd2)[0] };
       return a;
     },
   });

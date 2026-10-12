@@ -364,6 +364,10 @@ export function stoneOdds(s: GameState, seat: number, seed: number, skill: Skill
   const p = new Map<number, number>();
   for (let x = 0; x < n; x++) p.set(x, Math.min(0.9, 2 / Math.max(2, n)));
   let inPile = 0; // chance the pile on its way carries a Stone
+  // DID IT COME BACK? (designer 2026-10-12) the pile you pick up comes from the player before you — the very player a
+  // Bhukamp hands your cards to. When the pile you pick up has no Stone, the chance it carried goes back to who passed
+  // it: if you know they held one, they KEPT it (and a player keeping a Stone can't have played a pair).
+  let lastPasser: number | null = null, lastMoved = 0;
   let village = 0;
   const num = (d: Record<string, unknown> | undefined, k: string) => (typeof d?.[k] === "number" ? (d[k] as number) : null);
   const has = (cards: unknown) => Array.isArray(cards) && cards.some(STONE);
@@ -374,23 +378,22 @@ export function stoneOdds(s: GameState, seat: number, seed: number, skill: Skill
     const d = e.data, actor = num(d, "seat"), target = num(d, "target");
     switch (e.type) {
       case "pickup": if (actor !== null) { p.set(actor, 1 - (1 - p.get(actor)!) * (1 - inPile)); inPile = 0; } break;
-      case "pickup_private": if (has(d?.cards)) p.set(seat, 1); break;
-      case "pass": if (actor !== null) { const moved = p.get(actor)! * 0.4; p.set(actor, p.get(actor)! - moved); inPile = moved; } break;
-      case "play": if (actor !== null) { inPile = p.get(actor)!; p.set(actor, 0.1); } break; // the pair goes down, the rest goes on
+      case "pickup_private":
+        if (has(d?.cards)) p.set(seat, 1);
+        else if (lastPasser !== null && lastPasser !== seat && v.players[lastPasser]?.alive) p.set(lastPasser, Math.min(1, p.get(lastPasser)! + lastMoved));
+        break;
+      case "pass": if (actor !== null) { const moved = p.get(actor)! * 0.4; p.set(actor, p.get(actor)! - moved); inPile = moved; lastPasser = actor; lastMoved = moved; } break;
+      // the pair goes down, the rest goes on — so a player holding a Stone who plays a pair passes it on, for certain
+      case "play": if (actor !== null) { inPile = p.get(actor)!; p.set(actor, 0); lastPasser = actor; lastMoved = 0; } break;
       case "conduit": break; // the pile passes through a player who is out — its chance travels on
       case "talashi_private": if (target !== null && actor === seat) p.set(target, has(d?.hand) ? 1 : 0); break;
       case "hera_pheri_private": if (has(d?.taken) && actor !== null) { p.set(actor, 1); } break;
       case "batwara": {
-        // (2026-10-12) everyone passes 1 card left and 1 right: with 2 in hand both leave, one each way — a seat's
-        // chance comes half from each neighbour
+        // (designer 2026-10-12) BHUKAMP: every hand moves, whole, one seat anticlockwise — you now hold exactly what the
+        // next living player (in turn order) held. Nothing is lost: every sighting just moves one seat back.
         const was = new Map(p);
-        if (s.probeBhukamp === "anti") {
-          // (analysis only) every hand moves one seat anticlockwise: you now hold what the next living player held
-          const next = (x: number) => { for (let k = 1; k < n; k++) { const y = (x + k) % n; if (v.players[y]?.alive) return y; } return x; };
-          for (let x = 0; x < n; x++) if (v.players[x]?.alive) p.set(x, was.get(next(x))!);
-          break;
-        }
-        for (let x = 0; x < n; x++) p.set(x, 0.5 * was.get((x - 1 + n) % n)! + 0.5 * was.get((x + 1) % n)!);
+        const next = (x: number) => { for (let k = 1; k < n; k++) { const y = (x + k) % n; if (v.players[y]?.alive) return y; } return x; };
+        for (let x = 0; x < n; x++) if (v.players[x]?.alive) p.set(x, was.get(next(x))!);
         break;
       }
       case "batwara_private": { const from = num(d, "from"), to = num(d, "to"); if (from !== null && to !== null && STONE(d?.card)) { p.set(to, 1); } break; }
@@ -425,6 +428,38 @@ export function stoneOdds(s: GameState, seat: number, seed: number, skill: Skill
   if (sum > room && sum > 0) for (const x of guesses) p.set(x, (p.get(x)! * room) / sum);
   for (const x of p.keys()) if (!v.players[x]?.alive && x !== seat) p.set(x, 0);
   return p;
+}
+
+/** DID IT COME BACK? (designer 2026-10-12) A Bhukamp handed `seat`'s Stone to the player before it; that player's pile
+ *  comes to `seat` next. Read at `seat`'s pickup (event index `at`): if the pile came straight from that player and the
+ *  Stone isn't in it, they KEPT it — returns their seat. Null when there is nothing to conclude. */
+export function keptMyStone(s: GameState, seat: number, at: number): number | null {
+  const ev = s.events;
+  const pick = ev[at];
+  if (pick?.type !== "pickup_private" || !Array.isArray(pick.to) || pick.to[0] !== seat) return null;
+  if (((pick.data?.cards as Card[]) ?? []).some(STONE)) return null;
+  // the last Bhukamp: did it hand this seat's Stone on? (this seat may have had its own turn since — the check comes
+  // with the first pile from that neighbour)
+  let gave: { to: number; i: number } | null = null;
+  for (let i = at - 1; i >= 0; i--) {
+    const e = ev[i];
+    if (e.type === "batwara_private" && e.data?.from === seat && STONE(e.data?.card)) { gave = { to: e.data!.to as number, i }; break; }
+    if (e.type === "batwara") break; // the last Bhukamp handed no Stone of ours
+  }
+  if (!gave || !s.players[gave.to]?.alive) return null;
+  // the pile came from them (their own turn ended just before), and nothing else took the Stone off them meanwhile
+  let passer: number | null = null;
+  for (let i = at - 1; i > gave.i; i--) {
+    const e = ev[i];
+    if (passer === null && (e.type === "pass" || e.type === "play")) passer = e.data?.seat as number;
+    if ((e.type === "hera_pheri" && e.data?.target === gave.to) || e.type === "batwara" || (e.type === "handoff" && e.data?.seat === gave.to)) return null;
+    // only the FIRST pile from them since the Bhukamp tells (later ones are a new story)
+    if (i < at - 1 && e.type === "pickup_private" && Array.isArray(e.to) && e.to[0] === seat) {
+      const before = ev.slice(gave.i, i).reverse().find((x) => x.type === "pass" || x.type === "play");
+      if (before?.data?.seat === gave.to) return null;
+    }
+  }
+  return passer === gave.to ? gave.to : null;
 }
 
 // ------------------------------------------------------------------ claims
@@ -510,7 +545,6 @@ export function skilledAction(s: GameState, seat: number, seed: number, r: R, sk
   if (ph.kind === "vote") return { type: "vote", target: beliefVote(s, seat, seed, r, skill) };
   if (ph.kind === "surrender") return { type: "surrender", give: me.side === "V" };
   if (ph.kind === "elim" && ph.step === "dal_badal") return dalBadalMove(s, seat, seed, r, skill, "votedOut") ?? { type: "dal_badal", seats: [], pass: [] };
-  if (ph.kind === "batwara") return bhukampMove(s, seat, seed, r, skill);
   if (ph.kind !== "turn") return randomAction(s, seat, r, skill.activity, true);
 
   // ---- your turn
@@ -643,34 +677,6 @@ function accusationShot(s: GameState, seat: number, seed: number, r: R, skill: S
     roles: [role, ...(more.length ? [pick(r, more)] : [])].slice(0, tkGuesses(s.rolesInPlay)) };
 }
 
-/** BHUKAMP: 1 card left, 1 right. A skilled player keeps Dal Badal if it can; a Stone it must give goes to the
- *  neighbour it trusts (a villager) or, as a thief, the neighbour it takes for a partner. A beginner deals at random. */
-function bhukampMove(s: GameState, seat: number, seed: number, r: R, skill: Skill): Action {
-  const me = s.players[seat];
-  const h = [...me.hand];
-  if (h.length < 2) return { type: "batwara", card: h[0] };
-  if (skill.dalBadal === "random") { const [a, b] = sampleOf(r, h, 2); return { type: "batwara", card: a, right: b }; }
-  // what to give: non-Stones and not Dal Badal first
-  const order = [...h].sort((x, y) => rank(x) - rank(y));
-  const [g1, g2] = order.slice(0, 2);
-  const left = nb(s, seat, 1), right = nb(s, seat, -1);
-  // (2026-10-12, game 9NAQM: Raju gave the Tunga Stone to a thief because an out player had called them a villager)
-  // an experienced player trusts evidence, not bare words, with a Stone
-  const bel = beliefOf(skill.followAnyAccusation ? s : withoutHearsay(s, seat), seat, seed, skill, me.side === "T");
-  const pT = (x: number) => bel.p.get(x) ?? 0.5;
-  // the "precious" card of the two (a Stone, else Dal Badal) goes to the friendlier side
-  const precious = [g1, g2].find(isStoneCard) ?? [g1, g2].find((c) => c === "DAL_BADAL");
-  if (!precious) return { type: "batwara", card: g1, right: g2 };
-  const other = precious === g1 ? g2 : g1;
-  const friendLeft = me.side === "V" ? pT(left) <= pT(right) : pT(left) >= pT(right);
-  return friendLeft ? { type: "batwara", card: precious, right: other } : { type: "batwara", card: other, right: precious };
-  function rank(c: Card) { return isStoneCard(c) ? 2 : c === "DAL_BADAL" ? 1 : 0; }
-}
-const nb = (s: GameState, seat: number, dir: 1 | -1) => {
-  const n = s.players.length;
-  for (let k = 1; k < n; k++) { const x = (seat + dir * k + n * n) % n; if (s.players[x].alive) return x; }
-  return seat;
-};
 
 /** PLAYS WITH A REASON (playtest LLE3Q 2026-10-09: a Faisla in round 1 with no suspect; random targets). The pair the
  *  random policy picked keeps its card, but:

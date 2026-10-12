@@ -298,7 +298,6 @@ function status(v: PlayerView): string {
   if (p.endsWith("_debate")) return `${p.startsWith("final") ? "Last debate" : "Faisla"} — the floor is open`;
   if (p.endsWith("_vote")) return mine ? "Your vote" : `Voting — waiting for ${list}`;
   if (p === "surrender") return mine ? "Surrender your Stone?" : "The Stone holders are deciding…";
-  if (p === "batwara") return mine ? "Bhukamp — one card left, one right" : `Bhukamp — waiting for ${list}`;
   if (p.startsWith("dal_badal")) return mine ? "Dal Badal — pick a role card" : `Dal Badal — ${list} picking a role card`;
   if (p.startsWith("elim")) {
     const seat = Number(p.split(":")[2]);
@@ -637,7 +636,7 @@ function Ring({ v, voice, talking, floorSeat = null, actor, target, pick, tally,
   };
   // the spotlight beam: from the middle of the table to whoever must act
   // the beam follows whoever holds the floor; otherwise whoever must act
-  const lit = floorSeat !== null ? floorSeat : v.phase.startsWith("turn") ? v.turnSeat : v.phase === "batwara" ? null : v.waitingOn.length === 1 ? v.waitingOn[0] : null;
+  const lit = floorSeat !== null ? floorSeat : v.phase.startsWith("turn") ? v.turnSeat : v.waitingOn.length === 1 ? v.waitingOn[0] : null;
   const beam = lit !== null ? (() => {
     const t = pos(lit), dx = t.x - 50, dy = t.y - 50, len = Math.hypot(dx, dy) || 1, w = 7;
     return `50,50 ${t.x + (-dy / len) * w},${t.y + (dx / len) * w} ${t.x - (-dy / len) * w},${t.y - (dx / len) * w}`;

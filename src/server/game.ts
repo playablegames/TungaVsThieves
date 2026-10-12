@@ -5,7 +5,7 @@ import { randomBytes, randomInt } from "node:crypto";
 import { apply, closeVote, start, waitingOn } from "@/engine/engine";
 import { defaultAction } from "@/engine/decisions";
 import { botTalk } from "./botmind";
-import { botTieBreak, pushBotClaim, skilledAction, SKILLS } from "./belief";
+import { botTieBreak, keptMyStone, pushBotClaim, skilledAction, SKILLS } from "./belief";
 import { hear } from "./hear";
 import { sendPush, type Alert } from "./push";
 import { MIN_PLAYERS, ROLE_TABLE, THIEF_ROLES } from "@/engine/setup";
@@ -63,7 +63,7 @@ function deadlineFor(state: GameState, timers: Timers): number | null {
   if (k === "over") return null;
   const secs = k === "vote" && state.phase.debate
     ? Math.round(debateSeconds(state.players.filter((p) => p.alive).length, timers.debate ?? DEFAULT_TIMERS.debate!) / (timers.speed ?? 1))
-    : k === "vote" || k === "batwara" || k === "surrender" ? timers.vote : k === "elim" ? timers.elim : timers.turn;
+    : k === "vote" || k === "surrender" ? timers.vote : k === "elim" ? timers.elim : timers.turn;
   return Date.now() + secs * 1000;
 }
 
@@ -323,11 +323,11 @@ const autoAction = (row: GameRow, s: GameState, seat: number): Action => {
 };
 const AWAY_AFTER = 2; // consecutive timeouts before a stand-in takes the seat
 
-/** Bots answer votes and Batwara at once; their turns and eliminations wait BOT_DELAY_MS for a tick. */
+/** Bots answer votes at once; their turns and eliminations wait BOT_DELAY_MS for a tick. */
 function runBots(row: GameRow, s: GameState): GameState {
   for (let guard = 0; guard < 100; guard++) {
     const k = s.phase.kind;
-    if (k !== "vote" && k !== "batwara" && k !== "surrender") break;
+    if (k !== "vote" && k !== "surrender") break;
     const bots = waitingOn(s).filter((seat) => isAuto(row, seat));
     if (!bots.length) break;
     for (const seat of bots) if (waitingOn(s).includes(seat)) {
@@ -626,6 +626,13 @@ function botsSayWhatTheyFound(row: GameRow, from: number) {
       data: { seat, kind, target, role, side } });
   };
   for (const e of s.events.slice(from)) {
+    // DID IT COME BACK? (designer 2026-10-12) a villager bot whose Stone a Bhukamp handed on, and which didn't come back
+    // down the pile, knows its neighbour kept it — and marks it for the table. (A thief bot keeps that to itself.)
+    if (e.type === "pickup_private" && Array.isArray(e.to) && row.lobby[e.to[0]]?.bot && s.players[e.to[0]]?.side === "V") {
+      const kept = keptMyStone(s, e.to[0], e.n);
+      if (kept !== null && !s.events.some((c) => c.type === "claim" && c.data?.seat === e.to[0] && c.data?.target === kept && c.data?.kind === "stone" && c.n > e.n - 40)) pushStoneClaim(s, e.to[0] as number, kept, true);
+      continue;
+    }
     const seen = e.type === "talashi_private" ? (e.data?.seat as number)
       : e.type === "kundli_private" || e.type === "eliminated_private" ? (Array.isArray(e.to) ? e.to[0] : undefined) : undefined;
     if (seen === undefined || !row.lobby[seen]?.bot || !s.players[seen]?.alive) continue;

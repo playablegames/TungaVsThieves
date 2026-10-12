@@ -7,7 +7,6 @@ export type Decision =
   | { kind: "turn"; playable: string[]; passSize: number; /** a thief holding Dal Badal may use it first */ dalBadal: boolean }
   | { kind: "debate"; reason: "faisla" | "final"; ready: number[]; /** (2026-10-12) a thief holding Dal Badal may use it in the mandatory vote's debate */ dalBadal?: boolean }
   | { kind: "vote"; reason: "faisla" | "final"; candidates: number[]; /** open voting: your vote so far (null = abstained; absent = not yet) */ mine?: number | null }
-  | { kind: "batwara"; left: number }
   | { kind: "dal_pick"; count: number }
   | { kind: "gift"; candidates: number[] }
   | { kind: "handoff"; candidates: number[] }
@@ -26,7 +25,6 @@ export function decisionFor(s: GameState, seat: number): Decision {
   switch (ph.kind) {
     case "turn": return { kind: "turn", playable: playableCards(s, seat), passSize: passSize(s.players[seat].hand), dalBadal: canDalBadal(s, seat) };
     case "vote": return ph.debate ? { kind: "debate", reason: ph.reason, ready: [...ph.ready], ...(canDalBadal(s, seat) ? { dalBadal: true } : {}) } : { kind: "vote", reason: ph.reason, candidates: live };
-    case "batwara": return { kind: "batwara", left: -1 };
     case "dal_badal": return { kind: "dal_pick", count: ph.pool.length };
     case "surrender": return { kind: "surrender", stones: s.players[seat].hand.filter(isStone) };
     case "elim": {
@@ -50,7 +48,6 @@ export function defaultAction(s: GameState, seat: number): Action {
     case "turn": return { type: "pass", pass: stonesLast(h, passSize(h)) };
     case "vote": return ph.debate ? { type: "ready" } : { type: "vote", target: null };
     case "surrender": return { type: "surrender", give: false };
-    case "batwara": { const [l, r] = stonesLast(h, 2); return { type: "batwara", card: l, ...(r !== undefined && h.length >= 2 ? { right: r } : {}) }; }
     case "dal_badal": return { type: "dal_pick", index: 0 };
     case "elim": {
       const others = living(s).map((p) => p.seat).filter((x) => x !== seat);
@@ -141,8 +138,6 @@ export function randomAction(s: GameState, seat: number, r: R, activity = 0.8, k
       if (ph.debate && canDalBadal(s, seat) && r() < 0.3) return { type: "dal_badal", seats: sample(r, others, dalBadalPick(s, seat)), pass: [] };
       return ph.debate ? { type: "ready" } : { type: "vote", target: r() < 0.25 ? null : pick(r, live) };
     case "surrender": return { type: "surrender", give: r() < 0.5 };
-    // a bot that keeps Stones passes one of its other cards (it must still pass a Stone if that is all it has)
-    case "batwara": { const [a, b] = passFrom(r, h, 2, keepStones); return { type: "batwara", card: a, ...(b !== undefined && h.length >= 2 ? { right: b } : {}) }; }
     case "dal_badal": return { type: "dal_pick", index: Math.floor(r() * ph.pool.length) };
     case "elim": {
       if (ph.step === "handoff") return { type: "handoff", target: pick(r, others) };

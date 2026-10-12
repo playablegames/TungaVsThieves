@@ -66,7 +66,6 @@ export function Decide({ v, act }: { v: PlayerView; act: (a: Action) => void }) 
     case "debate": return d.dalBadal ? <DebateDalBadal v={v} act={act} /> : null;
     case "vote": return null;
     case "dal_badal_out": return <DalBadalOut v={v} act={act} />;
-    case "batwara": return <Bhukamp v={v} act={act} />;
     case "surrender": return <Surrender stones={d.stones as Card[]} act={act} />;
     case "dal_pick": return <DalPick count={d.count} act={act} />;
     case "gift": return <OneOf title="Give your vote" hint="They vote with one more from now on." options={others}
@@ -113,38 +112,6 @@ function Surrender({ stones, act }: { stones: Card[]; act: (a: Action) => void }
       <div className="grid grid-cols-2 gap-2">
         <Btn voice="ghost" onClick={() => act({ type: "surrender", give: false })}>Keep it</Btn>
         <Btn voice="vote" onClick={() => act({ type: "surrender", give: true })}>Surrender</Btn>
-      </div>
-    </div>
-  );
-}
-
-/** BHUKAMP (2026-10-12): 1 card to your left (the next player), 1 to your right — tap the left one, then the right one */
-function Bhukamp({ v, act }: { v: PlayerView; act: (a: Action) => void }) {
-  const [first, setFirst] = useState<number | null>(null);
-  const living = v.players.filter((p) => p.alive).map((p) => p.seat);
-  const i = living.indexOf(v.me.seat);
-  const bare = (s: string) => s.replace(/\s*🤖$/, "");
-  const left = bare(v.players[living[(i + 1) % living.length]].name);
-  const right = bare(v.players[living[(i - 1 + living.length) % living.length]].name);
-  const hand = v.me.hand;
-  if (hand.length < 2) {
-    return (
-      <div className="flex flex-col gap-3">
-        <Head title={`Bhukamp — 1 card to ${left}`} />
-        <div className="pt-2"><HandRow cards={hand} onTap={(k) => act({ type: "batwara", card: hand[k] })} /></div>
-      </div>
-    );
-  }
-  return (
-    <div className="flex flex-col gap-3">
-      <Head title={first === null ? `Bhukamp — which card to ${left}?` : `…and which to ${right}?`} />
-      <div className="pt-2">
-        <HandRow cards={hand} selected={first === null ? [] : [first]} labels={first === null ? {} : { [first]: left }}
-          onTap={(k) => {
-            if (first === null) return setFirst(k);
-            if (k === first) return setFirst(null);
-            act({ type: "batwara", card: hand[first], right: hand[k] });
-          }} />
       </div>
     </div>
   );
