@@ -367,7 +367,7 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
   // FIRST-TIME TIPS (designer 2026-10-09): one short line at a time, each once per phone — your first turn, debate and
   // vote, how to talk to the table, and at a table of humans AND bots that the bots can't hear voice
   const mixed = !solo && v.players.some((p) => isBot(p.name));
-  const [tipsSeen, setTipsSeen] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem(TIPS) ?? "[]"); } catch { return []; } });
+  const [tipsSeen, setTipsSeen] = useState<string[]>(() => { try { const x = JSON.parse(localStorage.getItem(TIPS) ?? "[]"); return Array.isArray(x) ? x : []; } catch { return []; } });
   const seeTips = (...ids: string[]) => setTipsSeen((was) => {
     const next = [...new Set([...was, ...ids])];
     try { localStorage.setItem(TIPS, JSON.stringify(next)); } catch {}
@@ -942,7 +942,7 @@ function Divider() {
 /** "Your Cards": the tiles, and — when it's your move — the pair buttons or the next step. */
 function Tray({ v, act, live, banner = null, waitForExit = false }: { v: PlayerView; act: (a: Action) => void; live: Record<string, number> | null; banner?: React.ReactNode; waitForExit?: boolean }) {
   const d = v.decision;
-  const exitFirst = waitForExit && (d?.kind === "gift" || d?.kind === "handoff");
+  const exitFirst = waitForExit && (d?.kind === "gift" || d?.kind === "handoff" || d?.kind === "dal_badal_out");
   if (d?.kind === "vote") return <>{banner && <div className="relative z-20">{banner}</div>}<Ballot v={v} mine={d.mine} live={live ?? {}} act={act} /></>;
   const inTray = d && d.kind !== "debate";
   return (
@@ -959,7 +959,12 @@ function Tray({ v, act, live, banner = null, waitForExit = false }: { v: PlayerV
       </div>
       {!v.me.alive && <p className="text-center text-[13px] text-stock/70">You&rsquo;re out — you can still talk to the table.</p>}
       {exitFirst ? <p className="py-3 text-center font-display text-[16px] text-stock/80">Your last decision comes next…</p>
-        : inTray ? <Decide key={v.phase} v={v} act={act} /> : v.me.alive && <HandRow cards={v.me.hand} />}
+        : inTray ? <Decide key={v.phase} v={v} act={act} />
+        : v.me.alive && <>
+          <HandRow cards={v.me.hand} />
+          {/* (2026-10-12) the mandatory debate: a thief holding Dal Badal may use it here */}
+          {d?.kind === "debate" && d.dalBadal && <Decide key={v.phase} v={v} act={act} />}
+        </>}
     </section>
   );
 }
@@ -1153,7 +1158,7 @@ const TIPS = "tunga:tips";
 const STONE_NAME: Partial<Record<Card, string>> = { STONE_1: "Bhadra Stone", STONE_2: "Tunga Stone" };
 const TIP_TEXT: Record<string, React.ReactNode> = {
   turn: <>Your turn: play a glowing pair, or pass your cards on.</>,
-  debate: <>Faisla: talk it out, then tap <b>Ready to vote</b>.</>,
+  debate: <>Talk it out, then tap <b>Ready to vote</b>.</>,
   vote: <>Tap who goes out. You can change your vote.</>,
   bots: <>🤖 Bots can&rsquo;t hear voice — tap a seat: <b>🌾 Villager · 🫵 Thief · 🔮 Role · 💎 Stone</b></>,
   seats: <>Tap anyone to say <b>🌾 Villager, 🫵 Thief, 🔮 Role or 💎 Stone</b> — true or a lie. Tap <b>yourself</b> for quick lines.</>,
@@ -1242,7 +1247,7 @@ function coachFor(v: PlayerView, seen: string[], solo = false): { id: string; te
     ["final", v.phase.startsWith("final") && d?.kind === "vote", <>The last vote. Vote out a <b>thief holding a Stone</b> and the village gets it — but vote out a <b>villager</b> holding one and it goes to the thieves.</>],
     ["surrender", d?.kind === "surrender", <>The rounds are over. <b>Surrender your Stone</b> to the village — a thief holding one wins it for the thieves.</>],
     ["vote", d?.kind === "vote", <>Tap the player you think is a <b>thief</b>. You can change your vote until the clock runs out.</>],
-    ["debate", d?.kind === "debate", <>A <b>Faisla</b>! Everyone talks. Say what you know, then tap <b>Ready to vote</b>.</>],
+    ["debate", d?.kind === "debate", <>{v.phase.startsWith("final") ? <>The <b>last vote</b>!</> : <>A <b>Faisla</b>!</>} Everyone talks. Say what you know, then tap <b>Ready to vote</b>.</>],
     ["tell", read && !d, <>Only <b>you</b> saw that role. Tell the table — tap their seat → <b>🌾 Villager · 🫵 Thief · 🔮 Role</b>. Or keep it secret.</>],
     ["turn", d?.kind === "turn", <>Your turn! The two <b>glowing cards</b> are a pair — tap <b>Play</b> to use its power. Or pass.</>],
     ["steps", Boolean(d) && d?.kind !== "turn", <>Follow the steps under your cards — pick a player, then the cards you pass on.</>],

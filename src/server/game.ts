@@ -602,7 +602,7 @@ function botsSayWhatTheyFound(row: GameRow, from: number) {
 
 /** DEVELOPMENT ONLY — screen checks: give the caller a chosen hand and, if a turn is on, the turn. Refuses to run
  *  anywhere but `next dev` (NODE_ENV is "production" on Vercel), so it can never touch a real game. */
-export async function debugRig(code: string, token: string | null, body: { hand?: unknown; out?: unknown; jump?: unknown }) {
+export async function debugRig(code: string, token: string | null, body: { hand?: unknown; out?: unknown; jump?: unknown; thief?: unknown }) {
   if (process.env.NODE_ENV !== "development") throw new HttpError(404, "Not found");
   await play(code, (row) => {
     const seat = seatOf(row, token);
@@ -626,9 +626,38 @@ export async function debugRig(code: string, token: string | null, body: { hand?
       s.players[seat].hand = [];
       for (const c of body.hand as Card[]) {
         const i = s.deck.indexOf(c);
-        if (i < 0) throw new HttpError(400, `No ${String(c)} left in the deck`);
-        s.players[seat].hand.push(...s.deck.splice(i, 1));
+        if (i >= 0) { s.players[seat].hand.push(...s.deck.splice(i, 1)); continue; }
+        // not in the deck (Dal Badal is always dealt): take it from the pile or another hand, which gets a card back
+        const holder = s.players.find((p) => p.seat !== seat && p.hand.includes(c));
+        const from = holder ? holder.hand : s.pile.includes(c) ? s.pile : null;
+        if (!from) throw new HttpError(400, `No ${String(c)} to be found`);
+        from.splice(from.indexOf(c), 1);
+        const back = s.deck.findIndex((x) => !x.startsWith("STONE"));
+        if (back >= 0) from.push(...s.deck.splice(back, 1));
+        s.players[seat].hand.push(c);
       }
+    }
+    // make the caller a thief (swap role cards with a living thief — the thief count stays the same)
+    if (body.thief === true && s.players[seat].side !== "T") {
+      const t = s.players.find((p) => p.alive && p.side === "T" && p.seat !== seat);
+      if (t) { const me = s.players[seat]; [me.role, t.role] = [t.role, me.role]; [me.side, t.side] = [t.side, me.side]; }
+    }
+    // (2026-10-12) jump to the MANDATORY VOTE's debate — or to "the caller has just been voted out in it"
+    if (body.jump === "final" || body.jump === "votedout") {
+      s.round = s.rounds + 1;
+      if (body.jump === "final") {
+        const voters = s.players.filter((p) => p.alive && p.votes > 0).map((p) => p.seat);
+        s.events.push({ n: s.events.length, type: "final_vote", to: "all", msg: "The last round is over. MANDATORY VOTE — talk, then vote." });
+        s.phase = { kind: "vote", reason: "final", caller: null, voters, ballots: {}, debate: true, ready: [] };
+      } else {
+        const me = s.players[seat];
+        me.alive = false; me.votesAtDeath = me.votes; me.votes = 0; s.deadOrder.push(seat);
+        s.events.push({ n: s.events.length, type: "eliminated", to: "all", msg: `${me.name} is OUT. Their role stays hidden.`, data: { seat, hand: [...me.hand], killer: null } });
+        s.after = { kind: "finalReveal" };
+        s.elimQueue = [{ seat, killer: null, reveal: [] }];
+        s.phase = { kind: "elim", seat, step: "dal_badal" };
+      }
+      return commitState(row, s, from);
     }
     // jump to the end: the last round is over and the Stone holders decide (the caller holds one)
     if (body.jump === "surrender") {

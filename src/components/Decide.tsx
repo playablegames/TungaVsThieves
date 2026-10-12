@@ -122,8 +122,9 @@ function Bhukamp({ v, act }: { v: PlayerView; act: (a: Action) => void }) {
   const [first, setFirst] = useState<number | null>(null);
   const living = v.players.filter((p) => p.alive).map((p) => p.seat);
   const i = living.indexOf(v.me.seat);
-  const left = v.players[living[(i + 1) % living.length]].name;
-  const right = v.players[living[(i - 1 + living.length) % living.length]].name;
+  const bare = (s: string) => s.replace(/\s*🤖$/, "");
+  const left = bare(v.players[living[(i + 1) % living.length]].name);
+  const right = bare(v.players[living[(i - 1 + living.length) % living.length]].name);
   const hand = v.me.hand;
   if (hand.length < 2) {
     return (
@@ -137,7 +138,7 @@ function Bhukamp({ v, act }: { v: PlayerView; act: (a: Action) => void }) {
     <div className="flex flex-col gap-3">
       <Head title={first === null ? `Bhukamp — which card to ${left}?` : `…and which to ${right}?`} />
       <div className="pt-2">
-        <HandRow cards={hand} selected={first === null ? [] : [first]} labels={first === null ? {} : { [first]: left.replace(/\s*🤖$/, "") }}
+        <HandRow cards={hand} selected={first === null ? [] : [first]} labels={first === null ? {} : { [first]: left }}
           onTap={(k) => {
             if (first === null) return setFirst(k);
             if (k === first) return setFirst(null);
@@ -180,7 +181,7 @@ function DalBadalOut({ v, act }: { v: PlayerView; act: (a: Action) => void }) {
   const others = v.players.filter((p) => p.alive && p.seat !== v.me.seat);
   return (
     <div className="flex flex-col gap-3">
-      <Head title="You're out — use Dal Badal?" />
+      <Head title="Dal Badal before the reveal?" />
       <div className="grid grid-cols-2 gap-2">
         {others.map((p) => (
           <PlayerChip key={p.seat} p={p} selected={swap.includes(p.seat)} onClick={() => {
