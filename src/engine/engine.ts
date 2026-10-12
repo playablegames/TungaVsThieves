@@ -74,9 +74,7 @@ export function canPlay(s: GameState, seat: number, card: ActionCard): boolean {
   const others = living(s).filter((p) => p.seat !== seat);
   switch (card) {
     case "HERA_PHERI": return others.some((p) => p.hand.length > 0);
-    case "FAISLA": return true;
-    // (analysis only) a variant that locks Bhukamp out of the last round
-    case "BATWARA": return !((s.probeBhukamp === "nolate" || s.probeBhukamp === "keep1late") && s.round >= s.rounds);
+    case "FAISLA": case "BATWARA": return true;
     default: return others.length > 0;
   }
 }
@@ -509,7 +507,7 @@ function resolveVote(s: GameState) {
 // ---------------------------------------------------------------- Batwara
 function resolveBatwara(s: GameState) {
   const ph = s.phase as Extract<GameState["phase"], { kind: "batwara" }>;
-  if (s.probeBhukamp && s.probeBhukamp !== "nolate") return probeBatwara(s, ph);
+  if (s.probeBhukamp === "anti") return probeBatwara(s, ph);
   const moves: [number, Card, number][] = [];
   // everything leaves before anything arrives, so a card never travels twice
   for (const [g, pk] of Object.entries(ph.picks)) {
@@ -526,39 +524,13 @@ function resolveBatwara(s: GameState) {
   endTurn(s);
 }
 
-/** ANALYSIS ONLY (scripts/bhukamp.mts): the Bhukamp variants under test. Each player's picks say what they would give
- *  first (`left`) and second (`right`); the variant decides what actually moves. */
+/** ANALYSIS ONLY (scripts/bhukamp.mts, 2026-10-12): the designer's anticlockwise Bhukamp — every hand, whole, one seat
+ *  anticlockwise, to the player before you in turn order (whose pile comes back to you on their next turn). */
 function probeBatwara(s: GameState, ph: Extract<GameState["phase"], { kind: "batwara" }>) {
-  const v = s.probeBhukamp!;
   const moves: [number, Card, number][] = [];
-  const out = (seat: number, c: Card, to: number) => { removeCards(P(s, seat).hand, [c]); moves.push([seat, c, to]); };
-  if (v === "keep1" || v === "keep1late") {
-    // PASS 1, KEEP 1: everyone gives one card (their first pick), all the same way — the Bhukamp player's choice
-    const dir: 1 | -1 = int(s, 2) === 0 ? 1 : -1;
-    for (const [g, pk] of Object.entries(ph.picks)) out(Number(g), pk.left, neighbour(s, Number(g), dir));
-  } else if (v === "stonefix") {
-    // both ways, but a Stone never moves in a Bhukamp
-    for (const [g, pk] of Object.entries(ph.picks)) {
-      const seat = Number(g);
-      if (!isStone(pk.left)) out(seat, pk.left, neighbour(s, seat, 1));
-      if (pk.right && !isStone(pk.right)) out(seat, pk.right, neighbour(s, seat, -1));
-    }
-  } else if (v === "pool") {
-    // THE POOL (Sushi Go / Uno's 0): everyone puts one card face down in the middle; it is shuffled and dealt back
-    const seats = Object.keys(ph.picks).map(Number);
-    const pool = seats.map((x) => ph.picks[x].left);
-    for (const x of seats) removeCards(P(s, x).hand, [ph.picks[x].left]);
-    for (let i = pool.length - 1; i > 0; i--) { const j = int(s, i + 1); [pool[i], pool[j]] = [pool[j], pool[i]]; }
-    seats.forEach((x, i) => moves.push([seats.find((y) => ph.picks[y].left === pool[i] && !moves.some((m) => m[0] === y)) ?? x, pool[i], x]));
-  } else if (v === "swap") {
-    // TROUBLEMAKER (One Night Ultimate Werewolf): the Bhukamp player swaps the whole hands of two other players
-    const others = living(s).filter((p) => p.seat !== ph.actor && p.hand.length).map((p) => p.seat);
-    if (others.length >= 2) {
-      const a = others.splice(int(s, others.length), 1)[0], b = others[int(s, others.length)];
-      const ha = [...P(s, a).hand], hb = [...P(s, b).hand];
-      for (const c of ha) out(a, c, b);
-      for (const c of hb) out(b, c, a);
-    }
+  for (const g of Object.keys(ph.picks)) {
+    const seat = Number(g);
+    for (const c of P(s, seat).hand.splice(0)) moves.push([seat, c, neighbour(s, seat, -1)]);
   }
   for (const [from, c, to] of moves) {
     P(s, to).hand.push(c);

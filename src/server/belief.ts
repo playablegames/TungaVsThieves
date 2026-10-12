@@ -384,6 +384,12 @@ export function stoneOdds(s: GameState, seat: number, seed: number, skill: Skill
         // (2026-10-12) everyone passes 1 card left and 1 right: with 2 in hand both leave, one each way — a seat's
         // chance comes half from each neighbour
         const was = new Map(p);
+        if (s.probeBhukamp === "anti") {
+          // (analysis only) every hand moves one seat anticlockwise: you now hold what the next living player held
+          const next = (x: number) => { for (let k = 1; k < n; k++) { const y = (x + k) % n; if (v.players[y]?.alive) return y; } return x; };
+          for (let x = 0; x < n; x++) if (v.players[x]?.alive) p.set(x, was.get(next(x))!);
+          break;
+        }
         for (let x = 0; x < n; x++) p.set(x, 0.5 * was.get((x - 1 + n) % n)! + 0.5 * was.get((x + 1) % n)!);
         break;
       }
