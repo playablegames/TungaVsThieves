@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, saveToken, useGame, useHydrated } from "@/lib/client";
 import { beatsFor } from "@/lib/beats";
+import { CARD } from "@/lib/cards";
 import type { Action, Card, GameEvent, Side } from "@/engine/types";
 import type { StoneStep } from "@/engine/stonepath";
 import { MIN_PLAYERS } from "@/engine/setup";
@@ -69,7 +70,9 @@ export default function Game({ code }: { code: string }) {
   const reading = useReading();
   useEffect(() => { if (ptt.down) cut(); }, [ptt.down]);
   // an update (the Sutradhar) has priority over voice chat: mic held, the table ducked under it — even mid push-to-talk
-  const held = Boolean((fl && fl.seat !== me) || (lw && lw.seat !== me) || (ptt.on && !ptt.down) || reading === "update" || (reading === "talk" && !ptt.down));
+  // (designer 2026-10-12) a player who is out watches in silence — their mic stays shut, except for their last words
+  const outSilent = st?.status === "playing" && st.view && !st.view.me.alive && !(lw && lw.seat === me);
+  const held = Boolean(outSilent || (fl && fl.seat !== me) || (lw && lw.seat !== me) || (ptt.on && !ptt.down) || reading === "update" || (reading === "talk" && !ptt.down));
   const duckTable = voice.duck;
   useEffect(() => { duckTable(reading === "update"); }, [reading, duckTable]);
   const setHeld = voice.setHeld;
@@ -497,7 +500,7 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
         <button type="button" onClick={() => setMenu(true)} aria-label="Menu" className="grid h-11 w-11 place-items-center text-stock">
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden><path d="M4 6h16M4 12h16M4 18h16" /></svg>
         </button>
-        {!solo && <MicButton voice={voice} />}
+        {!solo && (v.me.alive || s.lastWords?.seat === v.me.seat) && <MicButton voice={voice} />}
         <button type="button" onClick={() => setFeedOpen(true)} aria-label="What happened so far" className="grid h-11 w-11 place-items-center text-brass">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5M12 7v5l3 2" /></svg>
         </button>
@@ -509,16 +512,16 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
       )}
 
       <Ring v={v} voice={voice} onHistory={setHistory} talking={bots.current?.seat ?? null} floorSeat={s.floor && s.floor.until > now() ? s.floor.seat : null} actor={headline?.actor} target={headline?.target} pick={v.decision?.kind === "vote" ? v.decision.mine ?? null : null} tally={live ?? voteShown?.tally}
-        flying={flying} onThrow={s.status === "playing" ? throwAt : undefined}
+        flying={flying} onThrow={s.status === "playing" && v.me.alive ? throwAt : undefined}
         away={s.away} marks={marks} onMark={setMark}
-        onClaim={s.status === "playing" ? claimAt : undefined}
-        onQuick={s.status === "playing" ? (l) => { seeTips("seats"); api.chat(code, token, QUICK_PREFIX + l).catch(() => {}); } : undefined}>
+        onClaim={s.status === "playing" && v.me.alive ? claimAt : undefined}
+        onQuick={s.status === "playing" && v.me.alive ? (l) => { seeTips("seats"); api.chat(code, token, QUICK_PREFIX + l).catch(() => {}); } : undefined}>
         {stage.current?.big
           ? <Stage stage={stage} skip={stage.skip} names={v.players.map((p) => p.name)} inline small={v.players.length > 8} />
           : <Centre v={v} feed={feed} onOpen={() => setFeedOpen(true)} compact={Boolean(myMove && myMove !== "vote" && myMove !== "debate")} living={living.length} extend={extend}
           ready={() => act({ type: "ready" })} />}
       </Ring>
-      {!solo && <TalkButton up={Boolean(myMove && myMove !== "debate")} />}
+      {!solo && v.me.alive && <TalkButton up={Boolean(myMove && myMove !== "debate")} />}
       {/* the coach (a guided first game) or a first-time tip sits INSIDE the tray, so the cards never cover it */}
       <Tray v={v} act={act} live={live} waitForExit={myExitPending} banner={coach
         ? <Coach key={coach.id} text={coach.text} onNext={() => setCoachSeen((xs) => [...xs, coach.id])} onSkip={() => setCoachOff(true)} />
@@ -672,7 +675,7 @@ function Ring({ v, voice, talking, floorSeat = null, actor, target, pick, tally,
               micOff={me ? !voice.micOn || voice.micBlocked : Boolean(peer?.muted)}
               hushed={Boolean(peer?.hushed)}
               away={away.includes(p.seat)} mark={marks[p.seat]} said={said[p.seat]}
-              onTap={onPick && p.alive ? () => onPick(p.seat) : (me ? onQuick : onThrow || onClaim || peer) ? () => setPicker(picker === p.seat ? null : p.seat) : undefined} />
+              onTap={onPick && p.alive ? () => onPick(p.seat) : (me ? onQuick || onHistory : onThrow || onClaim || peer || onHistory || onMark) ? () => setPicker(picker === p.seat ? null : p.seat) : undefined} />
           </div>
         );
       })}
@@ -970,7 +973,8 @@ function Tray({ v, act, live, banner = null, waitForExit = false }: { v: PlayerV
           </h2>
         </div>
       </>}
-      {!v.me.alive && <p className="text-center text-[13px] text-stock/70">You&rsquo;re out — you can still talk to the table.</p>}
+      {!v.me.alive && <p className="text-center text-[13px] text-stock/70">{v.spectate ? "You’re out — you see everything now. You can’t speak." : "You’re out."}</p>}
+      {v.spectate && <Watching v={v} />}
       {exitFirst ? <p className="py-3 text-center font-display text-[16px] text-stock/80">Your last decision comes next…</p>
         : inTray ? <Decide key={v.phase} v={v} act={act} />
         : v.me.alive && <>
@@ -979,6 +983,22 @@ function Tray({ v, act, live, banner = null, waitForExit = false }: { v: PlayerV
           {d?.kind === "debate" && d.dalBadal && <Decide key={v.phase} v={v} act={act} />}
         </>}
     </section>
+  );
+}
+
+/** WATCHING (designer 2026-10-12): a player who is out sees every role and every hand, live — and may not speak */
+function Watching({ v }: { v: PlayerView }) {
+  const rows = (v.spectate ?? []).filter((r) => v.players[r.seat]?.alive);
+  return (
+    <ul className="flex max-h-[38dvh] flex-col gap-1 overflow-y-auto" aria-label="Everyone's role and cards">
+      {rows.map((r) => (
+        <li key={r.seat} className="flex items-center gap-2 rounded-xl bg-black/30 px-2 py-1">
+          <span className="w-20 truncate text-[13px] font-bold text-stock">{v.players[r.seat].name.replace(/\s*🤖$/, "")}</span>
+          <span className={`shrink-0 rounded px-1.5 text-[10px] font-bold uppercase tracking-wide ${r.side === "T" ? "bg-crimson-deep text-ink" : "bg-[#3a240c] text-[#f3c66b]"}`}>{r.role}</span>
+          <span className="min-w-0 flex-1 truncate text-right text-[12px] text-stock/80">{r.hand.map((c) => (c.startsWith("STONE") ? `💎 ${CARD[c].name}` : CARD[c].name)).join(" · ") || "—"}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 

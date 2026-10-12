@@ -1,6 +1,6 @@
 // Room service: create / join / start / act / tick / view / chat. The engine is the only thing that changes state.
 import { iceServers } from "./turn";
-import { livekitConfigured, voicePasses } from "./livekit";
+import { listenPass, livekitConfigured, voicePasses } from "./livekit";
 import { randomBytes, randomInt } from "node:crypto";
 import { apply, closeVote, start, waitingOn } from "@/engine/engine";
 import { defaultAction } from "@/engine/decisions";
@@ -534,7 +534,9 @@ export async function chat(code: string, token: string | null, text: unknown) {
   const t = String(text ?? "").trim().slice(0, 300);
   if (!t) throw new HttpError(400, "Empty message");
   const s = row.state;
-  // (designer 2026-10-09) a player who is out still talks to the whole table — voice, quick lines, captions
+  // (designer 2026-10-12, reversing 2026-10-09) a player who is OUT watches in silence: no quick lines, captions or
+  // throws while the game runs — they see everything, so they must not speak
+  if (s && s.phase.kind !== "over" && !s.players[seat]?.alive) throw new HttpError(403, "You're out — you watch in silence");
   await store.addMessage(row.code, { seat, name: row.lobby[seat].name, text: t, phase: s ? s.phase.kind : "lobby" });
   // bots hear captions: a plain accusation / vouch / role read becomes the claim a tap would make — for the bots only
   // (humans already read the caption), so the table never sees it twice
@@ -562,7 +564,8 @@ export async function claim(code: string, token: string | null, body: { kind?: u
     const s = row.state;
     if (!s || s.phase.kind === "over") throw new HttpError(409, "No game in progress");
     const seat = seatOf(row, token);
-    // (designer 2026-10-09) a player who is out may still say what they know
+    // (designer 2026-10-12) a player who is out watches in silence — they see everything, so no marks
+    if (!s.players[seat].alive) throw new HttpError(403, "You're out — you watch in silence");
     const kind = String(body.kind) as ClaimKind;
     if (!["kundli", "accuse", "trust", "stone"].includes(kind)) throw new HttpError(400, "Unknown claim");
     const target = Number(body.target);
@@ -857,10 +860,10 @@ export async function livekitPasses(code: string, token: string | null) {
   const seat = seatOf(row, token);
   const s = row.state;
   const lastWords = Boolean(s?.lastWords && s.lastWords.seat === seat && s.lastWords.until > Date.now());
-  // (designer 2026-10-09: "after elimination a player's voice shouldn't be disabled") no Gone room: everyone, in or out,
-  // speaks at the table
-  void lastWords;
-  return voicePasses(row.code, seat, row.lobby[seat].name, true, token!);
+  // (designer 2026-10-12, reversing 2026-10-09) a player who is out LISTENS but never speaks — except their last words
+  const speak = !s || s.phase.kind === "over" || s.players[seat].alive || lastWords;
+  const p = await voicePasses(row.code, seat, row.lobby[seat].name, true, token!);
+  return speak ? p : { ...p, table: await listenPass(row.code, seat, row.lobby[seat].name, token!) };
 }
 
 /** TURN/STUN servers for table voice; seated players only. */

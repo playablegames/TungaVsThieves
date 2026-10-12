@@ -38,6 +38,19 @@ export interface PublicView {
 export interface PlayerView extends PublicView {
   me: { seat: number; name: string; role: string; side: Side; alive: boolean; votes: number; hand: Card[] };
   decision: Decision;
+  /** WATCHING (designer 2026-10-12): a player who is out sees everything — every role and hand — and may not speak.
+   *  Only once their own last decision and last words are over (or they'd use it). */
+  spectate?: { seat: number; role: string; side: Side; hand: Card[] }[];
+}
+
+/** out, and done deciding and speaking: from here on this seat only watches */
+export function isSpectator(s: GameState, seat: number): boolean {
+  const me = s.players[seat];
+  if (!me || me.alive || s.phase.kind === "over") return false;
+  if (s.phase.kind === "elim" && s.phase.seat === seat) return false;
+  if (s.elimQueue.some((q) => q.seat === seat)) return false;
+  if (s.lastWords && s.lastWords.seat === seat && s.lastWords.until > Date.now()) return false;
+  return true;
 }
 
 const visibleTo = (e: GameEvent, seat: number | null) => e.to === "all" || (seat !== null && e.to.includes(seat));
@@ -85,5 +98,6 @@ export function viewFor(s: GameState, seat: number): PlayerView {
     events: s.phase.kind === "over" ? s.events.filter((e) => !(Array.isArray(e.to) && e.to.length === 0)) : s.events.filter((e) => visibleTo(e, seat)),
     me: { seat, name: me.name, role: me.role, side: me.side, alive: me.alive, votes: me.votes, hand: [...me.hand] },
     decision: decisionFor(s, seat),
+    ...(isSpectator(s, seat) ? { spectate: s.players.map((p) => ({ seat: p.seat, role: p.role, side: p.side, hand: [...p.hand] })) } : {}),
   };
 }

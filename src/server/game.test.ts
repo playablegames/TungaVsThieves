@@ -1,6 +1,6 @@
 import { tkGuesses } from "@/engine/setup";
 import { describe, expect, it, vi } from "vitest";
-import { act, addBot, chat, createRoom, debateSeconds, extendDebate, reclaim, removeBot, sweep, getState, joinRoom, startGame, tick, HttpError, INTRO_MS, BOT_DELAY_MS, VOTE_SETTLE_MS, ONLINE_MAX_PLAYERS, whisper, exportLog, takeFloor, FLOOR_MS } from "./game";
+import { act, addBot, chat, claim, createRoom, debateSeconds, extendDebate, reclaim, removeBot, sweep, getState, joinRoom, startGame, tick, HttpError, INTRO_MS, BOT_DELAY_MS, VOTE_SETTLE_MS, ONLINE_MAX_PLAYERS, whisper, exportLog, takeFloor, FLOOR_MS } from "./game";
 import { botVote } from "./botmind";
 import { HOLD_CAP } from "@/lib/beats";
 import { defaultAction, randomAction } from "@/engine/decisions";
@@ -87,7 +87,7 @@ describe("room service (memory store)", () => {
     expect((await memoryStore.get(code))!.state!.events.some((e) => e.type === "timeout")).toBe(true);
   });
 
-  it("a player who is out still talks to the table (designer 2026-10-09: no Gone room)", async () => {
+  it("a player who is out watches in silence and sees every role and hand (designer 2026-10-12)", async () => {
     const { code, tokens } = await room(5);
     await startGame(code, tokens[0]);
     await chat(code, tokens[2], "hello");
@@ -95,8 +95,14 @@ describe("room service (memory store)", () => {
     const seat = row.lobby.findIndex((p) => p.token === tokens[2]);
     row.state!.players[seat].alive = false;
     await memoryStore.update({ ...row }, row.version);
-    await chat(code, tokens[2], "I was a villager!");
-    expect((await getState(code, tokens[0], 0)).messages.map((m) => m.text)).toEqual(["hello", "I was a villager!"]);
+    await err(chat(code, tokens[2], "I was a villager!"), 403);
+    await err(claim(code, tokens[2], { kind: "accuse", target: (seat + 1) % 5 }), 403);
+    expect((await getState(code, tokens[0], 0)).messages.map((m) => m.text)).toEqual(["hello"]);
+    const me = (await getState(code, tokens[2], 0)).view!;
+    expect(me.spectate).toHaveLength(5);
+    expect(me.spectate!.every((p) => typeof p.role === "string" && Array.isArray(p.hand))).toBe(true);
+    // the living see nothing extra
+    expect((await getState(code, tokens[0], 0)).view!.spectate).toBeUndefined();
   });
 
   it("only the host adds bots or removes seats — any seat but the host's own (2026-10-09)", async () => {

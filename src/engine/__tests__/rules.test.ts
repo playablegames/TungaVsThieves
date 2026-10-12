@@ -221,6 +221,14 @@ describe("ELIMINATION — out, dying power, hand-off", () => {
   const kill = (s: GameState, target: number) =>
     apply(s, 0, { type: "play", card: "TEER_KAMAN", pass: [F, K, H], target, roles: tk(s, [role(s, target), other(s, target, "")]) });
 
+  it("WATCHING (2026-10-12): an out player sees every role and hand — but only AFTER their last decision", () => {
+    const s = rig(6, { sides: ["T", "V", "V", "V", "V", "T"], hands: [[TK, TK, F, K, H], [S1, B], [F], [T], [K], [B]] });
+    let n = kill(s, 1);
+    expect(viewFor(n, 1).spectate).toBeUndefined(); // still choosing who gets the vote: no peeking
+    n = apply(n, 1, { type: "gift", target: 2 });
+    expect(viewFor(n, 1).spectate?.map((p) => p.role)).toEqual(n.players.map((p) => p.role));
+    expect(viewFor(n, 2).spectate).toBeUndefined(); // the living never get it
+  });
   it("(2026-10-10) a player hit by Teer Kaman gives 1 vote; their cards go to the SHOOTER — no choice; the shooter takes them instead of drawing", () => {
     const s = rig(6, { sides: ["T", "V", "V", "V", "V", "T"], hands: [[TK, TK, F, K, H], [S1, B], [F], [T], [K], [B]] });
     let n = kill(s, 1);

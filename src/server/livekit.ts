@@ -1,7 +1,7 @@
 // LiveKit voice (research 2026-10-07: a phone-to-phone mesh won't hold 8-12 players on mobile; an SFU sends each voice
 // once and lets the SERVER decide who hears whom). Each seated player gets short-lived passes:
-//   everyone → the table room, may speak. (Since 2026-10-09 a player who is out keeps their voice at the table — the
-//   designer cut the Gone room; `alive: false` still makes the old Gone-room pass, unused.)
+//   everyone → the table room. A player who is out (designer 2026-10-12) gets a LISTEN-ONLY pass (listenPass): they
+//   hear everything and see everything, and speak only in their last words. (The old Gone room is unused.)
 // Off until LIVEKIT_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET are set; the phones then use the old mesh voice.
 import { createHash } from "node:crypto";
 import { AccessToken } from "livekit-server-sdk";
@@ -15,6 +15,12 @@ async function pass(room: string, identity: string, name: string, speak: boolean
   const at = new AccessToken(process.env.LIVEKIT_API_KEY!, process.env.LIVEKIT_API_SECRET!, { identity, name, ttl: TTL });
   at.addGrant({ room, roomJoin: true, canPublish: speak, canPublishData: false, canSubscribe: true });
   return at.toJwt();
+}
+
+/** (designer 2026-10-12) a player who is out: hears the table, can never publish */
+export async function listenPass(code: string, seat: number, name: string, playerToken: string): Promise<string> {
+  const id = `s${seat}-${createHash("sha256").update(playerToken).digest("hex").slice(0, 8)}`;
+  return pass(`tunga-${code}`, id, name, false);
 }
 
 export interface VoicePasses { url: string; table: string; gone: string | null; alive: boolean }
