@@ -128,14 +128,16 @@ async function play(code: string, f: (row: GameRow) => GameRow): Promise<GameRow
     if (!st || st.phase.kind === "over") return r;
     for (const { seat, c } of said) {
       if (!st.players[c.target]) continue;
-      st.events.push({ n: st.events.length, type: "claim", to: "all", msg: `${st.players[seat].name}: ${c.kind === "stone" ? (c.has ? "has a Stone" : "no Stone") : c.side === "T" ? "a thief" : "a villager"} (${st.players[c.target].name})`,
+      const them = st.players[c.target].name;
+      st.events.push({ n: st.events.length, type: "claim", to: "all", msg: `${st.players[seat].name}: "${c.kind === "stone" ? `${them} ${c.has ? "has a Stone" : "has no Stone"}` : `${them} is ${c.role ?? (c.side === "T" ? "a thief" : "a villager")}`}."`,
         data: { seat, kind: c.kind, target: c.target, role: c.role ?? null, side: c.side, ...(c.kind === "stone" ? { has: c.has } : {}), fromLine: true } });
     }
     r.state = st;
     return r;
   }).catch(() => {});
-  for (const l of lines) await store.addMessage(next.code, { seat: l.seat, name: next.lobby[l.seat].name, text: l.text, phase: next.state.phase.kind });
-  if (lines.length) await ping(next.code, next.version);
+  // (designer 2026-10-12: "short lines like X is A or Y is Z — no Hinglish super-nonsense") a bot's line reaches the
+  // table only as what it claims — a mark under the player — never as flavour talk
+  if (said.length) await ping(next.code, next.version);
   return next;
 }
 
@@ -586,17 +588,48 @@ export function pushStoneClaim(s: GameState, seat: number, target: number, has: 
     data: { seat, kind: "stone", target, has, role: null, side: null } });
 }
 
-/** a bot that just searched someone tells the table what it found — a villager truthfully, a thief sometimes lies */
+/** EVERY DISCOVERY BECOMES A MARK (designer 2026-10-12: "every info must trigger something — a Kundli revealing a
+ *  villager must mark the villager as a villager, so the info is available to all via the marking"). The moment a bot
+ *  learns something private, it puts a mark under that player for the whole table — 🌾/🫵 with the role 🔮 for a role
+ *  it saw (its own Kundli read, the reader who read it back, a player it put out), 💎✓/✗ for a hand it searched.
+ *  By skill: a villager marks the truth (beginner sometimes forgets, skilled always); a thief may mark a lie instead
+ *  (more often the more skilled), or say nothing. */
 function botsSayWhatTheyFound(row: GameRow, from: number) {
   const s = row.state;
   if (!s) return;
+  const thiefRoles = s.rolesInPlay.filter((r) => THIEF_ROLES.includes(r));
+  const villagerRoles = s.rolesInPlay.filter((r) => !THIEF_ROLES.includes(r));
+  const pickOf = (xs: string[]) => xs[Math.floor(Math.random() * xs.length)] ?? null;
+  const mark = (seat: number, kind: "kundli" | "was", target: number, role: string | null, side: "V" | "T") => {
+    if (s.events.some((e) => e.type === "claim" && e.data?.seat === seat && e.data?.target === target && e.data?.kind === kind)) return;
+    const them = s.players[target].name;
+    s.events.push({ n: s.events.length, type: "claim", to: "all", msg: `${s.players[seat].name}: "${them} ${kind === "was" ? "was" : "is"} ${role ?? (side === "T" ? "a thief" : "a villager")}."`,
+      data: { seat, kind, target, role, side } });
+  };
   for (const e of s.events.slice(from)) {
-    if (e.type !== "talashi_private") continue;
-    const actor = e.data?.seat as number, target = e.data?.target as number;
-    if (!row.lobby[actor]?.bot || !s.players[actor]?.alive || !s.players[target]?.alive) continue;
-    const found = ((e.data?.hand as string[]) ?? []).some((c) => c === "STONE_1" || c === "STONE_2");
-    const lie = s.players[actor].side === "T" && Math.random() < 0.4;
-    pushStoneClaim(s, actor, target, lie ? !found : found);
+    const seen = e.type === "talashi_private" ? (e.data?.seat as number)
+      : e.type === "kundli_private" || e.type === "eliminated_private" ? (Array.isArray(e.to) ? e.to[0] : undefined) : undefined;
+    if (seen === undefined || !row.lobby[seen]?.bot || !s.players[seen]?.alive) continue;
+    const skill = SKILLS[row.lobby[seen].skill ?? "average"];
+    const thief = s.players[seen].side === "T";
+    const speaks = Math.random() < skill.claimRate;
+    const lies = thief && Math.random() < skill.lie;
+    if (e.type === "talashi_private") {
+      const target = e.data?.target as number;
+      if (!s.players[target]?.alive || (!speaks && !lies)) continue;
+      const found = ((e.data?.hand as string[]) ?? []).some((c) => c === "STONE_1" || c === "STONE_2");
+      pushStoneClaim(s, seen, target, lies ? !found : found);
+      continue;
+    }
+    // a role it saw: its own read, the reader who read it back (Mutual Kundli), or a player it put out
+    const target = (e.type === "eliminated_private" ? e.data?.seat : e.data?.target) as number;
+    const role = e.data?.role as string, side = e.data?.side as "V" | "T";
+    if (!s.players[target] || target === seen) continue;
+    const kind = e.type === "eliminated_private" ? "was" : "kundli";
+    if (kind === "kundli" && !s.players[target].alive) continue;
+    if (!thief) { if (speaks) mark(seen, kind, target, role, side); continue; }
+    // a thief: a lie (the other side, a believable role) — or nothing at all
+    if (lies) mark(seen, kind, target, side === "V" ? pickOf(thiefRoles) : pickOf(villagerRoles), side === "V" ? "T" : "V");
   }
 }
 

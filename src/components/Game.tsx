@@ -854,7 +854,7 @@ const TAGLESS = new Set(["pass", "away", "back", "floor_extended", "timeout", "g
 /** THE CENTRE (designer 2026-10-09, option A — "every little thing must be displayed at the center"): a status line,
  *  then the running feed — newest at the bottom and biggest, older lines smaller and fainter — then the debate's
  *  controls. Tap the feed for everything that was said and done. */
-function Centre({ v, feed, onOpen, compact, living, extend, ready }: {
+function Centre({ v, feed, onOpen, living, extend, ready }: {
   v: PlayerView; feed: FeedItem[]; onOpen: () => void; compact: boolean; living: number;
   extend?: () => void; ready: () => void;
 }) {
@@ -863,8 +863,8 @@ function Centre({ v, feed, onOpen, compact, living, extend, ready }: {
   const debate = v.phase.endsWith("_debate");
   const btn = "min-h-11 rounded-full border-2 border-brass/70 px-3 font-[family-name:var(--font-engraved)] text-[13px] font-bold uppercase tracking-wide";
   const names = v.players.map((p) => p.name);
-  // the debate's buttons and your move need the room: 3 lines then
-  const lines = feed.slice(compact || debate ? -3 : -6);
+  // (designer 2026-10-12: "one update at a time, 4-5 words — no crowding") just the newest line; the rest is a tap away
+  const lines = feed.slice(-1);
   return (
     <div className="relative rounded-2xl border border-brass/70 bg-[#1a0e06]/90 px-2.5 pb-2.5 pt-3 text-center shadow-[0_10px_30px_-10px_rgba(0,0,0,.8)]">
       <Ornament className="absolute -top-2 left-1/2 -translate-x-1/2" />
@@ -912,7 +912,7 @@ function FeedLine({ it: raw, names, me, rank, full = false }: { it: FeedItem; na
   else if (it.kind === "claim") body = <span className={TONE_TEXT[it.tone]}>{it.tone === "lethal" ? "🫵" : it.tone === "gold" ? "💎" : "🌾"} {it.text}</span>;
   else body = <span className={it.mine ? "text-jade-soft" : it.kind === "event" ? TONE_TEXT[it.tone] : "text-stock/90"}>
     {it.mine ? "🔒 Only you: " : KIND_ICON[it.kind] ? `${KIND_ICON[it.kind]} ` : ""}{it.text}
-    {it.detail && (rank === 0 || full) && <span className="mt-0.5 block text-[12px] font-normal text-stock/70">{it.detail}</span>}
+    {it.detail && full && <span className="mt-0.5 block text-[12px] font-normal text-stock/70">{it.detail}</span>}
   </span>;
   // in the centre a line is two rows at most — the whole of it is one tap away
   return <li className={`stage-in leading-snug text-stock ${size} ${fade} ${full ? "" : "line-clamp-2"}`}>{body}</li>;

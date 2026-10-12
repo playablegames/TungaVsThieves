@@ -433,7 +433,7 @@ export function pushBotClaim(s: GameState, seat: number, seed: number, r: R, ski
   const me = s.players[seat].name, them = s.players[c.target].name;
   // designer 2026-10-09: Villager / Thief / Role / Stone — a Kundli reader may name the exact role (true or a lie)
   const what = c.side === "T" ? "a thief" : "a villager";
-  const msg = c.role ? `${me}: "${them} ${c.kind === "was" ? "was" : "is"} ${c.role} — ${what}."` : `${me}: "${them} is ${what}."`;
+  const msg = c.role ? `${me}: "${them} ${c.kind === "was" ? "was" : "is"} ${c.role}."` : `${me}: "${them} is ${what}."`;
   s.events.push({ n: s.events.length, type: "claim", to: "all", msg, data: { seat, ...c } });
   return true;
 }

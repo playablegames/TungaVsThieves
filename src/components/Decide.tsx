@@ -196,6 +196,31 @@ function DalBadalOut({ v, act }: { v: PlayerView; act: (a: Action) => void }) {
   );
 }
 
+/** TEER KAMAN'S SHORTLIST (designer 2026-10-12): only the roles that could still be the target's — never your own,
+ *  never a role you know is someone else's (your Kundli reads, read back to you, or a player you saw go out). A Dal
+ *  Badal over a seat wipes what you knew of it. */
+function shortlist(v: PlayerView, target: number | null): string[] {
+  const known = new Map<number, string>();
+  for (const e of v.events) {
+    const mine = Array.isArray(e.to) && e.to.includes(v.me.seat);
+    if (mine && e.type === "kundli_private") known.set(e.data?.target as number, String(e.data?.role));
+    if (mine && e.type === "eliminated_private") known.set(e.data?.seat as number, String(e.data?.role));
+    if (e.type === "dal_badal") for (const x of (e.data?.seats as number[]) ?? []) known.delete(x);
+  }
+  const taken = new Set([v.me.role, ...[...known].filter(([x]) => x !== target).map(([, r]) => r)]);
+  const left = v.rolesInPlay.filter((r) => !taken.has(r));
+  const roles = left.length ? left : v.rolesInPlay.filter((r) => r !== v.me.role);
+  // (designer 2026-10-12: "based on the latest info at the table") roles the table has named for this target come
+  // first, newest first — a claim can be a lie, so it orders the list, it never removes a role. No tags.
+  const named: string[] = [];
+  if (target !== null) for (const e of [...v.events].reverse()) {
+    if (e.type !== "claim" || e.data?.target !== target || typeof e.data?.role !== "string" || e.data?.seat === v.me.seat) continue;
+    const r = e.data.role as string;
+    if (roles.includes(r) && !named.includes(r)) named.push(r);
+  }
+  return [...named, ...roles.filter((r) => !named.includes(r))];
+}
+
 /** why a pair in your hand can't be played right now (engine canPlay, in words) */
 function whyNot(v: PlayerView, c: ActionCard, hand: Card[], passSize: number): string {
   if (hand.length - 2 < 3) return `needs ${passSize} other cards left to pass`;
@@ -328,7 +353,7 @@ function Turn({ v, playable, passSize, dalBadal, act, ask }: { v: PlayerView; pl
           }} />
       )}
       {needsTarget && <Pickers options={targets} sel={target} onPick={(t) => { setTarget(t); fire(pass, t, roles); }} />}
-      {card === "TEER_KAMAN" && <RolePicker roles={v.rolesInPlay} max={guesses} sel={roles} setSel={(r) => { setRoles(r); fire(pass, target, r); }} />}
+      {card === "TEER_KAMAN" && <RolePicker roles={shortlist(v, target)} max={guesses} sel={roles} setSel={(r) => { setRoles(r); fire(pass, target, r); }} />}
     </div>
   );
 }

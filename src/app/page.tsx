@@ -12,8 +12,9 @@ import type { Card } from "@/engine/types";
 
 const NAME_KEY = "tunga:name";
 const LEARNED = "tunga:learned";
-/** Play with bots: you and this many bots (6 players) */
-const BOTS = 5;
+/** Play with bots (designer 2026-10-12: "must open a screen to add however many bots we want"): 4 to 11 bots —
+ *  5 to 12 players — 5 to start with */
+const BOTS_MIN = 4, BOTS_MAX = 11, BOTS_START = 5;
 
 function savedName(): string {
   try { return localStorage.getItem(NAME_KEY) ?? ""; } catch { return ""; }
@@ -38,6 +39,7 @@ function Entry() {
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [bots, setBots] = useState(BOTS_START);
   const nameRef = useRef<HTMLInputElement>(null);
   const codeOk = code.trim().length === 5;
 
@@ -64,7 +66,7 @@ function Entry() {
       saveToken(r.code, r.token);
       if (ask === "bots") {
         // a table of bots, and the game begins at once
-        for (let i = 0; i < BOTS; i++) await api.addBot(r.code, r.token);
+        for (let i = 0; i < bots; i++) await api.addBot(r.code, r.token);
         await api.start(r.code, r.token);
       }
       router.push(`/g/${r.code}`);
@@ -148,6 +150,18 @@ function Entry() {
             <label htmlFor="name" className="sr-only">Your name</label>
             <input id="name" ref={nameRef} value={name} maxLength={20} onChange={(e) => setName(e.target.value)} placeholder="Your name" autoComplete="nickname"
               className="min-h-14 rounded-2xl border-2 border-brass/80 bg-black/40 px-4 text-center text-[17px] text-stock caret-brass outline-none placeholder:text-stock/40" />
+            {ask === "bots" && (
+              <div className="flex items-center justify-between gap-3 rounded-2xl border-2 border-brass/50 bg-black/30 px-3 py-2">
+                <button type="button" aria-label="One bot fewer" disabled={busy || bots <= BOTS_MIN} onClick={() => setBots((b) => Math.max(BOTS_MIN, b - 1))}
+                  className="size-12 rounded-full border-2 border-brass/70 text-[24px] font-bold text-stock disabled:opacity-30">−</button>
+                <p className="text-center text-stock" aria-live="polite">
+                  <span className="block font-display text-[22px] font-bold leading-tight">{bots} bots</span>
+                  <span className="text-[13px] text-stock/70">{bots + 1} players</span>
+                </p>
+                <button type="button" aria-label="One bot more" disabled={busy || bots >= BOTS_MAX} onClick={() => setBots((b) => Math.min(BOTS_MAX, b + 1))}
+                  className="size-12 rounded-full border-2 border-brass/70 text-[24px] font-bold text-stock disabled:opacity-30">+</button>
+              </div>
+            )}
             {error && <p role="alert" className="rounded-xl bg-crimson-deep p-3 text-center text-[14px]">{error}</p>}
             <button type="submit" disabled={busy || !name.trim()}
               className="min-h-14 rounded-full border-2 border-brass/80 bg-[linear-gradient(180deg,var(--color-rust)_0%,var(--color-rust-deep)_100%)] font-[family-name:var(--font-engraved)] text-[17px] font-bold uppercase tracking-[0.12em] text-stock active:translate-y-px disabled:opacity-50">

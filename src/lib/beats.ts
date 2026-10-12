@@ -59,7 +59,8 @@ function rawBeat(e: GameEvent, names: string[]): Beat | null {
   if (Array.isArray(e.to) && e.to.length === 0) return null; // analytics: server only
   if (SKIP.has(e.type)) return null;
   const d = e.data;
-  const nm = (seat: number | undefined) => (seat === undefined ? "?" : names[seat] ?? "?");
+  // (2026-10-12: short, plain lines) the 🤖 badge belongs on the seat, not in the headline
+  const nm = (seat: number | undefined) => (seat === undefined ? "?" : (names[seat] ?? "?").replace(/\s*🤖$/, ""));
   const actor = num(d, "seat"), target = num(d, "target");
   const priv = e.to !== "all";
   const base = { n: e.n, type: e.type, actor, target, private: priv };
@@ -67,7 +68,7 @@ function rawBeat(e: GameEvent, names: string[]): Beat | null {
     case "pass":
       return { ...base, title: `${nm(actor)} plays nothing`, detail: "Three cards go on face down.", tone: "neutral", big: false, hold: SMALL };
     case "kundli":
-      return { ...base, card: "KUNDLI", title: `${nm(actor)} and ${nm(target)} read each other's Kundli`, tone: "relic", big: true, hold: BIG };
+      return { ...base, card: "KUNDLI", title: `${nm(actor)} reads ${nm(target)}'s Kundli`, tone: "relic", big: true, hold: BIG };
     case "kundli_private":
       return { ...base, card: "KUNDLI", title: `${nm(target)} is ${String(d?.role)}`, detail: `${d?.side === "T" ? "A thief." : "A villager."} They saw yours too.`, tone: "relic", big: true, hold: BIG };
     case "talashi":
@@ -79,7 +80,7 @@ function rawBeat(e: GameEvent, names: string[]): Beat | null {
     case "hera_pheri_private":
       return { ...base, card: "HERA_PHERI", title: "What moved", detail: e.msg, tone: "lethal", big: false, hold: SMALL };
     case "batwara":
-      return { ...base, card: "BATWARA", title: `Bhukamp — ${nm(actor)} shakes the table`, detail: "Everyone passes one card left and one right.", tone: "gold", big: true, hold: BIG };
+      return { ...base, card: "BATWARA", title: `${nm(actor)} plays Bhukamp`, detail: "Everyone passes one card left and one right.", tone: "gold", big: true, hold: BIG };
     case "teer_kaman": {
       const roles = (d?.roles as string[]) ?? [];
       const hit = d?.hit === true;
@@ -114,15 +115,15 @@ function rawBeat(e: GameEvent, names: string[]): Beat | null {
       return { ...base, title: `Dal Badal — ${nm(actor)} is ${String(d?.role)}!`, detail: `A thief. Role cards shuffled with ${others.join(" and ")} — each picks one back, face down.${when}`, tone: "lethal", big: true, hold: BIG + 800 };
     }
     case "dal_badal_done":
-      return { ...base, title: d?.inVote ? "Dal Badal is done" : `Dal Badal is done — ${nm(actor)} draws 1`, tone: "neutral", big: false, hold: SMALL };
+      return { ...base, title: "Dal Badal done", tone: "neutral", big: false, hold: SMALL };
     case "gift":
-      return { ...base, title: target === undefined || d?.target === null ? `${nm(actor)} gives the vote to nobody` : `${nm(actor)} gives a vote to ${nm(target)}`, tone: "vote", big: false, hold: SMALL };
+      return { ...base, title: target === undefined || d?.target === null ? `${nm(actor)} gives no vote` : `${nm(actor)}'s vote to ${nm(target)}`, tone: "vote", big: false, hold: SMALL };
     case "handoff":
       return { ...base, title: `${nm(actor)} hands everything to ${nm(target)}`, cards: (d?.cards as Card[]) ?? [], tone: "neutral", big: true, hold: BIG - 600 };
     case "to_village":
-      return { ...base, title: `${nm(actor)}'s cards go to the village`, detail: "A thief's Stone voted out counts for Tunga.", cards: (d?.cards as Card[]) ?? [], tone: "vote", big: true, hold: BIG };
+      return { ...base, title: `${nm(actor)}'s cards to the village`, detail: "A thief's Stone voted out counts for Tunga.", cards: (d?.cards as Card[]) ?? [], tone: "vote", big: true, hold: BIG };
     case "to_thieves":
-      return { ...base, title: `${nm(actor)}'s Stone goes to the thieves`, detail: "A villager voted out — their Stone counts for the thieves.", cards: (d?.cards as Card[]) ?? [], tone: "lethal", big: true, hold: BIG };
+      return { ...base, title: `${nm(actor)}'s Stone to the thieves`, detail: "A villager voted out — their Stone counts for the thieves.", cards: (d?.cards as Card[]) ?? [], tone: "lethal", big: true, hold: BIG };
     case "floor":
       return { ...base, title: e.msg, tone: "vote", big: false, hold: 600 };
     case "whisper":
