@@ -12,7 +12,7 @@
 // ⚠ The skill numbers are starting guesses until they are set from real playtest logs.
 import type { GameState, Side } from "@/engine/types";
 import { viewFor } from "@/engine/view";
-import { THIEF_ROLES } from "@/engine/setup";
+import { THIEF_ROLES, tkGuesses } from "@/engine/setup";
 import { randomAction, readsOf } from "@/engine/decisions";
 import { deduce, type Model } from "./deduce";
 import type { Action } from "@/engine/types";
@@ -210,6 +210,11 @@ export function beliefVote(s: GameState, seat: number, seed: number, r: R, skill
     // a thief called out in public hits back at whoever called it a thief (playtest 2026-10-07)
     const accusers = new Set(s.events.filter((e) => e.type === "claim" && e.data?.target === seat && e.data?.side === "T").map((e) => e.data!.seat as number));
     score = (x: number) => (b.p.get(x) ?? 0) + (mine.known.get(x) === "V" ? 0.2 : 0) + (accusers.has(x) ? 0.6 : 0);
+    if (s.phase.kind === "vote" && s.phase.reason === "final") {
+      // (2026-10-12) a villager voted out hands its Stones to the thieves — so hunt the villager most likely holding one
+      const st = stoneOdds(s, seat, seed, skill);
+      score = (x: number) => (st.get(x) ?? 0) * (1 - (mine.p.get(x) ?? 0.3)) + (accusers.has(x) ? 0.1 : 0);
+    }
   } else {
     const sure = alive.filter((x) => b.known.get(x) === "T");
     // a Faisla with nobody standing out: abstain rather than pile onto noise (playtest WJ9J9 — 0.46 against 0.42 and
@@ -221,12 +226,16 @@ export function beliefVote(s: GameState, seat: number, seed: number, r: R, skill
       const mean = ranked.reduce((a, x) => a + (b.p.get(x) ?? 0), 0) / Math.max(1, ranked.length);
       if (t1 - (t2 ?? 0) < 0.05 && t1 < mean * 1.25) return null;
     }
-    // the mandatory vote: the out player's cards go to the village, so a thief HOLDING a Stone is the one to catch
+    // the mandatory vote (2026-10-12): the out player's Stones go to the OTHER team — catching a thief holding one wins
+    // it, voting out a villager holding one loses it. Worth = P(holds) x (P(thief) - P(villager)); when nobody is worth
+    // the risk, vote the player least likely to hold one (a harmless ballot)
     if (s.phase.kind === "vote" && s.phase.reason === "final") {
       const st = stoneOdds(s, seat, seed, skill);
-      const final = (x: number) => (b.p.get(x) ?? 0) * (0.25 + (st.get(x) ?? 0));
-      if (sure.length) return [...sure].sort((x, y) => (st.get(y) ?? 0) - (st.get(x) ?? 0))[0];
-      score = final;
+      const worth = (x: number) => (st.get(x) ?? 0) * (2 * (b.p.get(x) ?? 0) - 1);
+      const sureHolder = sure.filter((x) => (st.get(x) ?? 0) > 0.05);
+      if (sureHolder.length) return sureHolder.sort((x, y) => (st.get(y) ?? 0) - (st.get(x) ?? 0))[0];
+      const best = Math.max(...alive.map(worth));
+      score = best > 0 ? worth : (x: number) => -(st.get(x) ?? 0) + 0.01 * (b.p.get(x) ?? 0);
     } else if (sure.length) return sure[0];
   }
   const order = [...pool].sort((x, y) => score(y) - score(x));
@@ -269,12 +278,15 @@ export function stoneOdds(s: GameState, seat: number, seed: number, skill: Skill
       case "batwara": {
         // everyone passes 1 card clockwise: a little of each seat's chance moves one seat on
         const was = new Map(p);
-        for (let x = 0; x < n; x++) p.set(x, was.get(x)! * 0.75 + was.get((x - 1 + n) % n)! * 0.25);
+        for (let x = 0; x < n; x++) p.set(x, s.twoWayBhukamp
+          ? 0.5 * was.get((x - 1 + n) % n)! + 0.5 * was.get((x + 1) % n)! // probe: both cards leave, one each way
+          : was.get(x)! * 0.75 + was.get((x - 1 + n) % n)! * 0.25);
         break;
       }
       case "batwara_private": { const from = num(d, "from"), to = num(d, "to"); if (from !== null && to !== null && STONE(d?.card)) { p.set(to, 1); } break; }
       case "handoff": if (actor !== null && target !== null) { p.set(actor, 0); if (has(d?.cards)) p.set(target, 1); } break;
       case "to_village": if (actor !== null) { p.set(actor, 0); village += ((d?.cards as unknown[]) ?? []).filter(STONE).length; } break;
+      case "to_thieves": if (actor !== null) { p.set(actor, 0); village += ((d?.cards as unknown[]) ?? []).filter(STONE).length; } break;
       case "surrender": if (actor !== null) { p.set(actor, 0); village += ((d?.cards as unknown[]) ?? []).filter(STONE).length; } break;
       case "eliminated": if (actor !== null) p.set(actor, 0); break;
       case "claim":
@@ -385,14 +397,14 @@ export function skilledAction(s: GameState, seat: number, seed: number, r: R, sk
   const foes = [...readsOf(s, seat)].filter(([x, k]) => k.side !== me.side && s.players[x].alive);
   if (foes.length) {
     const [target, k] = pick(r, foes);
-    return { ...a, target, roles: [k.role, pick(r, s.rolesInPlay.filter((x) => x !== k.role))] };
+    return { ...a, target, roles: [k.role, pick(r, s.rolesInPlay.filter((x) => x !== k.role))].slice(0, tkGuesses(s.rolesInPlay)) };
   }
   if (r() < skill.blindShot) {
     const target = topSuspect(s, seat, seed, skill);
     const want = s.rolesInPlay.filter((x) => (me.side === "V") === THIEF_ROLES.includes(x));
     if (target !== null && want.length >= 2) {
       const r1 = pick(r, want);
-      return { ...a, target, roles: [r1, pick(r, want.filter((x) => x !== r1))] };
+      return { ...a, target, roles: [r1, pick(r, want.filter((x) => x !== r1))].slice(0, tkGuesses(s.rolesInPlay)) };
     }
   }
   return { type: "pass", pass: a.pass };

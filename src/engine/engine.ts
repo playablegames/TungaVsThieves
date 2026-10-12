@@ -6,7 +6,7 @@ import {
   ACTION_CARDS, isStone, RuleError,
   type Action, type ActionCard, type Card, type GameEvent, type GameState, type Player, type Side,
 } from "./types";
-import { createGame } from "./setup";
+import { createGame, tkGuesses } from "./setup";
 import { int, shuffle } from "./rng";
 
 export const CARD_NAME: Record<Card, string> = {
@@ -189,8 +189,8 @@ function startFinalVote(s: GameState) {
 
 /** House rules the balance probe can switch off to compare (scripts/balance.mts). The game always plays them ON. */
 export const RULES = {
-  /** 2026-10-07: whoever the MANDATORY vote puts out hands nothing to anyone — their cards go to the village,
-   *  and a Stone among them counts as with the villagers at the reveal. The mandatory vote is the village's tool. */
+  /** 2026-10-07: whoever the MANDATORY vote puts out hands nothing to anyone. (designer 2026-10-12) Their Stones go to
+   *  the OTHER team — a thief's to the village, a villager's to the thieves — so the vote can be lost as well as won. */
   finalVoteToVillage: true,
 };
 
@@ -322,8 +322,11 @@ function doPlay(s: GameState, seat: number, a: Extract<Action, { type: "play" }>
   switch (a.card) {
     case "KUNDLI": {
       p.hand.push(...draw(s, 2));
-      emit(s, "kundli", "all", `${p.name} looks at ${t!.name}'s role card.`, { seat, target: t!.seat });
+      // MUTUAL KUNDLI (designer 2026-10-12): the reader sees the target's role card AND the target sees the reader's
+      emit(s, "kundli", "all", `${p.name} and ${t!.name} look at each other's role cards.`, { seat, target: t!.seat });
       emit(s, "kundli_private", [seat], `${t!.name} is ${t!.role} (${t!.side === "V" ? "Tunga" : "Thief"}).`, { target: t!.seat, role: t!.role, side: t!.side });
+      emit(s, "kundli_private", [t!.seat], `${p.name} read your role card — and you saw theirs: ${p.name} is ${p.role} (${p.side === "V" ? "Tunga" : "Thief"}).`,
+        { target: seat, role: p.role, side: p.side, mutual: true });
       endTurn(s); return s;
     }
     case "TALASHI": {
@@ -356,10 +359,10 @@ function doPlay(s: GameState, seat: number, a: Extract<Action, { type: "play" }>
       return s;
     }
     case "TEER_KAMAN": {
-      const [r1, r2] = a.roles!;
-      const hit = t!.role === r1 || t!.role === r2;
-      emit(s, "teer_kaman", "all", `${p.name} shoots at ${t!.name}, naming ${r1} and ${r2} — ${hit ? "HIT" : "miss"}.`,
-        { seat, target: t!.seat, roles: [r1, r2], hit });
+      const named = [...a.roles!];
+      const hit = named.includes(t!.role);
+      emit(s, "teer_kaman", "all", `${p.name} shoots at ${t!.name}, naming ${named.join(" and ")} — ${hit ? "HIT" : "miss"}.`,
+        { seat, target: t!.seat, roles: named, hit });
       if (hit) {
         s.elimQueue.push({ seat: t!.seat, killer: seat, reveal: [seat] }); // only the shooter sees the role
         s.after = { kind: "endTurn", drawFor: seat };
@@ -434,8 +437,9 @@ function validateTarget(s: GameState, seat: number, a: Extract<Action, { type: "
   if (a.card === "TEER_KAMAN") checkRoles(s, a.roles);
 }
 
-function checkRoles(s: GameState, roles?: [string, string]) {
-  if (!roles || roles.length !== 2 || roles[0] === roles[1]) throw new RuleError("Name two different roles");
+function checkRoles(s: GameState, roles?: string[]) {
+  const need = tkGuesses(s.rolesInPlay);
+  if (!roles || roles.length !== need || new Set(roles).size !== need) throw new RuleError(need === 1 ? "Name one role" : "Name two different roles");
   for (const r of roles) if (!s.rolesInPlay.includes(r)) throw new RuleError(`${r} is not in this game`);
 }
 
@@ -475,6 +479,15 @@ function resolveBatwara(s: GameState) {
   for (const [g, card] of Object.entries(ph.picks)) {
     const seat = Number(g);
     removeCards(P(s, seat).hand, [card]);
+    if (s.twoWayBhukamp) {
+      // probe: a second card goes the other way; which way each goes is a coin (the direction stays secret)
+      const h = P(s, seat).hand;
+      const second = h.length ? h.splice(int(s, h.length), 1)[0] : null;
+      const flip = int(s, 2) === 0;
+      moves.push([seat, card, neighbour(s, seat, flip ? 1 : -1)]);
+      if (second) moves.push([seat, second, neighbour(s, seat, flip ? -1 : 1)]);
+      continue;
+    }
     moves.push([seat, card, neighbour(s, seat, 1)]); // clockwise = the next seat in turn order
   }
   for (const [from, c, to] of moves) {
@@ -534,6 +547,13 @@ function doElimStep(s: GameState, seat: number, a: Action): GameState {
     if (p.hand.length === 0 || living(s).length === 0) return finishElim(s);
     // put out by the mandatory vote: no hand-off — everything goes to the village
     if (RULES.finalVoteToVillage && s.after?.kind === "finalReveal") {
+      if (p.side === "V") {
+        // a villager voted out: their Stones go to the thieves and no longer count for the village
+        const stones = p.hand.filter(isStone);
+        p.hand = p.hand.filter((c) => !isStone(c));
+        s.thiefPot = [...(s.thiefPot ?? []), ...stones];
+        if (stones.length) emit(s, "to_thieves", "all", `${p.name}'s ${stones.length === 2 ? "Stones go" : "Stone goes"} to the thieves.`, { seat, cards: stones });
+      }
       const cards = p.hand.splice(0);
       s.villagePot = [...(s.villagePot ?? []), ...cards];
       emit(s, "to_village", "all", `${p.name}'s cards go to the village: ${names(cards)}.`, { seat, cards });

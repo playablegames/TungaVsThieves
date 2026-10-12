@@ -1,6 +1,7 @@
 // What a seat may do now, the timeout default, and a random legal move (for fuzzing / bots).
 import { isStone, type Action, type Card, type GameState } from "./types";
 import { canDalBadal, canPlay, canRevote, living, passSize, playableCards, waitingOn } from "./engine";
+import { tkGuesses } from "./setup";
 
 export type Decision =
   | { kind: "turn"; playable: string[]; passSize: number; /** a thief holding Dal Badal may use it first */ dalBadal: boolean }
@@ -95,7 +96,7 @@ export function botAction(s: GameState, seat: number, r: R = Math.random): Actio
     if (!foes.length) return { type: "pass", pass: a.pass };
     const [target, k] = pick(r, foes);
     const other = pick(r, s.rolesInPlay.filter((x) => x !== k.role));
-    return { ...a, target, roles: [k.role, other] };
+    return { ...a, target, roles: [k.role, other].slice(0, tkGuesses(s.rolesInPlay)) };
   }
   return a;
 }
@@ -127,7 +128,7 @@ export function randomAction(s: GameState, seat: number, r: R, activity = 0.8, k
         const target =
           card === "HERA_PHERI" ? pick(r, withCards)
           : ["KUNDLI", "TALASHI", "TEER_KAMAN"].includes(card) ? pick(r, others) : undefined;
-        const roles = card === "TEER_KAMAN" ? (sample(r, s.rolesInPlay, 2) as [string, string]) : undefined;
+        const roles = card === "TEER_KAMAN" ? sample(r, s.rolesInPlay, tkGuesses(s.rolesInPlay)) : undefined;
         return { type: "play", card, pass, target, roles };
       }
       return { type: "pass", pass: passFrom(r, h, passSize(h), keepStones) };

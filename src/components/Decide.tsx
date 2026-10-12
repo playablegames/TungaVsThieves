@@ -2,6 +2,7 @@
 // The action dock: what YOU can do right now, one step at a time. Irreversible moves go through a 5-second
 // timed confirm instead of undo (BGA: undo is impossible once hidden information is out).
 import { useMemo, useState } from "react";
+import { tkGuesses } from "@/engine/setup";
 import { ACTION_CARDS, type Action, type ActionCard, type Card } from "@/engine/types";
 import type { PlayerView, PublicPlayer } from "@/engine/view";
 import { CARD } from "@/lib/cards";
@@ -40,10 +41,10 @@ function Pickers({ options, sel, onPick }: { options: PublicPlayer[]; sel: numbe
   return <div className="grid grid-cols-2 gap-2">{options.map((p) => <PlayerChip key={p.seat} p={p} selected={sel === p.seat} onClick={() => onPick(p.seat)} />)}</div>;
 }
 
-function RolePicker({ roles, sel, setSel }: { roles: string[]; sel: string[]; setSel: (r: string[]) => void }) {
-  const toggle = (r: string) => setSel(sel.includes(r) ? sel.filter((x) => x !== r) : sel.length < 2 ? [...sel, r] : sel);
+function RolePicker({ roles, sel, setSel, max }: { roles: string[]; sel: string[]; setSel: (r: string[]) => void; max: number }) {
+  const toggle = (r: string) => setSel(sel.includes(r) ? sel.filter((x) => x !== r) : sel.length < max ? [...sel, r] : max === 1 ? [r] : sel);
   return (
-    <div className="flex flex-wrap gap-2" role="group" aria-label="Name two roles">
+    <div className="flex flex-wrap gap-2" role="group" aria-label={max === 1 ? "Name one role" : "Name two roles"}>
       {roles.map((r) => (
         <button key={r} type="button" onClick={() => toggle(r)} aria-pressed={sel.includes(r)}
           className={`min-h-11 rounded-full border-2 px-4 text-[14px] font-semibold ${sel.includes(r) ? "border-crimson bg-crimson-deep text-ink" : "border-brass/35 bg-black/30 text-stock"}`}>{r}</button>
@@ -141,6 +142,7 @@ function Turn({ v, playable, passSize, dalBadal, act, ask }: { v: PlayerView; pl
   const [pass, setPass] = useState<number[]>([]);
   const [target, setTarget] = useState<number | null>(null);
   const [roles, setRoles] = useState<string[]>([]);
+  const guesses = tkGuesses(v.rolesInPlay);
   const hand = v.me.hand;
   // the cards that leave with the move: a pair, or the Dal Badal card itself
   const pairIdx = useMemo(() => (!card || card === "NONE" ? [] : hand.map((c, i) => (c === card ? i : -1)).filter((i) => i >= 0).slice(0, card === "DAL_BADAL" ? 1 : 2)), [card, hand]);
@@ -204,12 +206,12 @@ function Turn({ v, playable, passSize, dalBadal, act, ask }: { v: PlayerView; pl
     if (card === "NONE") { act({ type: "pass", pass: p.map((i) => hand[i]) }); reset(); return; }
     if (card === "DAL_BADAL") return;
     if (needsTarget && t === null) return;
-    if (card === "TEER_KAMAN" && r.length !== 2) return;
-    ask(card, { type: "play", card, pass: p.map((i) => hand[i]), target: t ?? undefined, roles: card === "TEER_KAMAN" ? (r as [string, string]) : undefined });
+    if (card === "TEER_KAMAN" && r.length !== guesses) return;
+    ask(card, { type: "play", card, pass: p.map((i) => hand[i]), target: t ?? undefined, roles: card === "TEER_KAMAN" ? r : undefined });
     reset();
   };
   const ASK: Partial<Record<ActionCard, string>> = {
-    TALASHI: "Search who?", KUNDLI: "Read whose role?", HERA_PHERI: "Steal from who?", TEER_KAMAN: "Shoot who? Name 2 roles",
+    TALASHI: "Search who?", KUNDLI: "Read whose role?", HERA_PHERI: "Steal from who?", TEER_KAMAN: guesses === 1 ? "Shoot who? Name 1 role" : "Shoot who? Name 2 roles",
   };
   if (card === "DAL_BADAL") {
     // DAL BADAL is the whole turn: pass 3, show your role, pick 2 players to shuffle role cards with, then draw 1
@@ -260,7 +262,7 @@ function Turn({ v, playable, passSize, dalBadal, act, ask }: { v: PlayerView; pl
           }} />
       )}
       {needsTarget && <Pickers options={targets} sel={target} onPick={(t) => { setTarget(t); fire(pass, t, roles); }} />}
-      {card === "TEER_KAMAN" && <RolePicker roles={v.rolesInPlay} sel={roles} setSel={(r) => { setRoles(r); fire(pass, target, r); }} />}
+      {card === "TEER_KAMAN" && <RolePicker roles={v.rolesInPlay} max={guesses} sel={roles} setSel={(r) => { setRoles(r); fire(pass, target, r); }} />}
     </div>
   );
 }

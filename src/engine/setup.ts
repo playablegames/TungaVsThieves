@@ -29,6 +29,10 @@ export const THIEF_ROLES = [
   "Taskar", "Uchakka", "Jebkatra", "Thug", "Dakait", "Lafanga", "Chhota Chor",
 ];
 
+/** (designer 2026-10-12) Teer Kaman names ONE role at a table that starts with 2 thieves, TWO roles with 3 or more.
+ *  Counted from the roles dealt at the start (rolesInPlay never changes, Dal Badal included). */
+export const tkGuesses = (rolesInPlay: string[]): 1 | 2 => (rolesInPlay.filter((r) => THIEF_ROLES.includes(r)).length <= 2 ? 1 : 2);
+
 /** 6 action cards x 10 (designer 2026-10-09: Mayajaal cut) + one Dal Badal */
 export const COPIES_PER_ACTION = 10;
 
@@ -56,8 +60,10 @@ export function createGame(names: string[], seed: number, table: Record<number, 
   ]);
 
   const deck = shuffle(st, newDeck());
-  // (hand x n) + 1 action cards set aside, plus both Stones, shuffled: `hand` each, the last 3 are the Procession Pile
-  const setAside = shuffle(st, [...deck.splice(0, hand * n + 1), "STONE_1", "STONE_2"] as Card[]);
+  // (designer 2026-10-12) set aside (hand x n) action cards + Dal Badal + both Stones, shuffled: `hand` each, the last 3
+  // are the Procession Pile. Dal Badal is ALWAYS in play (it used to be one of hand x n + 1 random cards — in ~1 game in 5)
+  deck.splice(deck.indexOf("DAL_BADAL"), 1);
+  const setAside = shuffle(st, [...deck.splice(0, hand * n), "DAL_BADAL", "STONE_1", "STONE_2"] as Card[]);
   const players: Player[] = names.map((name, seat) => ({
     seat,
     name,
@@ -85,6 +91,7 @@ export function createGame(names: string[], seed: number, table: Record<number, 
     elimQueue: [],
     after: null,
     villagePot: [],
+    thiefPot: [],
     deadOrder: [],
     rolesInPlay: roles.map((r) => r.role).sort(),
     events: [],

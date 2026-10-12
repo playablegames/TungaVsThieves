@@ -35,6 +35,8 @@ export interface Tally { winner: "V" | "T"; claims: number; lies: number }
 export function play(n: number, gameSeed: number, c: Config): Tally {
   let s: GameState = start(Array.from({ length: n }, (_, i) => `P${i}`), gameSeed, ROLE_TABLE, HAND);
   if (c.publicRoles) s.publicRoles = true;
+  // rule switch still open (2026-10-12): TWO_WAY_BHUKAMP=1
+  if (process.env.TWO_WAY_BHUKAMP === "1") s.twoWayBhukamp = true;
   for (let k = 0; k < 20000 && s.phase.kind !== "over"; k++) {
     const seat = waitingOn(s)[0];
     const ph = s.phase;

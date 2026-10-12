@@ -422,7 +422,7 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
     const SOUND: Partial<Record<string, Sound>> = {
       faisla: "faisla", ballots_open: "drumroll", final_vote: "drumroll", talashi: "flip", talashi_private: "flip", kundli: "mystic", kundli_private: "mystic",
       hera_pheri: "steal", batwara: "quake", dal_badal: "swirl", eliminated: "gong", eliminated_private: "mystic", claim: "claim",
-      pass: "whoosh", to_village: "gong", surrender_open: "drumroll", surrender: "gong",
+      pass: "whoosh", to_village: "gong", to_thieves: "sting", surrender_open: "drumroll", surrender: "gong",
     };
     if (beat.type === "teer_kaman") play("arrow", beat.result === "hit");
     else if (SOUND[beat.type]) play(SOUND[beat.type]!);
@@ -995,6 +995,8 @@ function Final({ v, clips = [], host = false, hostName = "the host", onRematch }
   // where each Stone ended: in a living player's hand, or with the village (the cards left on the table at the end,
   // and the cards of anyone the mandatory vote put out)
   const stoneAt = (c: Card) => {
+    // (2026-10-12) a villager voted out in the mandatory vote: their Stones went to the thieves
+    if (v.events.some((e) => e.type === "to_thieves" && ((e.data?.cards as Card[]) ?? []).includes(c))) return { who: "The thieves", side: "T" as Side, role: null };
     const r = reveal.find((x) => x.hand.includes(c) && v.players[x.seat].alive);
     return r ? { who: name(r.seat), side: r.side as Side, role: r.role } : { who: "The village", side: "V" as Side, role: null };
   };
@@ -1237,7 +1239,7 @@ function coachFor(v: PlayerView, seen: string[], solo = false): { id: string; te
   const read = v.events.some((e) => e.type === "kundli_private" && Array.isArray(e.to) && e.to.includes(me));
   const steps: [string, boolean, React.ReactNode][] = [
     ["over", v.winner !== null, <>That&rsquo;s the game! Tap <b>Play again</b> for another — or go back and <b>play with friends</b>.</>],
-    ["final", v.phase.startsWith("final") && d?.kind === "vote", <>The last vote. Vote out the player you think is a <b>thief holding a Stone</b> — their cards go to the village.</>],
+    ["final", v.phase.startsWith("final") && d?.kind === "vote", <>The last vote. Vote out a <b>thief holding a Stone</b> and the village gets it — but vote out a <b>villager</b> holding one and it goes to the thieves.</>],
     ["surrender", d?.kind === "surrender", <>The rounds are over. <b>Surrender your Stone</b> to the village — a thief holding one wins it for the thieves.</>],
     ["vote", d?.kind === "vote", <>Tap the player you think is a <b>thief</b>. You can change your vote until the clock runs out.</>],
     ["debate", d?.kind === "debate", <>A <b>Faisla</b>! Everyone talks. Say what you know, then tap <b>Ready to vote</b>.</>],

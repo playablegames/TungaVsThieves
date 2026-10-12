@@ -67,9 +67,9 @@ function rawBeat(e: GameEvent, names: string[]): Beat | null {
     case "pass":
       return { ...base, title: `${nm(actor)} plays nothing`, detail: "Three cards go on face down.", tone: "neutral", big: false, hold: SMALL };
     case "kundli":
-      return { ...base, card: "KUNDLI", title: `${nm(actor)} reads ${nm(target)}'s Kundli`, tone: "relic", big: true, hold: BIG };
+      return { ...base, card: "KUNDLI", title: `${nm(actor)} and ${nm(target)} read each other's Kundli`, tone: "relic", big: true, hold: BIG };
     case "kundli_private":
-      return { ...base, card: "KUNDLI", title: `${nm(target)} is ${String(d?.role)}`, detail: d?.side === "T" ? "A thief." : "A villager.", tone: "relic", big: true, hold: BIG };
+      return { ...base, card: "KUNDLI", title: `${nm(target)} is ${String(d?.role)}`, detail: `${d?.side === "T" ? "A thief." : "A villager."} They saw yours too.`, tone: "relic", big: true, hold: BIG };
     case "talashi":
       return { ...base, card: "TALASHI", title: `${nm(actor)} searches ${nm(target)}`, detail: "Only they see the cards.", tone: "relic", big: true, hold: BIG };
     case "talashi_private":
@@ -119,7 +119,9 @@ function rawBeat(e: GameEvent, names: string[]): Beat | null {
     case "handoff":
       return { ...base, title: `${nm(actor)} hands everything to ${nm(target)}`, cards: (d?.cards as Card[]) ?? [], tone: "neutral", big: true, hold: BIG - 600 };
     case "to_village":
-      return { ...base, title: `${nm(actor)}'s cards go to the village`, detail: "The mandatory vote is the village's — nothing is handed to anyone. A Stone here counts for Tunga.", cards: (d?.cards as Card[]) ?? [], tone: "vote", big: true, hold: BIG };
+      return { ...base, title: `${nm(actor)}'s cards go to the village`, detail: "A thief's Stone voted out counts for Tunga.", cards: (d?.cards as Card[]) ?? [], tone: "vote", big: true, hold: BIG };
+    case "to_thieves":
+      return { ...base, title: `${nm(actor)}'s Stone goes to the thieves`, detail: "A villager voted out — their Stone counts for the thieves.", cards: (d?.cards as Card[]) ?? [], tone: "lethal", big: true, hold: BIG };
     case "floor":
       return { ...base, title: e.msg, tone: "vote", big: false, hold: 600 };
     case "whisper":

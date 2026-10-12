@@ -99,6 +99,8 @@ export interface GameState {
   /** cards of players put out in the MANDATORY vote: they belong to the village, Stones included (rule 2026-10-07).
    *  Optional so games saved before the rule still load. */
   villagePot?: Card[];
+  /** (2026-10-12) Stones of a VILLAGER put out by the mandatory vote: they go to the thieves and count for them */
+  thiefPot?: Card[];
   /** OPEN VOTING (designer 2026-10-07): ballots stay open until the clock runs out — anyone may change their vote,
    *  and only closeVote() resolves it. The online game turns this on; engine tests and bot probes leave it off. */
   voteUntilClock?: boolean;
@@ -113,6 +115,9 @@ export interface GameState {
   /** BALANCE PROBE ONLY: show every eliminated player's role to the table (the old way), to measure what hiding costs.
    *  The game never sets it. */
   publicRoles?: boolean;
+  /** BALANCE PROBE ONLY (2026-10-12): Bhukamp two ways (paper v16, the player included) — everyone passes 1 card to
+   *  each neighbour. The probe passes the picked card + one more, and a coin decides which goes which way */
+  twoWayBhukamp?: boolean;
   /** LEARN BY PLAYING (2026-10-09): a guided first game — the phone shows a coach; the rules are the same */
   tutorial?: boolean;
   deadOrder: number[];
@@ -127,7 +132,8 @@ export type Action =
       card: ActionCard;
       pass: Card[];
       target?: number;
-      roles?: [string, string];
+      /** Teer Kaman: the roles named — 1 at a table that started with 2 thieves, else 2 (setup.ts tkGuesses) */
+      roles?: string[];
     }
   | { type: "ready" }
   | { type: "surrender"; give: boolean }

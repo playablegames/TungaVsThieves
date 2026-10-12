@@ -3,7 +3,7 @@
 // roles never shown to the table · Dal Badal is a thief's turn · Bhukamp = 1 card to the next player clockwise · 5-30 players).
 import { describe, expect, it } from "vitest";
 import { apply, canPlay, closeVote, start, waitingOn } from "../engine";
-import { COPIES_PER_ACTION, ROLE_TABLE, createGame, newDeck } from "../setup";
+import { COPIES_PER_ACTION, ROLE_TABLE, createGame, newDeck, tkGuesses } from "../setup";
 import { ACTION_CARDS, RuleError, type Card, type GameState } from "../types";
 import { viewFor } from "../view";
 import { NAMES, rig, totalCards } from "./helpers";
@@ -11,6 +11,8 @@ import { NAMES, rig, totalCards } from "./helpers";
 const F: Card = "FAISLA", T: Card = "TALASHI", K: Card = "KUNDLI", H: Card = "HERA_PHERI",
   B: Card = "BATWARA", TK: Card = "TEER_KAMAN", S1: Card = "STONE_1", S2: Card = "STONE_2", DB: Card = "DAL_BADAL";
 const role = (s: GameState, seat: number) => s.players[seat].role;
+/** Teer Kaman names 1 role at a table that started with 2 thieves, 2 with more (2026-10-12) */
+const tk = (s: GameState, roles: string[]) => roles.slice(0, tkGuesses(s.rolesInPlay));
 const other = (s: GameState, seat: number, wrong: string) => s.rolesInPlay.filter((r) => r !== role(s, seat) && r !== wrong)[0];
 /** no role ever reaches the table: not on a public event, not on a seat */
 const noPublicRoles = (s: GameState) => {
@@ -33,6 +35,9 @@ describe("SETUP", () => {
       expect(totalCards(s)).toBe(63);
       const stones = [...s.pile, ...s.players.flatMap((p) => p.hand)].filter((c) => c.startsWith("STONE"));
       expect(stones).toHaveLength(2); // both Stones are in the set-aside cards
+      // (2026-10-12) 2 × players action cards + Dal Badal + both Stones: Dal Badal is ALWAYS in play
+      expect([...s.pile, ...s.players.flatMap((p) => p.hand)].filter((c) => c === DB)).toHaveLength(1);
+      expect(s.deck.includes(DB)).toBe(false);
     }
   });
   it("the deck: 6 action cards × 10 and one Dal Badal — no Mayajaal (2026-10-09)", () => {
@@ -99,12 +104,15 @@ describe("YOUR TURN — power or Stone", () => {
 });
 
 describe("THE CARDS", () => {
-  it("KUNDLI shows the role privately, to the reader only", () => {
+  it("KUNDLI is MUTUAL (2026-10-12): reader and target privately see each other's role card — nobody else does", () => {
     const s = rig(5, { hands: [[K, K, F, T, H], [B, B], [F], [T], [K]] });
     const n = apply(s, 0, { type: "play", card: "KUNDLI", pass: [F, T, H], target: 3 });
     const priv = n.events.filter((e) => e.type === "kundli_private");
-    expect(priv).toHaveLength(1);
+    expect(priv).toHaveLength(2);
     expect(priv[0].to).toEqual([0]);
+    expect(priv[0].data).toMatchObject({ target: 3, role: role(s, 3) });
+    expect(priv[1].to).toEqual([3]);
+    expect(priv[1].data).toMatchObject({ target: 0, role: role(s, 0) });
     expect(viewFor(n, 1).events.some((e) => e.type === "kundli_private")).toBe(false);
   });
   it("TALASHI is a PRIVATE search (2026-10-09): the table sees who, only the searcher sees the cards", () => {
@@ -152,16 +160,26 @@ describe("THE CARDS", () => {
   it("TEER KAMAN miss (2026-10-09): the shooter is OUT, role hidden; the target stays", () => {
     const s = rig(5, { sides: ["V", "T", "V", "T", "V"], hands: [[TK, TK, F, K, H], [B, B], [F], [T], [K]] });
     const r1 = other(s, 1, ""), r2 = other(s, 1, r1);
-    let n = apply(s, 0, { type: "play", card: "TEER_KAMAN", pass: [F, K, H], target: 1, roles: [r1, r2] });
+    let n = apply(s, 0, { type: "play", card: "TEER_KAMAN", pass: [F, K, H], target: 1, roles: tk(s, [r1, r2]) });
     expect(n.players[0].alive).toBe(false);
     expect(n.players[1].alive).toBe(true);
     expect(n.events.some((e) => e.type === "eliminated_private")).toBe(false); // nobody learns the shooter's role
     if (n.phase.kind === "elim") n = apply(n, 0, { type: "gift", target: null });
     noPublicRoles(n);
   });
+  it("TEER KAMAN names ONE role at a table that started with 2 thieves, TWO with 3 or more (2026-10-12)", () => {
+    const s5 = rig(5, { sides: ["V", "T", "V", "T", "V"], hands: [[TK, TK, F, K, H], [B, B], [F], [T], [K]] });
+    expect(tkGuesses(s5.rolesInPlay)).toBe(1);
+    expect(() => apply(s5, 0, { type: "play", card: "TEER_KAMAN", pass: [F, K, H], target: 1, roles: [role(s5, 1), other(s5, 1, "")] })).toThrow(RuleError);
+    expect(apply(s5, 0, { type: "play", card: "TEER_KAMAN", pass: [F, K, H], target: 1, roles: [role(s5, 1)] }).players[1].alive).toBe(false);
+    const s6 = rig(6, { sides: ["V", "T", "V", "T", "V", "T"], hands: [[TK, TK, F, K, H], [B, B], [F], [T], [K], [F]] });
+    expect(tkGuesses(s6.rolesInPlay)).toBe(2);
+    expect(() => apply(s6, 0, { type: "play", card: "TEER_KAMAN", pass: [F, K, H], target: 1, roles: [role(s6, 1)] })).toThrow(RuleError);
+    expect(apply(s6, 0, { type: "play", card: "TEER_KAMAN", pass: [F, K, H], target: 1, roles: [other(s6, 1, ""), role(s6, 1)] }).players[1].alive).toBe(false);
+  });
   it("TEER KAMAN hit: the target is out — only the SHOOTER sees their role", () => {
     const s = rig(5, { sides: ["V", "T", "V", "V", "T"], hands: [[TK, TK, F, K, H], [B, B], [F], [T], [K]] });
-    const n = apply(s, 0, { type: "play", card: "TEER_KAMAN", pass: [F, K, H], target: 1, roles: [role(s, 1), other(s, 1, "")] });
+    const n = apply(s, 0, { type: "play", card: "TEER_KAMAN", pass: [F, K, H], target: 1, roles: tk(s, [role(s, 1), other(s, 1, "")]) });
     expect(n.players[1].alive).toBe(false);
     expect(n.events.find((e) => e.type === "teer_kaman")!.to).toBe("all");
     const priv = n.events.find((e) => e.type === "eliminated_private")!;
@@ -200,7 +218,7 @@ describe("THE CARDS", () => {
 
 describe("ELIMINATION — out, dying power, hand-off", () => {
   const kill = (s: GameState, target: number) =>
-    apply(s, 0, { type: "play", card: "TEER_KAMAN", pass: [F, K, H], target, roles: [role(s, target), other(s, target, "")] });
+    apply(s, 0, { type: "play", card: "TEER_KAMAN", pass: [F, K, H], target, roles: tk(s, [role(s, target), other(s, target, "")]) });
 
   it("(2026-10-10) a player hit by Teer Kaman gives 1 vote; their cards go to the SHOOTER — no choice; the shooter draws 2", () => {
     const s = rig(6, { sides: ["T", "V", "V", "V", "V", "T"], hands: [[TK, TK, F, K, H], [S1, B], [F], [T], [K], [B]] });
@@ -326,7 +344,18 @@ describe("THE END — Surrender, Mandatory Vote, then everyone reveals", () => {
     n = voteNobodyOut(rigStones(n, [v], true));
     expect(n.phase).toMatchObject({ kind: "over", winner: "V" });
   });
-  it("whoever the Mandatory Vote puts out hands nothing on — the cards go to the village, Stones count for it; the role stays hidden", () => {
+  it("(2026-10-12) a VILLAGER voted out in the mandatory vote: their Stone goes to the THIEVES — the thieves win", () => {
+    let n = toFinal(start(NAMES(6), 21));
+    const [v1, v2] = n.players.filter((p) => p.side === "V" && p.alive);
+    n = rigStones(n, [v1.seat, v2.seat]); // the village holds both — until it votes one holder out
+    for (const p of n.players.filter((x) => x.alive)) n = apply(n, p.seat, { type: "ready" });
+    for (const p of n.players.filter((x) => x.alive)) n = apply(n, p.seat, { type: "vote", target: v1.seat });
+    if (n.phase.kind === "elim") n = apply(n, v1.seat, { type: "gift", target: null });
+    expect(n.events.some((e) => e.type === "to_thieves")).toBe(true);
+    expect(n.events.find((e) => e.type === "eliminated")!.data!.role).toBeUndefined();
+    expect(n.phase).toMatchObject({ kind: "over", winner: "T" });
+  });
+  it("whoever the Mandatory Vote puts out hands nothing on — a THIEF's cards go to the village, Stones count for it; the role stays hidden", () => {
     let n = toFinal(start(NAMES(6), 21));
     const villager = n.players.find((p) => p.side === "V" && p.alive)!;
     const thief = n.players.find((p) => p.side === "T" && p.alive)!;
