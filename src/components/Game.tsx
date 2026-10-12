@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, saveToken, useGame, useHydrated } from "@/lib/client";
 import { beatsFor } from "@/lib/beats";
-import type { Action, Card, Side } from "@/engine/types";
+import type { Action, Card, GameEvent, Side } from "@/engine/types";
 import { MIN_PLAYERS } from "@/engine/setup";
 import type { PlayerView, PublicPlayer } from "@/engine/view";
 import type { ClientState } from "@/server/game";
@@ -50,9 +50,12 @@ export default function Game({ code }: { code: string }) {
     const t = setTimeout(() => rerender((x) => x + 1), Math.max(0, Math.min(...ends) - g.now() + 60));
     return () => clearTimeout(t);
   }, [st?.lastWords?.until, st?.floor?.until, g]);
+  // you + bots only: nobody can hear you, so no mic, no talk button (designer 2026-10-09) — and NO voice connection at
+  // all: the mic and the call were running hidden all game, a big battery drain (designer 2026-10-12)
+  const solo = st?.status === "playing" && (st.view?.players.filter((p) => !isBot(p.name)).length ?? 2) <= 1;
   const voice = useVoice(
     code,
-    st ? { seat: st.you.seat, name: st.you.name } : null,
+    st && !solo ? { seat: st.you.seat, name: st.you.name } : null,
     st?.status !== "playing",
     // whoever is speaking last words stays at the table until they finish
     // (designer 2026-10-09) no Gone room: a player who is out is still heard by everyone
@@ -61,8 +64,6 @@ export default function Game({ code }: { code: string }) {
   );
   const ptt = usePtt();
   const me = st?.you.seat ?? -1;
-  // you + bots only: nobody can hear you, so no mic, no talk button (designer 2026-10-09)
-  const solo = st?.status === "playing" && (st.view?.players.filter((p) => !isBot(p.name)).length ?? 2) <= 1;
   // a line read aloud on this phone holds the mic, so the call never carries it back (designer 2026-10-09, option 1)
   const reading = useReading();
   useEffect(() => { if (ptt.down) cut(); }, [ptt.down]);
@@ -291,7 +292,8 @@ function status(v: PlayerView): string {
   const list = w.length > 3 ? `${w.length} players` : w.map(name).join(", ");
   const p = v.phase;
   if (p === "over") return v.winner === "V" ? "Tunga wins" : "Thieves win";
-  if (p.startsWith("turn")) return mine ? "Your move — play a pair or pass" : `${name(v.turnSeat)} must play a pair or pass`;
+  // (designer 2026-10-12) just whose turn it is — the tray says what you can do
+  if (p.startsWith("turn")) return mine ? "Your turn" : `${name(v.turnSeat)}'s turn`;
   if (p.endsWith("_debate")) return `${p.startsWith("final") ? "Last debate" : "Faisla"} — the floor is open`;
   if (p.endsWith("_vote")) return mine ? "Your vote" : `Voting — waiting for ${list}`;
   if (p === "surrender") return mine ? "Surrender your Stone?" : "The Stone holders are deciding…";
@@ -321,7 +323,7 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
   s: ClientState; v: PlayerView; act: (a: Action) => void; now: () => number;
   extend?: () => void; code: string; token: string; voice: VoiceCtl; messages: ChatMessage[]; solo: boolean;
 }) {
-  const stage = useStage(v.events, v.players.map((p) => p.name));
+  const stage = useStage(v.events, v.players.map((p) => p.name), s.timers.speed ?? 1);
   const bots = useBotSpeech(messages);
   const [menu, setMenu] = useState(false);
   const myMove = v.decision?.kind ?? null;
@@ -484,7 +486,8 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
     <div ref={root} className="flex min-h-0 flex-1 flex-col">
       {ejected && beat && (
         <Eject key={beat.n} name={ejected.name.replace(/\s*🤖$/, "")} initials={initialsOf(names)[ejected.seat]} colour={SEAT_COLOURS[ejected.seat % SEAT_COLOURS.length]}
-          thief={beat.tone === "relic"} role={ejected.revealedRole} onDone={stage.skip} lastWords={Boolean(beat.lastWords)} mine={ejected.seat === v.me.seat}
+          thief={beat.tone === "relic"} role={ejected.revealedRole} onDone={stage.skip} speed={s.timers.speed ?? 1} lastWords={Boolean(beat.lastWords)} mine={ejected.seat === v.me.seat}
+          onSkipWords={ejected.seat === v.me.seat && token ? () => { void api.endWords(code, token).catch(() => {}); stage.skip(); } : undefined}
           remaining={thievesRemaining(v.rolesInPlay, v.players.filter((p) => !p.alive).map((p) => p.revealedRole))} />
       )}
       <div aria-hidden className="fixed inset-0 -z-10 bg-[radial-gradient(80%_45%_at_50%_32%,var(--color-ember-2)_0%,var(--color-ember)_60%,#120903_100%)]" />
@@ -500,6 +503,9 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
         <p className="flex-1 text-center font-[family-name:var(--font-engraved)] text-[12px] font-semibold uppercase tracking-[0.18em] text-brass">Round {v.round} of {v.rounds}</p>
         <TimerRing deadline={s.deadline} now={now} size={52} brass />
       </header>
+      {s.you.host && typeof s.timers.speedAsk === "number" && (s.timers.speed ?? 1) === 1 && (
+        <SpeedAsk code={code} token={token} name={v.players[s.timers.speedAsk]?.name.replace(/\s*🤖$/, "") ?? "A player"} />
+      )}
 
       <Ring v={v} voice={voice} talking={bots.current?.seat ?? null} floorSeat={s.floor && s.floor.until > now() ? s.floor.seat : null} actor={headline?.actor} target={headline?.target} pick={v.decision?.kind === "vote" ? v.decision.mine ?? null : null} tally={live ?? voteShown?.tally}
         flying={flying} onThrow={s.status === "playing" ? throwAt : undefined}
@@ -528,6 +534,7 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
             </div>
           )}
           <SoundMode lines={bots.voice} setLines={bots.setVoice} />
+          <SpeedRow code={code} token={token} host={s.you.host} speed={s.timers.speed ?? 1} asked={s.timers.speedAsk === s.you.seat} />
           <AlertsToggle code={code} token={token} on={s.you.alerts} />
           <details className="group rounded-2xl border border-brass/30 px-4 py-1 [&_summary::-webkit-details-marker]:hidden">
             <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between text-[14px] font-semibold text-stock/80">More<span aria-hidden className="transition group-open:rotate-90">›</span></summary>
@@ -689,7 +696,7 @@ function Ring({ v, voice, talking, floorSeat = null, actor, target, pick, tally,
                 className="min-h-11 rounded-xl bg-black/40 text-[14px] font-bold text-stock ring-1 ring-brass/50 active:scale-95">No Stone</button>
             </div>
           )}
-          {picker !== v.me.seat && onClaim && v.players[picker]?.alive && reading !== "stone" && (reading === "role" ? (
+          {picker !== v.me.seat && onClaim && v.players[picker] && reading !== "stone" && (reading === "role" ? (
             <div className="flex flex-wrap justify-center gap-1" role="group" aria-label={`Which role is ${v.players[picker]?.name}?`}>
               {v.rolesInPlay.map((r) => (
                 <button key={r} type="button" role="menuitem" onClick={() => { onClaim("kundli", picker, r); setPicker(null); }}
@@ -704,8 +711,8 @@ function Ring({ v, voice, talking, floorSeat = null, actor, target, pick, tally,
                 className="min-h-11 rounded-xl bg-crimson-deep text-[14px] font-bold text-ink active:scale-95">🫵 Thief</button>
               <button type="button" role="menuitem" onClick={() => setReadingRoles("role")}
                 className="min-h-11 rounded-xl bg-black/40 text-[14px] font-bold text-stock ring-1 ring-brass/50 active:scale-95">🔮 Role</button>
-              <button type="button" role="menuitem" onClick={() => setReadingRoles("stone")}
-                className="min-h-11 rounded-xl bg-[#3a240c] text-[14px] font-bold text-[#f3c66b] ring-1 ring-[#f0a32e]/60 active:scale-95">💎 Stone</button>
+              {v.players[picker]?.alive && <button type="button" role="menuitem" onClick={() => setReadingRoles("stone")}
+                className="min-h-11 rounded-xl bg-[#3a240c] text-[14px] font-bold text-[#f3c66b] ring-1 ring-[#f0a32e]/60 active:scale-95">💎 Stone</button>}
             </div>
           ))}
           {!reading && picker !== v.me.seat && onMark && (
@@ -753,12 +760,12 @@ function Seat({ p, me, size, initials, got, tag, spot, voted, picked, speaking, 
 }) {
   const z = SEAT[size];
   const label = `${p.name}${me ? " (you)" : ""}${got ? `, got ${got} vote${got === 1 ? "" : "s"}` : ""}: ${p.handSize} cards, ${p.votes} vote${p.votes === 1 ? "" : "s"}${p.alive ? "" : p.revealedRole ? `, out — was ${p.revealedRole}` : ", out"}${spot ? ", their move" : ""}${speaking ? ", talking" : ""}${voted ? ", has voted" : ""}${away ? ", away" : ""}${mark ? `, you marked ${MARK[mark].label}` : ""}${said?.accuse ? `, called a thief ${said.accuse} times` : ""}${said?.trust ? `, called a villager ${said.trust} times` : ""}${said?.role ? `, read as ${said.role}` : ""}${said?.stone !== undefined ? (said.stone ? ", said to hold a Stone" : ", said to hold no Stone") : ""}`;
-  const saidChip = p.alive && said && (said.accuse || said.trust || said.role || said.stone !== undefined) ? (
+  const saidChip = said && (said.accuse || said.trust || said.role || (p.alive && said.stone !== undefined)) ? (
     <span className={`flex max-w-full items-center gap-1 truncate rounded-full bg-black/50 px-1.5 text-[11px] leading-[16px] text-stock ${me ? "mb-0.5" : "mt-0.5"}`} aria-hidden>
       {said.accuse ? <span className="text-crimson-soft">🫵{said.accuse}</span> : null}
       {said.trust ? <span className="text-jade-soft">🌾{said.trust}</span> : null}
       {said.role ? <span className="truncate text-stock">🔮{said.role}</span> : null}
-      {said.stone !== undefined ? <span className="text-[#f3c66b]">💎{said.stone ? "✓" : "✗"}</span> : null}
+      {p.alive && said.stone !== undefined ? <span className="text-[#f3c66b]">💎{said.stone ? "✓" : "✗"}</span> : null}
     </span>
   ) : null;
   return (
@@ -843,15 +850,6 @@ function liveTally(v: PlayerView): Record<string, number> {
   return t;
 }
 
-/** seconds left on the floor */
-/** whose turn comes after this one (the next living seat) — only while a turn is on */
-function nextUp(v: PlayerView): string | null {
-  if (!v.phase.startsWith("turn")) return null;
-  const n = v.players.length;
-  for (let k = 1; k < n; k++) { const p = v.players[(v.turnSeat + k) % n]; if (p.alive) return p.seat === v.me.seat ? "you" : p.name; }
-  return null;
-}
-
 const TAGLESS = new Set(["pass", "away", "back", "floor_extended", "timeout", "gift", "dal_badal_done", "whisper", "whisper_private"]);
 
 /** THE CENTRE (designer 2026-10-09, option A — "every little thing must be displayed at the center"): a status line,
@@ -876,7 +874,7 @@ function Centre({ v, feed, onOpen, living, extend, ready }: {
       <p className={`text-[12px] font-semibold leading-snug ${debate || voteOpen ? "text-[#f3c66b]" : d ? "text-jade-soft" : "text-stock/70"}`}>
         {debate ? `${v.phase.startsWith("final") ? "Last debate" : "Faisla"} — accuse, defend, claim`
           : voteOpen ? `Vote · ${living - v.waitingOn.length} of ${living} voted`
-          : <>{status(v)}{nextUp(v) ? <span className="text-stock/50"> · next: <b className="text-[#f3c66b]">{nextUp(v)}</b></span> : null}</>}
+          : status(v)}
       </p>
 
       <button type="button" onClick={onOpen} aria-label="Everything at the table" className="mt-1.5 block w-full text-left" aria-live="polite">
@@ -951,15 +949,19 @@ function Tray({ v, act, live, banner = null, waitForExit = false }: { v: PlayerV
   return (
     <section className="sticky bottom-0 z-20 flex flex-col gap-2 rounded-t-3xl border-t border-brass/30 bg-ember px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-14px_30px_-6px_rgba(0,0,0,.75)]">
       {banner && <div className="-mx-3">{banner}</div>}
-      <div className="flex items-center gap-3" aria-hidden>
-        <span className="h-px flex-1 bg-brass/40" /><Ornament /><span className="h-px flex-1 bg-brass/40" />
-      </div>
-      <div className="-mt-1 grid grid-cols-[1fr_auto_1fr] items-center">
-        <span />
-        <h2 className="text-center font-display text-[24px] font-bold leading-tight text-stock">
-          {!v.me.alive ? "You're out" : inTray ? "Your move" : "Your Cards"}
-        </h2>
-      </div>
+      {/* (2026-10-12) on your move the top line already says "Your turn" — the heading makes way so the cards and the
+          buttons sit higher on a small phone */}
+      {!inTray && <>
+        <div className="flex items-center gap-3" aria-hidden>
+          <span className="h-px flex-1 bg-brass/40" /><Ornament /><span className="h-px flex-1 bg-brass/40" />
+        </div>
+        <div className="-mt-1 grid grid-cols-[1fr_auto_1fr] items-center">
+          <span />
+          <h2 className="text-center font-display text-[24px] font-bold leading-tight text-stock">
+            {!v.me.alive ? "You're out" : "Your Cards"}
+          </h2>
+        </div>
+      </>}
       {!v.me.alive && <p className="text-center text-[13px] text-stock/70">You&rsquo;re out — you can still talk to the table.</p>}
       {exitFirst ? <p className="py-3 text-center font-display text-[16px] text-stock/80">Your last decision comes next…</p>
         : inTray ? <Decide key={v.phase} v={v} act={act} />
@@ -1191,20 +1193,23 @@ interface SaidAbout { accuse: number; trust: number; role?: string; stone?: bool
 /** every public claim about a seat: how often called a thief, how often vouched for, the last role named for them */
 function saidAbout(v: PlayerView): Record<number, SaidAbout> {
   const out: Record<number, SaidAbout> = {};
-  const seen = new Set<string>();
+  // (designer 2026-10-12) each speaker's LATEST word about a seat is the one that counts — say something new (a role
+  // came out, a Talashi told you otherwise) and it replaces what you said before. Stone words are kept apart.
+  const latest = new Map<string, GameEvent>();
   for (const e of v.events) {
     if (e.type !== "claim" || e.to !== "all") continue;
     const t = e.data?.target as number | undefined;
     if (t === undefined) continue;
-    // one speaker saying the same thing twice counts once
-    const key = `${e.data?.seat}:${e.data?.kind}:${t}:${e.data?.side}:${e.data?.has}:${e.data?.role}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
+    latest.set(`${e.data?.seat}:${t}:${e.data?.kind === "stone" ? "stone" : "side"}`, e);
+  }
+  for (const e of latest.values()) {
+    const t = e.data!.target as number;
     const a = (out[t] ??= { accuse: 0, trust: 0 });
-    if (e.data?.kind === "kundli") a.role = String(e.data?.role ?? "");
-    else if (e.data?.kind === "stone") a.stone = Boolean(e.data?.has);
-    else if (e.data?.side === "T") a.accuse++;
-    else a.trust++;
+    if (e.data?.kind === "stone") a.stone = Boolean(e.data?.has);
+    else {
+      if (e.data?.role) a.role = String(e.data.role);
+      if (e.data?.side === "T") a.accuse++; else if (e.data?.side === "V") a.trust++;
+    }
   }
   return out;
 }
@@ -1285,6 +1290,40 @@ function Coach({ text, onNext, onSkip }: { text: React.ReactNode; onNext: () => 
         <button type="button" onClick={onSkip} className="min-h-9 text-stock/60 underline underline-offset-2">Skip tutorial</button>
         <button type="button" onClick={onNext} className="min-h-9 text-[#f3c66b]">Got it ›</button>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- speed (designer 2026-10-12: "2x for everyone if host accepts")
+/** 1× / 2×: the host sets it for the whole table; anyone else asks the host. 2× = bots, big-moment screens and the
+ *  debate twice as fast; your own turn's clock stays. */
+function SpeedRow({ code, token, host, speed, asked }: { code: string; token: string; host: boolean; speed: 1 | 2; asked: boolean }) {
+  const [sent, setSent] = useState(false);
+  const opt = (sp: 1 | 2) => (
+    <button key={sp} type="button" aria-pressed={speed === sp} disabled={!host}
+      onClick={() => { api.speed(code, token, { speed: sp }).catch(() => {}); }}
+      className={`min-h-11 flex-1 rounded-full text-[13px] font-bold ${speed === sp ? "bg-[#f0a32e] text-card-ink" : "text-stock/80 ring-1 ring-brass/40"} disabled:opacity-100`}>{sp}×</button>
+  );
+  return (
+    <div className="flex flex-col gap-1.5" role="group" aria-label="Speed">
+      <p className="text-[13px] font-semibold text-stock/70">Speed{host ? "" : " — the host decides"}</p>
+      <div className="flex gap-2">{opt(1)}{opt(2)}</div>
+      {!host && speed === 1 && (
+        <button type="button" disabled={sent || asked} onClick={() => { setSent(true); api.speed(code, token, { speed: 2 }).catch(() => setSent(false)); }}
+          className="min-h-11 rounded-full text-[13px] font-bold text-stock ring-1 ring-brass/50 disabled:opacity-60">{sent || asked ? "Asked the host" : "Ask the host for 2×"}</button>
+      )}
+    </div>
+  );
+}
+
+/** the host's yes / no when a player asks for 2× */
+function SpeedAsk({ code, token, name }: { code: string; token: string; name: string }) {
+  const say = (answer: "yes" | "no") => { api.speed(code, token, { answer }).catch(() => {}); };
+  return (
+    <div className="mx-3 mt-2 flex items-center gap-2 rounded-2xl border border-brass/50 bg-black/50 px-3 py-2 text-[14px] text-stock" role="alertdialog" aria-label={`${name} asks for 2× speed`}>
+      <p className="flex-1">{name} asks for 2× speed</p>
+      <button type="button" onClick={() => say("yes")} className="min-h-10 rounded-full bg-[#f0a32e] px-4 font-bold text-card-ink">Yes</button>
+      <button type="button" onClick={() => say("no")} className="min-h-10 rounded-full px-3 font-bold text-stock ring-1 ring-brass/50">No</button>
     </div>
   );
 }

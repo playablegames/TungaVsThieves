@@ -33,7 +33,9 @@ type R = () => number;
  *  and the seat counts; the centre shows the line itself, not the claim twice. */
 export interface LineClaim { kind: "accuse" | "trust" | "kundli" | "was" | "stone"; target: number; side: Side | null; role?: string | null; has?: boolean }
 export interface BotLine { seat: number; text: string; claims?: LineClaim[] }
-interface Read { score: number; why: string | null }
+/** `own`: the part of the score from what this bot saw itself — never hunches, never what others said. (designer
+ *  2026-10-12, today's games: bots piled onto a first accusation with no evidence — a villager out 10–1) */
+interface Read { score: number; why: string | null; own: number }
 
 const pick = <T,>(r: R, xs: T[]): T => xs[Math.floor(r() * xs.length)];
 const num = (d: Record<string, unknown> | undefined, k: string) => (typeof d?.[k] === "number" ? (d[k] as number) : null);
@@ -70,11 +72,12 @@ export function mindOf(s: GameState, seat: number, seed: number): Mind {
   const thief = v.me.side === "T";
   const name = (x: number | null) => (x === null ? "?" : v.players[x]?.name ?? "?");
   const reads = new Map<number, Read>();
-  for (const p of v.players) if (p.seat !== seat) reads.set(p.seat, { score: hunch(seed, seat, p.seat) * 1.5, why: null });
-  const add = (x: number | null, pts: number, why: string | null) => {
+  for (const p of v.players) if (p.seat !== seat) reads.set(p.seat, { score: hunch(seed, seat, p.seat) * 1.5, why: null, own: 0 });
+  const add = (x: number | null, pts: number, why: string | null, hearsay = false) => {
     const r = x === null || x === seat ? undefined : reads.get(x);
     if (!r) return;
     r.score += pts;
+    if (!hearsay) r.own += pts;
     if (why && pts > 0 && (!r.why || pts >= 2)) r.why = why;
   };
   const known = new Map<number, { side: Side; how: "kundli" | "swap" }>();
@@ -99,7 +102,8 @@ export function mindOf(s: GameState, seat: number, seed: number): Mind {
         void swapPartner; void mySide;
         break;
       }
-      case "hera_pheri": if (target === seat) add(actor, 2, "took my cards"); break;
+      // (2026-10-12) a steal is no proof — villagers steal Stones to keep them safe (Pappu, game 9NAQM)
+      case "hera_pheri": if (target === seat) add(actor, 0.5, "took my cards", true); break;
       case "teer_kaman": if (target === seat) add(actor, 3, "shot an arrow at me"); break;
       case "last_shot": if (target === seat) add(actor, 2, "aimed the last shot at me"); break;
       case "talashi": if (target === seat) add(actor, 1, "searched me"); break;
@@ -119,7 +123,7 @@ export function mindOf(s: GameState, seat: number, seed: number): Mind {
         if (k?.side === "T") break; // a thief I know is talking: ignore it
         const strong = k?.side === "V" ? 3 : 1; // a villager I know is believed outright
         const pts = (d?.kind === "kundli" ? 4 : 2) * strong;
-        add(target, saysThief ? pts : -pts / 2, saysThief ? `${name(actor)} called them a thief${d?.kind === "kundli" ? " after a Kundli" : ""}` : null);
+        add(target, saysThief ? pts : -pts / 2, saysThief ? `${name(actor)} called them a thief${d?.kind === "kundli" ? " after a Kundli" : ""}` : null, true);
         break;
       }
       case "whisper_private": {
@@ -215,7 +219,8 @@ function debate(m: Mind, final: boolean, r: R): { text: string; claim?: LineClai
   if (m.stones && r() < 0.6) return say(m.thief
     ? pick(r, ["A Stone? Not me, I swear.", `I don't have a Stone. ${tn} might.`])
     : pick(r, ["I have a Stone and I'm a villager — don't vote me out, that's how the village wins.", "One Stone is safe with me. Trust me."]));
-  if (t && t[1].score >= 2 && t[1].why) return say(pick(r, [`I suspect ${tn} — ${t[1].why}.`, `My vote goes to ${tn}. ${cap(t[1].why)}.`, `${tn}, explain this: ${t[1].why}.`]), T(t[0]));
+  // a villager accuses only on what it saw itself; what others said never becomes its own accusation (2026-10-12)
+  if (t && t[1].score >= 2 && t[1].why && (m.thief || t[1].own >= 2)) return say(pick(r, [`I suspect ${tn} — ${t[1].why}.`, `My vote goes to ${tn}. ${cap(t[1].why)}.`, `${tn}, explain this: ${t[1].why}.`]), T(t[0]));
   const threat = m.pairs.find((c) => THREAT[c]) ?? (m.thief && r() < 0.25 ? "TEER_KAMAN" : undefined);
   if (threat && r() < 0.6) return say(THREAT[threat]!(tn));
   const vouch = m.thief ? m.sawThief : m.sawVillager;
@@ -286,7 +291,8 @@ export function botTalk(s: GameState, from: number, bots: number[], seed: number
             : pick(r, [`${nm(actor)} is lying — watch them!`, "I'm being framed."]), side(target) === "T" && actor !== null ? T(actor) : undefined);
         } else if (saysThief && r() < 0.6) {
           const b = someBot([actor, target]);
-          if (b !== null && side(b) === "V") say(b, d?.kind === "kundli" ? `That's a Kundli read — ${nm(target)}, what do you say now?` : `Hmm, I suspect ${nm(target)} too.`, d?.kind === "kundli" || target === null ? undefined : T(target));
+          // (2026-10-12) a line only — never a second accusation copied from the first
+          if (b !== null && side(b) === "V") say(b, d?.kind === "kundli" ? `That's a Kundli read — ${nm(target)}, what do you say now?` : `Hmm, ${nm(target)}?`);
         }
         break;
       }
@@ -315,7 +321,8 @@ export function botTalk(s: GameState, from: number, bots: number[], seed: number
         if (isBot(target)) say(target, tookStone
           ? (side(target) === "V" ? `${nm(actor)} took my Stone! A thief, for sure.` : pick(r, [`Hey ${nm(actor)}! Give my cards back!`, `I'll remember that Hera Pheri, ${nm(actor)}.`]))
           : pick(r, [`Hey ${nm(actor)}! Give my cards back!`, `I'll remember that Hera Pheri, ${nm(actor)}.`, `${nm(actor)} grabs cards like a thief…`]),
-          tookStone && side(target) === "V" && actor !== null ? [T(actor), { kind: "stone", target: actor, side: null, has: true }] : undefined);
+          // (2026-10-12) "X has my Stone" — never "X is a thief": villagers steal Stones to keep them safe too
+          tookStone && side(target) === "V" && actor !== null ? [{ kind: "stone", target: actor, side: null, has: true }] : undefined);
         if (isBot(actor) && r() < 0.5) say(actor, pick(r, [`Thanks for the cards, ${nm(target)} 😏`, "Nice cards, thank you."]));
         break;
       }
@@ -326,7 +333,8 @@ export function botTalk(s: GameState, from: number, bots: number[], seed: number
       case "teer_kaman":
         // a miss puts the shooter out (2026-10-09); a hit tells only the shooter the role
         if (isBot(actor)) say(actor, d?.hit ? `Hit! I was right about ${nm(target)}.` : "Missed… I'm out.");
-        if (isBot(target) && !d?.hit && actor !== null) say(target, pick(r, [`You missed, ${nm(actor)}!`, `An arrow at me? ${nm(actor)}, you're the thief.`]), T(actor)); // S8
+        // S8 — a villager shot at doesn't call the shooter a thief: they may have been a villager who guessed wrong
+        if (isBot(target) && !d?.hit && actor !== null) say(target, pick(r, [`You missed, ${nm(actor)}!`, `An arrow at me? ${nm(actor)}, you're the thief.`]), side(target) === "T" ? T(actor) : undefined);
         break;
       // S7 Kundli
       case "kundli":

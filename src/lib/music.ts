@@ -173,7 +173,17 @@ export function setMusic(on: boolean) {
   try { localStorage.setItem(PREF, on ? "on" : "off"); } catch {}
   if (on) wake();
   apply(true);
+  // BATTERY (2026-10-12): music off = the audio engine sleeps, not just goes quiet
+  if (!on && score) setTimeout(() => { if (!enabled && score) void score.ac.suspend(); }, 600);
 }
+
+// BATTERY (2026-10-12): the app in the background (another app, screen off) — the score's audio engine sleeps, and
+// wakes when the table is back in front
+if (typeof document !== "undefined") document.addEventListener("visibilitychange", () => {
+  if (!score) return;
+  if (document.visibilityState === "hidden") void score.ac.suspend();
+  else if (enabled) void score.ac.resume();
+});
 
 /** leaving the table: stop everything */
 export function stopMusic() {

@@ -11,10 +11,13 @@ const STARS = Array.from({ length: 46 }, (_, i) => ({
   x: (i * 37.7) % 100, y: (i * 23.3) % 62, s: 1 + ((i * 7) % 3), t: 1.6 + ((i * 13) % 20) / 10,
 }));
 
-export function Eject({ name, initials, colour, thief, role, remaining, onDone, lastWords = false, mine = false }: {
+export function Eject({ name, initials, colour, thief, role, remaining, onDone, onSkipWords, lastWords = false, mine = false, speed = 1 }: {
   name: string; initials: string; colour: string; thief: boolean; role: string | null; remaining: number; onDone: () => void;
   /** a human put out speaks for 10 s first, in a spotlight, everyone else's mic held (designer 2026-10-07) */
   lastWords?: boolean; mine?: boolean;
+  /** (designer 2026-10-12) the speaker ends their last words for everyone; anyone else just closes the screen */
+  onSkipWords?: () => void;
+  speed?: number;
 }) {
   const verdict = role ? `${name} was ${thief ? "a Thief" : "not a Thief"}.` : `${name} is out.`;
   const words = lastWords ? LAST_WORDS_MS : 0;
@@ -29,9 +32,9 @@ export function Eject({ name, initials, colour, thief, role, remaining, onDone, 
     const start = setTimeout(() => {
       const t = setInterval(() => { i += 1; setTyped(i); if (i >= verdict.length) clearInterval(t); }, 55);
     }, words + 900);
-    const end = setTimeout(onDone, words + Math.round(5600 * PACE));
+    const end = setTimeout(onDone, words + Math.round(5600 * PACE / speed));
     return () => { clearTimeout(start); clearTimeout(end); clearTimeout(fly); if (tick) clearInterval(tick); };
-  }, [verdict, onDone, words, lastWords]);
+  }, [verdict, onDone, words, lastWords, speed]);
 
   return (
     <button type="button" onClick={() => { if (flying) onDone(); }} aria-label={`${verdict} ${role ? `${remaining} ${remaining === 1 ? "thief remains" : "thieves remain"}.` : "Their role stays hidden."} Tap to continue`}
@@ -55,6 +58,11 @@ export function Eject({ name, initials, colour, thief, role, remaining, onDone, 
           <p className="mt-5 font-[family-name:var(--font-engraved)] text-[13px] font-bold uppercase tracking-[0.3em] text-[#f3c66b]">Last words</p>
           <p className="mt-1 font-display text-[clamp(24px,7vw,32px)] font-bold text-stock">{mine ? "Speak — everyone is listening" : name}</p>
           <p className="mt-3 font-display text-[44px] font-bold tabular-nums text-stock/80">🎙️ {left}</p>
+          <span role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); (onSkipWords ?? onDone)(); }}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); (onSkipWords ?? onDone)(); } }}
+            className="mt-6 grid min-h-12 min-w-32 place-items-center rounded-full border-2 border-brass/70 bg-black/40 px-6 font-[family-name:var(--font-engraved)] text-[15px] font-bold uppercase tracking-[0.12em] text-stock">
+            {mine ? "Done — skip" : "Skip"}
+          </span>
         </div>
       )}
       {/* the one who goes out, tumbling across the sky */}

@@ -162,7 +162,12 @@ export function beliefOf(s: GameState, seat: number, seed: number, skill: Skill 
         break;
       case "teer_kaman": if (target === seat && !thiefSide) bump(actor, 1.2); break;
       case "hera_pheri": if (target === seat) bump(actor, 0.3); break;
-      case "claim": if (actor !== null && target !== null && actor !== seat && d?.kind !== "stone") claims.push({ actor, target, side: d?.side as Side, kind: String(d?.kind), pending: d?.side === "T" && unanswered(s.events, e.n, target) }); break;
+      // a player's newer word about a seat replaces the older one (designer 2026-10-12)
+      case "claim": if (actor !== null && target !== null && actor !== seat && d?.kind !== "stone") {
+        const old = claims.findIndex((c) => c.actor === actor && c.target === target);
+        if (old >= 0) claims.splice(old, 1);
+        claims.push({ actor, target, side: d?.side as Side, kind: String(d?.kind), pending: d?.side === "T" && unanswered(s.events, e.n, target) }); }
+        break;
       // a word whispered to this bot alone (playtest 2026-10-07) weighs like a claim out loud
       case "whisper_private":
         if (actor !== null && target !== null && actor !== seat && num(d, "to") === seat && d?.side) claims.push({ actor, target, side: d.side as Side, kind: "kundli" });
@@ -237,7 +242,9 @@ export function beliefOf(s: GameState, seat: number, seed: number, skill: Skill 
     // behind it) counts half.
     const prior = Math.min(0.98, Math.max(0.02, base.get(c.target) ?? 0.3));
     const post = Math.min(0.98, Math.max(0.02, c.side === "T" ? cr + (1 - cr) * prior : (1 - cr) * prior));
-    const shift = (logit(post) - logit(prior)) * (c.kind === "accuse" ? 0.5 : 1) * (c.pending ? UNANSWERED : 1);
+    // a word from a player already out counts half (2026-10-12): nobody can question them any more
+    const gone = !v.players[c.actor]?.alive && known.get(c.actor) !== "V" ? 0.5 : 1;
+    const shift = (logit(post) - logit(prior)) * (c.kind === "accuse" ? 0.5 : 1) * (c.pending ? UNANSWERED : 1) * gone;
     if (L.has(c.target)) L.set(c.target, L.get(c.target)! + shift * Math.min(1, skill.sharp));
     if (c.kind === "was") {
       // a word about a player already out also judges the voters who put them out
@@ -257,10 +264,22 @@ export function beliefOf(s: GameState, seat: number, seed: number, skill: Skill 
 /** A ballot from beliefs. A villager votes a thief it knows, else its likeliest thief (with some noise). A thief votes
  *  with the table's suspicion — never a thief it knows, preferring a villager it knows, and hitting back at whoever
  *  called it a thief. */
+/** the game as a bot that ignores bare words: every "X is a thief / a villager" someone else said with nothing behind
+ *  it (no Kundli read, no exit seen) is dropped. (designer 2026-10-12, today's games: a first accusation with no
+ *  evidence — often a thief's lie — and the bots piled on: villagers out 10–1, 8–1, 9–1.) */
+export function withoutHearsay(s: GameState, seat: number): GameState {
+  const bare = (e: GameState["events"][number]) => e.type === "claim" && e.data?.seat !== seat && (e.data?.kind === "accuse" || e.data?.kind === "trust");
+  return { ...s, events: s.events.filter((e) => !bare(e)) };
+}
+
 export function beliefVote(s: GameState, seat: number, seed: number, r: R, skill: Skill = DEFAULT_SKILL): number | null {
   const alive = s.players.filter((p) => p.alive && p.seat !== seat).map((p) => p.seat);
   if (!alive.length) return null;
   const thief = s.players[seat].side === "T";
+  // a Faisla ballot from an experienced villager weighs evidence, not who shouted first (beginners still follow the
+  // loudest voice — followAnyAccusation)
+  const faisla = s.phase.kind === "vote" && s.phase.reason !== "final";
+  if (!thief && faisla && !skill.followAnyAccusation) s = withoutHearsay(s, seat);
   const b = beliefOf(s, seat, seed, skill, thief);
   let pool = alive;
   let score = (x: number) => b.p.get(x) ?? 0;
@@ -304,6 +323,31 @@ export function beliefVote(s: GameState, seat: number, seed: number, r: R, skill
   const d = r();
   if (skill.name === "casual" && d >= 0.92) return null;
   return d >= 1 - skill.voteNoise ? pick(r, order.slice(0, 3)) : order[0];
+}
+
+/** TIE-BREAK (designer 2026-10-12, game 9NAQM: the mandatory vote tied 6–6 and nobody went out): as the clock ends,
+ *  a bot whose ballot isn't on one of the tied leaders — or is, but on the wrong one — moves to the leader it wants out:
+ *  a villager the likelier thief (in the mandatory vote: the one whose Stones are worth taking), a thief the likelier
+ *  villager. Returns the new target, or null to stay. A beginner doesn't count the ballots. */
+export function botTieBreak(s: GameState, seat: number, seed: number, skill: Skill = DEFAULT_SKILL): number | null {
+  const ph = s.phase;
+  if (ph.kind !== "vote" || ph.debate || !ph.voters.includes(seat) || skill.followAnyAccusation) return null;
+  const tally = new Map<number, number>();
+  for (const [voter, t] of Object.entries(ph.ballots)) if (t !== null && t !== undefined) tally.set(t, (tally.get(t) ?? 0) + (s.players[Number(voter)]?.votes ?? 1));
+  const max = Math.max(0, ...tally.values());
+  const leaders = [...tally].filter(([, v]) => v === max && max > 0).map(([x]) => x).filter((x) => x !== seat);
+  if (leaders.length < 2) return null;
+  const thief = s.players[seat].side === "T";
+  const b = beliefOf(s, seat, seed, skill);
+  const final = ph.reason === "final";
+  const st = final ? stoneOdds(s, seat, seed, skill) : null;
+  const want = (x: number) => {
+    const pT = b.known.get(x) === "T" ? 1 : b.known.get(x) === "V" ? 0 : b.p.get(x) ?? 0.3;
+    const stone = st?.get(x) ?? 0;
+    return thief ? (b.known.get(x) === "T" ? -9 : (1 - pT) + (final ? stone : 0)) : final ? stone * (2 * pT - 1) + 0.01 * pT : pT;
+  };
+  const best = [...leaders].sort((x, y) => want(y) - want(x))[0];
+  return ph.ballots[seat] === best ? null : best;
 }
 
 // ------------------------------------------------------------------ STONES (2026-10-09)
@@ -400,7 +444,8 @@ export function botClaim(s: GameState, seat: number, seed: number, r: R, skill: 
     for (const k of reads) if (k.side === "V" && fresh("kundli", k.target) && r() < 0.5) return { kind: "kundli", ...k };
     // (playtest LLE3Q 2026-10-09: no bot ever accused anyone) a villager says who it suspects when the suspicion stands
     // out — well above the rest — the way a real player speaks up
-    const bel = beliefOf(s, seat, seed, skill);
+    // (2026-10-12) on its OWN evidence only — another player's bare accusation never becomes this bot's accusation
+    const bel = beliefOf(withoutHearsay(s, seat), seat, seed, skill);
     const order = s.players.filter((p) => p.alive && p.seat !== seat).map((p) => p.seat).sort((x, y) => (bel.p.get(y) ?? 0) - (bel.p.get(x) ?? 0));
     const [a, b] = order.map((x) => bel.p.get(x) ?? 0);
     if (order.length && a >= 0.5 && a - (b ?? 0) >= 0.1 && fresh("accuse", order[0])) return { kind: "accuse", target: order[0], role: null, side: "T" };
@@ -601,7 +646,9 @@ function bhukampMove(s: GameState, seat: number, seed: number, r: R, skill: Skil
   const order = [...h].sort((x, y) => rank(x) - rank(y));
   const [g1, g2] = order.slice(0, 2);
   const left = nb(s, seat, 1), right = nb(s, seat, -1);
-  const bel = beliefOf(s, seat, seed, skill, me.side === "T");
+  // (2026-10-12, game 9NAQM: Raju gave the Tunga Stone to a thief because an out player had called them a villager)
+  // an experienced player trusts evidence, not bare words, with a Stone
+  const bel = beliefOf(skill.followAnyAccusation ? s : withoutHearsay(s, seat), seat, seed, skill, me.side === "T");
   const pT = (x: number) => bel.p.get(x) ?? 0.5;
   // the "precious" card of the two (a Stone, else Dal Badal) goes to the friendlier side
   const precious = [g1, g2].find(isStoneCard) ?? [g1, g2].find((c) => c === "DAL_BADAL");

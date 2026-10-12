@@ -222,7 +222,7 @@ describe("ELIMINATION — out, dying power, hand-off", () => {
   const kill = (s: GameState, target: number) =>
     apply(s, 0, { type: "play", card: "TEER_KAMAN", pass: [F, K, H], target, roles: tk(s, [role(s, target), other(s, target, "")]) });
 
-  it("(2026-10-10) a player hit by Teer Kaman gives 1 vote; their cards go to the SHOOTER — no choice; the shooter draws 2", () => {
+  it("(2026-10-10) a player hit by Teer Kaman gives 1 vote; their cards go to the SHOOTER — no choice; the shooter takes them instead of drawing", () => {
     const s = rig(6, { sides: ["T", "V", "V", "V", "V", "T"], hands: [[TK, TK, F, K, H], [S1, B], [F], [T], [K], [B]] });
     let n = kill(s, 1);
     expect(n.phase).toMatchObject({ kind: "elim", seat: 1, step: "dying" });
@@ -230,7 +230,7 @@ describe("ELIMINATION — out, dying power, hand-off", () => {
     expect(n.players[2].votes).toBe(2);
     expect(n.phase.kind).not.toBe("elim"); // nothing to decide: the hand-off happened by itself
     expect(n.players[0].hand).toEqual(expect.arrayContaining([S1, B]));
-    expect(n.players[0].hand).toHaveLength(4); // the two taken + 2 drawn after it resolved
+    expect(n.players[0].hand).toHaveLength(2); // (2026-10-12 everyone holds 2) the two taken INSTEAD of drawing
     expect(n.events.find((e) => e.type === "handoff")!.data).toMatchObject({ seat: 1, target: 0 });
   });
   it("(2026-10-10) voted out by a Faisla: the cards go to the CALLER; a caller out by their own Faisla: to the next player", () => {

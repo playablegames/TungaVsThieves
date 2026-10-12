@@ -5,7 +5,12 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { GameState } from "@/engine/types";
 
 /** seconds per decision; `debate` = the open floor before a vote (older rooms may lack it) */
-export interface Timers { turn: number; vote: number; elim: number; debate?: number }
+export interface Timers {
+  turn: number; vote: number; elim: number; debate?: number;
+  /** 2× (designer 2026-10-12, "2x for everyone if the host accepts"): bots, big-moment screens and the debate run twice
+   *  as fast; a turn's own clock stays. `speedAsk`: the seat that asked the host for it. */
+  speed?: 1 | 2; speedAsk?: number | null;
+}
 
 export interface GameRow {
   code: string;

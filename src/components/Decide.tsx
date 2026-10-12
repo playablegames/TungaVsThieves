@@ -2,7 +2,7 @@
 // The action dock: what YOU can do right now, one step at a time. Irreversible moves go through a 5-second
 // timed confirm instead of undo (BGA: undo is impossible once hidden information is out).
 import { useMemo, useState } from "react";
-import { tkGuesses } from "@/engine/setup";
+import { THIEF_ROLES, tkGuesses } from "@/engine/setup";
 import { ACTION_CARDS, type Action, type ActionCard, type Card } from "@/engine/types";
 import type { PlayerView, PublicPlayer } from "@/engine/view";
 import { CARD } from "@/lib/cards";
@@ -41,13 +41,14 @@ function Pickers({ options, sel, onPick }: { options: PublicPlayer[]; sel: numbe
   return <div className="grid grid-cols-2 gap-2">{options.map((p) => <PlayerChip key={p.seat} p={p} selected={sel === p.seat} onClick={() => onPick(p.seat)} />)}</div>;
 }
 
-function RolePicker({ roles, sel, setSel, max }: { roles: string[]; sel: string[]; setSel: (r: string[]) => void; max: number }) {
+function RolePicker({ roles, sel, setSel, max, known = [], said = [] }: { roles: string[]; sel: string[]; setSel: (r: string[]) => void; max: number; known?: string[]; said?: string[] }) {
   const toggle = (r: string) => setSel(sel.includes(r) ? sel.filter((x) => x !== r) : sel.length < max ? [...sel, r] : max === 1 ? [r] : sel);
   return (
     <div className="flex flex-wrap gap-2" role="group" aria-label={max === 1 ? "Name one role" : "Name two roles"}>
       {roles.map((r) => (
         <button key={r} type="button" onClick={() => toggle(r)} aria-pressed={sel.includes(r)}
-          className={`min-h-11 rounded-full border-2 px-4 text-[14px] font-semibold ${sel.includes(r) ? "border-crimson bg-crimson-deep text-ink" : "border-brass/35 bg-black/30 text-stock"}`}>{r}</button>
+          className={`min-h-11 rounded-full border-2 px-4 text-[14px] font-semibold ${sel.includes(r) ? "border-crimson bg-crimson-deep text-ink" : known.includes(r) ? "border-[#f0a32e] bg-[#3a240c] text-[#f3c66b] shadow-[0_0_12px_2px_rgba(240,163,46,.35)]" : said.includes(r) ? "border-dashed border-stock/50 bg-black/30 text-stock" : "border-brass/35 bg-black/30 text-stock"}`}>
+          {known.includes(r) ? `🔮 ${r}` : r}</button>
       ))}
     </div>
   );
@@ -196,29 +197,45 @@ function DalBadalOut({ v, act }: { v: PlayerView; act: (a: Action) => void }) {
   );
 }
 
-/** TEER KAMAN'S SHORTLIST (designer 2026-10-12): only the roles that could still be the target's — never your own,
- *  never a role you know is someone else's (your Kundli reads, read back to you, or a player you saw go out). A Dal
- *  Badal over a seat wipes what you knew of it. */
-function shortlist(v: PlayerView, target: number | null): string[] {
+/** TEER KAMAN'S LIST (designer 2026-10-12): every role of the OTHER team in this game — a villager sees the thief roles,
+ *  a thief the village roles (your side now; a Dal Badal may have changed it). Nothing is removed. A role you KNOW is
+ *  the target's (your Kundli read, read back to you) comes first — the best shot; then roles the table has named for
+ *  them, newest first. (designer 2026-10-12) Your OWN read gets the best colour — gold with 🔮; a role others claimed
+ *  (bots included) is taken with a pinch of salt — a faint dashed outline only. */
+/** the roles your own Kundli reads have shown you, by seat (a Dal Badal over a seat wipes it) */
+function knownRoles(v: PlayerView): Map<number, string> {
   const known = new Map<number, string>();
   for (const e of v.events) {
     const mine = Array.isArray(e.to) && e.to.includes(v.me.seat);
     if (mine && e.type === "kundli_private") known.set(e.data?.target as number, String(e.data?.role));
-    if (mine && e.type === "eliminated_private") known.set(e.data?.seat as number, String(e.data?.role));
     if (e.type === "dal_badal") for (const x of (e.data?.seats as number[]) ?? []) known.delete(x);
   }
-  const taken = new Set([v.me.role, ...[...known].filter(([x]) => x !== target).map(([, r]) => r)]);
-  const left = v.rolesInPlay.filter((r) => !taken.has(r));
-  const roles = left.length ? left : v.rolesInPlay.filter((r) => r !== v.me.role);
-  // (designer 2026-10-12: "based on the latest info at the table") roles the table has named for this target come
-  // first, newest first — a claim can be a lie, so it orders the list, it never removes a role. No tags.
-  const named: string[] = [];
-  if (target !== null) for (const e of [...v.events].reverse()) {
-    if (e.type !== "claim" || e.data?.target !== target || typeof e.data?.role !== "string" || e.data?.seat === v.me.seat) continue;
-    const r = e.data.role as string;
-    if (roles.includes(r) && !named.includes(r)) named.push(r);
+  return known;
+}
+
+/** roles OTHER players have claimed for this target — a claim can be a lie (or a bot's guess), so only a faint outline */
+function claimedRoles(v: PlayerView, target: number | null): string[] {
+  if (target === null) return [];
+  return v.events.filter((e) => e.type === "claim" && e.data?.target === target && typeof e.data?.role === "string" && e.data?.seat !== v.me.seat)
+    .map((e) => e.data!.role as string);
+}
+
+function shortlist(v: PlayerView, target: number | null): string[] {
+  const known = knownRoles(v);
+  const other = v.rolesInPlay.filter((r) => THIEF_ROLES.includes(r) === (v.me.side === "V"));
+  // Teer Kaman must name tkGuesses roles; a tiny list (a single thief role at a 1-guess table) is always long enough
+  const roles = other.length >= tkGuesses(v.rolesInPlay) ? other : v.rolesInPlay.filter((r) => r !== v.me.role);
+  const first: string[] = [];
+  if (target !== null) {
+    const k = known.get(target);
+    if (k && roles.includes(k)) first.push(k);
+    for (const e of [...v.events].reverse()) {
+      if (e.type !== "claim" || e.data?.target !== target || typeof e.data?.role !== "string" || e.data?.seat === v.me.seat) continue;
+      const r = e.data.role as string;
+      if (roles.includes(r) && !first.includes(r)) first.push(r);
+    }
   }
-  return [...named, ...roles.filter((r) => !named.includes(r))];
+  return [...first, ...roles.filter((r) => !first.includes(r))];
 }
 
 /** why a pair in your hand can't be played right now (engine canPlay, in words) */
@@ -291,14 +308,15 @@ function Turn({ v, playable, passSize, dalBadal, act, ask }: { v: PlayerView; pl
     );
   }
   const playing = card !== "NONE";
-  /** play the move the moment it is complete */
-  const fire = (p: number[], t: number | null, r: string[]) => {
-    if (!card || p.length !== passSize) return;
-    if (card === "NONE") { act({ type: "pass", pass: p.map((i) => hand[i]) }); reset(); return; }
-    if (card === "DAL_BADAL") return;
-    if (needsTarget && t === null) return;
-    if (card === "TEER_KAMAN" && r.length !== guesses) return;
-    ask(card, { type: "play", card, pass: p.map((i) => hand[i]), target: t ?? undefined, roles: card === "TEER_KAMAN" ? r : undefined });
+  /** (designer 2026-10-12) the move is never sent on the last tap: every pick shows its label (all 3 PASS cards), then
+   *  one button sends it. Returns null while something is still missing. */
+  const complete = (p: number[], t: number | null, r: string[]) =>
+    !card || card === "DAL_BADAL" || p.length !== passSize || (needsTarget && t === null) || (card === "TEER_KAMAN" && r.length !== guesses) ? null : { p, t, r };
+  const send = () => {
+    const c = complete(pass, target, roles);
+    if (!c || !card || card === "DAL_BADAL") return;
+    if (card === "NONE") { act({ type: "pass", pass: c.p.map((i) => hand[i]) }); reset(); return; }
+    ask(card, { type: "play", card, pass: c.p.map((i) => hand[i]), target: c.t ?? undefined, roles: card === "TEER_KAMAN" ? c.r : undefined });
     reset();
   };
   const ASK: Partial<Record<ActionCard, string>> = {
@@ -349,11 +367,16 @@ function Turn({ v, playable, passSize, dalBadal, act, ask }: { v: PlayerView; pl
             if (pairIdx.includes(i)) return;
             const next = pass.includes(i) ? pass.filter((x) => x !== i) : pass.length < passSize ? [...pass, i] : pass;
             setPass(next);
-            fire(next, target, roles);
           }} />
       )}
-      {needsTarget && <Pickers options={targets} sel={target} onPick={(t) => { setTarget(t); fire(pass, t, roles); }} />}
-      {card === "TEER_KAMAN" && <RolePicker roles={shortlist(v, target)} max={guesses} sel={roles} setSel={(r) => { setRoles(r); fire(pass, target, r); }} />}
+      {needsTarget && <Pickers options={targets} sel={target} onPick={setTarget} />}
+      {card === "TEER_KAMAN" && <RolePicker roles={shortlist(v, target)} known={[...knownRoles(v).values()]} said={claimedRoles(v, target)} max={guesses} sel={roles} setSel={setRoles} />}
+      {complete(pass, target, roles) && (
+        <button type="button" onClick={send}
+          className="min-h-12 rounded-full border-2 border-brass/80 bg-[linear-gradient(180deg,var(--color-rust)_0%,var(--color-rust-deep)_100%)] font-[family-name:var(--font-engraved)] text-[16px] font-bold uppercase tracking-[0.08em] text-stock active:translate-y-px">
+          {card === "NONE" ? `Pass these ${passSize}` : card === "TEER_KAMAN" ? "Shoot" : `Play ${CARD[card as ActionCard].name}`}
+        </button>
+      )}
     </div>
   );
 }

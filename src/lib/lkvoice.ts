@@ -4,7 +4,7 @@
 // Who hears whom is decided by the passes our server hands out (server/livekit.ts):
 //   alive → the table room (speak + listen) · out → the table room listen-only + the Gone room (speak + listen)
 // so the living can't hear the gone even if a phone misbehaves.
-import { Room, RoomEvent, Track, type Participant, type RemoteParticipant } from "livekit-client";
+import { Room, RoomEvent, Track, type Participant, type RemoteParticipant, AudioPresets } from "livekit-client";
 import { loadToken } from "./client";
 import { DUCKED, playAndRecord, type VoicePeer, type VoiceSnap } from "./voice";
 
@@ -64,7 +64,12 @@ export class LiveKitVoice {
     playAndRecord();
 
     const join = async (pass: string, speak: boolean, ghostly = false) => {
-      const room = new Room({ audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+      // BATTERY + DATA (research 2026-10-12): the "speech" preset (the default is music quality, ~2× the bits), DTX
+      // sends next to nothing while you are silent, RED keeps words through lost packets on mobile networks
+      const room = new Room({
+        audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        publishDefaults: { audioPreset: AudioPresets.speech, dtx: true, red: true },
+      });
       const refresh = () => this.refresh();
       room
         .on(RoomEvent.ParticipantConnected, refresh).on(RoomEvent.ParticipantDisconnected, refresh)

@@ -21,6 +21,9 @@ export class BeatQueue {
   private last: Beat | null = null;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private listeners = new Set<() => void>();
+  /** 2× (designer 2026-10-12): every hold halves */
+  private speed = 1;
+  setSpeed = (x: number) => { this.speed = x > 0 ? x : 1; };
   private snap: StageSnapshot = { current: null, last: null, pending: 0 };
 
   subscribe = (fn: () => void) => { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; };
@@ -54,7 +57,7 @@ export class BeatQueue {
       if (!this.current.private) this.last = this.current;
       // a phone that fell behind (or came back from the background) catches up — but only when far behind, and never
       // so fast the table can't read it (2026-10-09: "too fast" — bursts of 3 used to flash by at half a second each)
-      const hold = this.queue.length > 5 ? Math.round(1000 * PACE) : this.current.hold;
+      const hold = Math.round((this.queue.length > 5 ? Math.round(1000 * PACE) : this.current.hold) / this.speed);
       this.timer = setTimeout(() => this.next(), reducedMotion() ? Math.min(hold, 1800) : hold);
     }
     this.emit();
@@ -67,8 +70,9 @@ export class BeatQueue {
 }
 
 /** The stage for one phone. `events` are this phone's visible events (PlayerView.events). */
-export function useStage(events: GameEvent[] | undefined, names: string[]) {
+export function useStage(events: GameEvent[] | undefined, names: string[], speed = 1) {
   const [queue] = useState(() => new BeatQueue());
+  useEffect(() => { queue.setSpeed(speed); }, [queue, speed]);
   const count = events?.length ?? 0;
   const key = names.join("\u0000");
   useEffect(() => { if (events) queue.feed(events, key.split("\u0000")); }, [queue, events, count, key]);

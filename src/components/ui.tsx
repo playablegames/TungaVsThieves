@@ -55,7 +55,8 @@ const FULL = new Map<number, number>();
 /** The decision clock as a ring — every phone shows the same deadline. */
 export function TimerRing({ deadline, now, size = 40, brass = false }: { deadline: number | null; now: () => number; size?: number; brass?: boolean }) {
   const [, force] = useState(0);
-  useEffect(() => { const t = setInterval(() => force((x) => x + 1), 250); return () => clearInterval(t); }, []);
+  // once a second (BATTERY 2026-10-12: it was 4× a second); the ring slides smoothly between ticks by CSS
+  useEffect(() => { const t = setInterval(() => force((x) => x + 1), 1000); return () => clearInterval(t); }, []);
   if (!deadline) return <span style={{ width: size }} aria-hidden />;
   const left = Math.max(0, deadline - now());
   if (!FULL.has(deadline)) FULL.set(deadline, Math.max(left, 1)); // the ring is full when this deadline first appears
@@ -68,7 +69,7 @@ export function TimerRing({ deadline, now, size = 40, brass = false }: { deadlin
       <svg width={size} height={size} className="-rotate-90" aria-hidden>
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth="3" className={brass ? "fill-[#160b04] stroke-[#4a3220]" : "stroke-raise-2"} />
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth="3" strokeLinecap="round"
-          className={low ? "stroke-crimson" : brass ? "stroke-[#f0a32e]" : "stroke-jade"} strokeDasharray={c} strokeDashoffset={c * (1 - frac)} />
+          className={low ? "stroke-crimson" : brass ? "stroke-[#f0a32e]" : "stroke-jade"} strokeDasharray={c} strokeDashoffset={c * (1 - frac)} style={{ transition: "stroke-dashoffset 1s linear" }} />
       </svg>
       <span className={`absolute font-extrabold tabular-nums ${brass ? "font-display text-[20px] font-bold" : "text-[12px]"} ${low ? "text-crimson-soft" : "text-ink"}`}>{secs}</span>
     </span>

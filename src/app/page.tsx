@@ -47,7 +47,9 @@ function Entry() {
     setError(null);
     setName(savedName());
     setAsk(kind);
-    setTimeout(() => nameRef.current?.focus(), 50);
+    // (2026-10-12, "bot picker doesn't work") the keyboard only opens when there is no name yet: popping it over the
+    // bots stepper moved the sheet under the finger and the − / + taps were lost
+    if (!savedName()) setTimeout(() => nameRef.current?.focus(), 50);
   }
 
   async function go() {
@@ -193,7 +195,7 @@ function HowToPlay({ onClose, onLearn }: { onClose: () => void; onLearn: () => v
         <section>
           <p className={h}>Your turn</p>
           <p className="mt-1">Pick up the cards passed to you. Play a <b>matching pair</b> to use its power — or play nothing. Then pass 3 cards to the next player.</p>
-          <p className="mt-1">Put out by a <b>Faisla</b> or a <b>Teer Kaman</b>? Your cards go to the player who called it or shot.</p>
+          <p className="mt-1">Put out by a <b>Faisla</b> or a <b>Teer Kaman</b>? Your 2 cards go to the player who called it or shot — they take them instead of drawing. Everyone holds 2.</p>
         </section>
         <section>
           <p className={h}>The cards</p>

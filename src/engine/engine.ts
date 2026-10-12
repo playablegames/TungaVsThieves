@@ -438,8 +438,11 @@ function doDalPick(s: GameState, a: Action): GameState {
   for (const d of ph.drawn) { const x = P(s, d.seat); x.role = d.role; x.side = d.side; }
   for (const d of ph.drawn) emit(s, "role", [d.seat], `Dal Badal: your role is now ${d.role} (${d.side === "V" ? "Tunga" : "Thief"}).`, { role: d.role, side: d.side, swapped: true });
   if (ph.resume) {
-    // the mandatory vote: no draw, no end of turn
-    emit(s, "dal_badal_done", "all", "Dal Badal is done.", { seat: ph.actor, inVote: true });
+    // the mandatory vote: no end of turn. In the debate the thief draws back up to 2 (designer 2026-10-12:
+    // everyone holds 2); a thief being voted out draws nothing — their hand is about to go.
+    const debate = ph.resume.kind === "vote";
+    if (debate) P(s, ph.actor).hand.push(...draw(s, Math.max(0, 2 - P(s, ph.actor).hand.length)));
+    emit(s, "dal_badal_done", "all", debate ? `Dal Badal is done. ${P(s, ph.actor).name} draws back to 2.` : "Dal Badal is done.", { seat: ph.actor, inVote: true });
     s.phase = ph.resume;
     if (s.phase.kind === "elim") {
       const w = winnerIfWipe(s);
@@ -491,7 +494,7 @@ function resolveVote(s: GameState) {
     else finalReveal(s);
     return;
   }
-  // Faisla: either way, the caller draws 2 (after any elimination resolves)
+  // Faisla: the caller draws back up to 2 — a caller who put someone out holds their 2 cards instead (after any elimination resolves)
   s.after = { kind: "endTurn", drawFor: ph.caller };
   // only the caller sees the role (designer 2026-10-09) — nobody does if the caller is voted out by their own Faisla
   if (out !== null) { s.elimQueue.push({ seat: out, killer: ph.caller, reveal: ph.caller !== null && out !== ph.caller ? [ph.caller] : [] }); runElims(s); }
@@ -635,7 +638,9 @@ function continueAfterElims(s: GameState) {
   if (after.kind === "finalReveal") return finalReveal(s);
   if (after.drawFor !== null) {
     const k = P(s, after.drawFor);
-    if (k.alive) k.hand.push(...draw(s, 2)); // a killer shot down by a last shot draws nothing
+    // EVERYONE HOLDS 2 (designer 2026-10-12): the Faisla caller or Teer Kaman shooter who put someone out takes
+    // their 2 cards INSTEAD of drawing — they only draw back up to 2. A killer shot down by a last shot draws nothing.
+    if (k.alive) k.hand.push(...draw(s, Math.max(0, 2 - k.hand.length)));
   }
   endTurn(s);
 }

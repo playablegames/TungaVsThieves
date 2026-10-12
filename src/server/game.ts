@@ -5,7 +5,7 @@ import { randomBytes, randomInt } from "node:crypto";
 import { apply, closeVote, start, waitingOn } from "@/engine/engine";
 import { defaultAction } from "@/engine/decisions";
 import { botTalk } from "./botmind";
-import { pushBotClaim, skilledAction, SKILLS } from "./belief";
+import { botTieBreak, pushBotClaim, skilledAction, SKILLS } from "./belief";
 import { hear } from "./hear";
 import { sendPush, type Alert } from "./push";
 import { MIN_PLAYERS, ROLE_TABLE, THIEF_ROLES } from "@/engine/setup";
@@ -62,7 +62,7 @@ function deadlineFor(state: GameState, timers: Timers): number | null {
   const k = state.phase.kind;
   if (k === "over") return null;
   const secs = k === "vote" && state.phase.debate
-    ? debateSeconds(state.players.filter((p) => p.alive).length, timers.debate ?? DEFAULT_TIMERS.debate!)
+    ? Math.round(debateSeconds(state.players.filter((p) => p.alive).length, timers.debate ?? DEFAULT_TIMERS.debate!) / (timers.speed ?? 1))
     : k === "vote" || k === "batwara" || k === "surrender" ? timers.vote : k === "elim" ? timers.elim : timers.turn;
   return Date.now() + secs * 1000;
 }
@@ -284,7 +284,7 @@ export async function rematch(code: string, token: string | null): Promise<{ cod
     const fresh: GameRow = {
       code: newCode(), version: 1, status: "lobby", hostToken: row.hostToken,
       lobby: row.lobby.map((p) => ({ name: p.name, token: p.token, ...(p.bot ? { bot: true, ...(p.skill ? { skill: p.skill } : {}) } : {}), ...(p.push ? { push: p.push } : {}) })),
-      state: null, deadline: null, timers: row.timers, createdAt: new Date().toISOString(),
+      state: null, deadline: null, timers: { ...row.timers, speedAsk: null }, createdAt: new Date().toISOString(),
     };
     if (!(await store.create(fresh))) continue;
     const moved = await mutate(code, (r) => { if (r.state && !r.state.next) r.state.next = fresh.code; return r; });
@@ -357,12 +357,13 @@ function commitState(row: GameRow, state: GameState, from?: number): GameRow {
   const prevDeadline = row.deadline;
   state = runBots(row, state);
   // the Table Stage: no clock runs while every phone is still showing what just happened
-  const hold = holdFor(state.events.slice(before), row.lobby.map((p) => p.name));
+  const speed = row.timers.speed ?? 1;
+  const hold = Math.round(holdFor(state.events.slice(before), row.lobby.map((p) => p.name)) / speed);
   const waiting = waitingOn(state);
   row.state = state;
   row.status = state.phase.kind === "over" ? "over" : "playing";
   const base = waiting.length && waiting.every((seat) => isAuto(row, seat))
-    ? Date.now() + BOT_DELAY_MS
+    ? Date.now() + Math.round(BOT_DELAY_MS / speed)
     : deadlineFor(state, row.timers);
   row.deadline = base === null ? null : base + hold;
   if (state.voteUntilClock && state.phase.kind === "vote" && !state.phase.debate && row.deadline !== null) {
@@ -432,7 +433,14 @@ export async function tick(code: string) {
     }
     // open voting: time is up — the vote stands as it is now. NOT when it was the DEBATE's clock that ran out: that
     // only opens the ballots (bug in playtest LLE3Q 2026-10-09: the vote opened and closed in one step, zero ballots)
-    if (!floorClosing && s.voteUntilClock && s.phase.kind === "vote" && !s.phase.debate) s = closeVote(s);
+    if (!floorClosing && s.voteUntilClock && s.phase.kind === "vote" && !s.phase.debate) {
+      // a tie as the clock ends: bots move to break it, one at a time, until it is broken (designer 2026-10-12)
+      for (const seat of s.phase.voters.filter((x) => isBot(r, x)).sort(() => Math.random() - 0.5)) {
+        const to = botTieBreak(s, seat, s.seed, botSkill(r, seat));
+        if (to !== null) s = apply(s, seat, { type: "vote", target: to });
+      }
+      s = closeVote(s);
+    }
     if (!floorClosing && waiting.some((seat) => !isAuto(r, seat))) s.events.push({ n: s.events.length, type: "timeout", to: "all", msg: "Time ran out — the default was played for anyone still deciding." });
     return commitState(r, s);
   });
@@ -558,7 +566,9 @@ export async function claim(code: string, token: string | null, body: { kind?: u
     const kind = String(body.kind) as ClaimKind;
     if (!["kundli", "accuse", "trust", "stone"].includes(kind)) throw new HttpError(400, "Unknown claim");
     const target = Number(body.target);
-    if (!s.players[target]?.alive || target === seat) throw new HttpError(400, "Pick another living player");
+    // (designer 2026-10-12) out players can be marked too — "Vj was a villager" — but they hold no Stone
+    if (!s.players[target] || target === seat) throw new HttpError(400, "Pick another player");
+    if (kind === "stone" && !s.players[target].alive) throw new HttpError(400, "Out players hold no cards");
     let role: string | undefined;
     if (kind === "kundli") {
       role = String(body.role ?? "");
@@ -566,8 +576,11 @@ export async function claim(code: string, token: string | null, body: { kind?: u
     }
     const me = s.players[seat].name, them = s.players[target].name;
     // the same claim again from the same player adds nothing (playtest WJ9J9: one tap ×3) — quietly ignored
-    const same = (e: GameState["events"][number]) => e.type === "claim" && e.data?.seat === seat && e.data?.kind === kind && e.data?.target === target
-      && (kind === "stone" ? e.data?.has === Boolean(body.has) : kind === "kundli" ? e.data?.role === body.role : true);
+    const sideOf = kind === "accuse" ? "T" : kind === "trust" ? "V" : null;
+    // the same claim again from the same player adds nothing — but a CHANGED word is news (it replaces the old one)
+    const last = [...s.events].reverse().find((e) => e.type === "claim" && e.data?.seat === seat && e.data?.target === target && (kind === "stone") === (e.data?.kind === "stone"));
+    const same = (e: GameState["events"][number]) => e === last
+      && (kind === "stone" ? e.data?.has === Boolean(body.has) : kind === "kundli" ? e.data?.role === body.role : e.data?.side === sideOf && !e.data?.role);
     if (s.events.some(same)) return row;
     if (kind === "stone") {
       pushStoneClaim(s, seat, target, Boolean(body.has));
@@ -575,9 +588,13 @@ export async function claim(code: string, token: string | null, body: { kind?: u
       return row;
     }
     const side = kind === "accuse" ? "T" : kind === "trust" ? "V" : THIEF_ROLES.includes(role!) ? "T" : "V";
-    const msg = kind === "kundli" ? `${me}: "${them} is ${role} — ${side === "T" ? "a thief" : "a villager"}."`
-      : kind === "accuse" ? `${me}: "${them} is a thief."` : `${me}: "${them} is a villager."`;
-    s.events.push({ n: s.events.length, type: "claim", to: "all", msg, data: { seat, kind, target, role: role ?? null, side } });
+    // (designer 2026-10-12) an OUT player can be cleared or accused too — "Vj was a villager" — evidence for everyone
+    // (bots judge the voters who put them out by it). Say something new later and it replaces what you said before.
+    const out = !s.players[target].alive;
+    const is = out ? "was" : "is";
+    const msg = kind === "kundli" ? `${me}: "${them} ${is} ${role} — ${side === "T" ? "a thief" : "a villager"}."`
+      : `${me}: "${them} ${is} ${side === "T" ? "a thief" : "a villager"}."`;
+    s.events.push({ n: s.events.length, type: "claim", to: "all", msg, data: { seat, kind: out ? "was" : kind, target, role: role ?? null, side } });
     row.state = s;
     return row;
   });
@@ -618,8 +635,10 @@ function botsSayWhatTheyFound(row: GameRow, from: number) {
     const lies = thief && Math.random() < skill.lie;
     if (e.type === "talashi_private") {
       const target = e.data?.target as number;
-      if (!s.players[target]?.alive || (!speaks && !lies)) continue;
       const found = ((e.data?.hand as string[]) ?? []).some((c) => c === "STONE_1" || c === "STONE_2");
+      // (2026-10-12, game HTKV9: Bunty saw the Tunga Stone with a thief and said nothing) a villager who SEES a Stone
+      // always marks it, at every skill level
+      if (!s.players[target]?.alive || (!speaks && !lies && !(found && !thief))) continue;
       pushStoneClaim(s, seen, target, lies ? !found : found);
       continue;
     }
@@ -784,6 +803,42 @@ export async function takeFloor(code: string, token: string | null) {
     row.state = s;
     // the debate never closes on someone mid-sentence
     if (row.deadline !== null && row.deadline < until + 2000) row.deadline = until + 2000;
+    return row;
+  });
+}
+
+/** SPEED (designer 2026-10-12): the host sets 1× or 2× for everyone; anyone else asks, and the host says yes or no. */
+export async function setSpeed(code: string, token: string | null, body: unknown) {
+  const b = (body ?? {}) as { speed?: unknown; answer?: unknown };
+  await play(code, (row) => {
+    const seat = seatOf(row, token);
+    const host = row.hostToken === token;
+    const timers = { ...row.timers };
+    if (host) {
+      if (b.answer === "no") timers.speedAsk = null;
+      else { const sp = b.answer === "yes" ? 2 : b.speed === 2 ? 2 : 1; timers.speed = sp; timers.speedAsk = null; }
+    } else {
+      if (b.speed !== 2) throw new HttpError(400, "Only the host changes the speed");
+      if ((timers.speed ?? 1) === 2) return row;
+      timers.speedAsk = seat;
+    }
+    row.timers = timers;
+    return row;
+  });
+}
+
+/** LAST WORDS — SKIP (designer 2026-10-12): the player who was put out may end their last words early; the clock
+ *  the words were holding comes back the same amount (never closer than 3 s). */
+export async function endLastWords(code: string, token: string | null) {
+  await play(code, (row) => {
+    const s = row.state;
+    const seat = seatOf(row, token);
+    const lw = s?.lastWords;
+    if (!s || !lw || lw.seat !== seat || lw.until <= Date.now()) return row;
+    const saved = lw.until - Date.now();
+    s.lastWords = { seat, until: Date.now() };
+    if (row.deadline !== null) row.deadline = Math.max(Date.now() + 3000, row.deadline - saved);
+    row.state = s;
     return row;
   });
 }

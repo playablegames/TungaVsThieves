@@ -46,6 +46,8 @@ export const api = {
   tutorial: (name: string) => call<{ code: string; token: string }>("/api/games/tutorial", { method: "POST", body: JSON.stringify({ name }) }),
   rematch: (code: string, token: string) => call<{ code: string }>(`/api/games/${code}/rematch`, { method: "POST", token }),
   extend: (code: string, token: string) => call(`/api/games/${code}/extend`, { method: "POST", token }),
+  endWords: (code: string, token: string) => call(`/api/games/${code}/words`, { method: "POST", token }),
+  speed: (code: string, token: string, body: { speed?: 1 | 2; answer?: "yes" | "no" }) => call(`/api/games/${code}/speed`, { method: "POST", token, body: JSON.stringify(body) }),
   tick: (code: string) => call<{ applied: boolean }>(`/api/games/${code}/tick`, { method: "POST" }),
   chat: (code: string, token: string, text: string) =>
     call(`/api/games/${code}/chat`, { method: "POST", token, body: JSON.stringify({ text }) }),
@@ -94,7 +96,8 @@ export function useGame(code: string) {
   useEffect(() => {
     if (!token) return;
     refresh();
-    const fallback = setInterval(refresh, realtime ? 5000 : 1200);
+    // BATTERY (2026-10-12): no polling while the app is in the background — coming back catches up at once (wake)
+    const fallback = setInterval(() => { if (document.visibilityState !== "hidden") refresh(); }, realtime ? 5000 : 1500);
     const ch = realtime?.channel(`game:${code.toUpperCase()}`).on("broadcast", { event: "v" }, () => refresh()).subscribe();
     // back from a phone call or another app: catch up at once instead of waiting for the next poll
     const wake = () => { if (document.visibilityState === "visible") refresh(); };
