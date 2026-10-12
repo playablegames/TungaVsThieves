@@ -104,8 +104,8 @@ function rawBeat(e: GameEvent, names: string[]): Beat | null {
     case "eliminated":
       // (2026-10-09) roles are never shown to the table — only "out", and the hand they held
       if (d?.side === undefined)
-        return { ...base, actor: num(d, "killer") ?? undefined, target: actor, title: `${nm(actor)} is out`, detail: "Their role stays hidden.", cards: (d?.hand as Card[]) ?? [], result: "out", tone: "lethal", big: true, hold: BIG + 800 + (d?.lastWords ? LAST_WORDS_MS : 0), lastWords: Boolean(d?.lastWords) };
-      return { ...base, actor: num(d, "killer") ?? undefined, target: actor, title: `${nm(actor)} was ${String(d?.role)}`, detail: d?.side === "T" ? "A thief." : "A villager.", cards: (d?.hand as Card[]) ?? [], result: "out", tone: d?.side === "T" ? "relic" : "lethal", big: true, hold: BIG + 800 + (d?.lastWords ? LAST_WORDS_MS : 0), lastWords: Boolean(d?.lastWords) };
+        return { ...base, actor: num(d, "killer") ?? undefined, target: actor, title: `${nm(actor)} is out`, detail: "Their role stays hidden.", result: "out", tone: "lethal", big: true, hold: BIG + 800 + (d?.lastWords ? LAST_WORDS_MS : 0), lastWords: Boolean(d?.lastWords) };
+      return { ...base, actor: num(d, "killer") ?? undefined, target: actor, title: `${nm(actor)} was ${String(d?.role)}`, detail: d?.side === "T" ? "A thief." : "A villager.", result: "out", tone: d?.side === "T" ? "relic" : "lethal", big: true, hold: BIG + 800 + (d?.lastWords ? LAST_WORDS_MS : 0), lastWords: Boolean(d?.lastWords) };
     case "eliminated_private":
       // only the Teer Kaman shooter or the Faisla caller sees the role
       return { ...base, target: actor, title: `${nm(actor)} was ${String(d?.role)}`, detail: d?.side === "T" ? "A thief. Only you know." : "A villager. Only you know.", tone: d?.side === "T" ? "relic" : "lethal", big: true, hold: BIG };
@@ -119,7 +119,10 @@ function rawBeat(e: GameEvent, names: string[]): Beat | null {
     case "gift":
       return { ...base, title: target === undefined || d?.target === null ? `${nm(actor)} gives no vote` : `${nm(actor)}'s vote to ${nm(target)}`, tone: "vote", big: false, hold: SMALL };
     case "handoff":
-      return { ...base, title: `${nm(actor)} hands everything to ${nm(target)}`, cards: (d?.cards as Card[]) ?? [], tone: "neutral", big: true, hold: BIG - 600 };
+      // (designer 2026-10-12) the table never sees the cards — only that they moved
+      return { ...base, title: `${nm(actor)}'s cards go to ${nm(target)}`, tone: "neutral", big: false, hold: SMALL };
+    case "handoff_private":
+      return { ...base, title: `${nm(actor)}'s cards to ${nm(target)}`, cards: (d?.cards as Card[]) ?? [], tone: "neutral", big: true, hold: BIG - 600, private: true };
     case "to_village":
       return { ...base, title: `${nm(actor)}'s cards to the village`, detail: "A thief's Stone voted out counts for Tunga.", cards: (d?.cards as Card[]) ?? [], tone: "vote", big: true, hold: BIG };
     case "to_thieves":

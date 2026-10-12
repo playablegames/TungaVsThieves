@@ -2,6 +2,7 @@
 //   start(names, seed)                 -> first state (seat 1 has picked up the pile)
 //   apply(state, seat, action)         -> next state (throws RuleError if illegal)
 //   waitingOn(state)                   -> seats that must decide now
+import { stonePaths } from "./stonepath";
 import {
   ACTION_CARDS, isStone, RuleError,
   type Action, type ActionCard, type Card, type GameEvent, type GameState, type Player, type Side,
@@ -73,7 +74,9 @@ export function canPlay(s: GameState, seat: number, card: ActionCard): boolean {
   const others = living(s).filter((p) => p.seat !== seat);
   switch (card) {
     case "HERA_PHERI": return others.some((p) => p.hand.length > 0);
-    case "FAISLA": case "BATWARA": return true;
+    case "FAISLA": return true;
+    // (analysis only) a variant that locks Bhukamp out of the last round
+    case "BATWARA": return !((s.probeBhukamp === "nolate" || s.probeBhukamp === "keep1late") && s.round >= s.rounds);
     default: return others.length > 0;
   }
 }
@@ -125,6 +128,8 @@ function finish(s: GameState, winner: Side, reason: string) {
   emit(s, "over", "all", `${winner === "V" ? "TUNGA" : "THIEVES"} WIN — ${reason}`, {
     winner, reason,
     players: s.players.map((p) => ({ seat: p.seat, name: p.name, role: p.role, side: p.side, alive: p.alive, hand: p.hand })),
+    // (2026-10-12) each Stone's journey, for the end screen — every secret is public once the game is over
+    stonePaths: stonePaths(s),
   });
 }
 
@@ -504,6 +509,7 @@ function resolveVote(s: GameState) {
 // ---------------------------------------------------------------- Batwara
 function resolveBatwara(s: GameState) {
   const ph = s.phase as Extract<GameState["phase"], { kind: "batwara" }>;
+  if (s.probeBhukamp && s.probeBhukamp !== "nolate") return probeBatwara(s, ph);
   const moves: [number, Card, number][] = [];
   // everything leaves before anything arrives, so a card never travels twice
   for (const [g, pk] of Object.entries(ph.picks)) {
@@ -511,6 +517,48 @@ function resolveBatwara(s: GameState) {
     removeCards(P(s, seat).hand, pk.right ? [pk.left, pk.right] : [pk.left]);
     moves.push([seat, pk.left, neighbour(s, seat, 1)]); // left = the next player in turn order
     if (pk.right) moves.push([seat, pk.right, neighbour(s, seat, -1)]);
+  }
+  for (const [from, c, to] of moves) {
+    P(s, to).hand.push(c);
+    emit(s, "batwara_private", [from, to], `${P(s, from).name} passed ${CARD_NAME[c]} to ${P(s, to).name}.`, { from, to, card: c });
+  }
+  emit(s, "batwara_done", "all", "Bhukamp is done.");
+  endTurn(s);
+}
+
+/** ANALYSIS ONLY (scripts/bhukamp.mts): the Bhukamp variants under test. Each player's picks say what they would give
+ *  first (`left`) and second (`right`); the variant decides what actually moves. */
+function probeBatwara(s: GameState, ph: Extract<GameState["phase"], { kind: "batwara" }>) {
+  const v = s.probeBhukamp!;
+  const moves: [number, Card, number][] = [];
+  const out = (seat: number, c: Card, to: number) => { removeCards(P(s, seat).hand, [c]); moves.push([seat, c, to]); };
+  if (v === "keep1" || v === "keep1late") {
+    // PASS 1, KEEP 1: everyone gives one card (their first pick), all the same way — the Bhukamp player's choice
+    const dir: 1 | -1 = int(s, 2) === 0 ? 1 : -1;
+    for (const [g, pk] of Object.entries(ph.picks)) out(Number(g), pk.left, neighbour(s, Number(g), dir));
+  } else if (v === "stonefix") {
+    // both ways, but a Stone never moves in a Bhukamp
+    for (const [g, pk] of Object.entries(ph.picks)) {
+      const seat = Number(g);
+      if (!isStone(pk.left)) out(seat, pk.left, neighbour(s, seat, 1));
+      if (pk.right && !isStone(pk.right)) out(seat, pk.right, neighbour(s, seat, -1));
+    }
+  } else if (v === "pool") {
+    // THE POOL (Sushi Go / Uno's 0): everyone puts one card face down in the middle; it is shuffled and dealt back
+    const seats = Object.keys(ph.picks).map(Number);
+    const pool = seats.map((x) => ph.picks[x].left);
+    for (const x of seats) removeCards(P(s, x).hand, [ph.picks[x].left]);
+    for (let i = pool.length - 1; i > 0; i--) { const j = int(s, i + 1); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+    seats.forEach((x, i) => moves.push([seats.find((y) => ph.picks[y].left === pool[i] && !moves.some((m) => m[0] === y)) ?? x, pool[i], x]));
+  } else if (v === "swap") {
+    // TROUBLEMAKER (One Night Ultimate Werewolf): the Bhukamp player swaps the whole hands of two other players
+    const others = living(s).filter((p) => p.seat !== ph.actor && p.hand.length).map((p) => p.seat);
+    if (others.length >= 2) {
+      const a = others.splice(int(s, others.length), 1)[0], b = others[int(s, others.length)];
+      const ha = [...P(s, a).hand], hb = [...P(s, b).hand];
+      for (const c of ha) out(a, c, b);
+      for (const c of hb) out(b, c, a);
+    }
   }
   for (const [from, c, to] of moves) {
     P(s, to).hand.push(c);
@@ -540,10 +588,12 @@ function runElims(s: GameState) {
       }
       if (s.publicRoles) {
         p.revealedRole = p.role;
-        emit(s, "eliminated", "all", `${p.name} is OUT — ${p.role} (${p.side === "V" ? "Tunga" : "Thief"}). Hand: ${names(p.hand)}.`,
-          { seat: p.seat, role: p.role, side: p.side, hand: [...p.hand], killer: job.killer });
-      } else emit(s, "eliminated", "all", `${p.name} is OUT. Their role stays hidden. Hand: ${names(p.hand)}.`,
-        { seat: p.seat, hand: [...p.hand], killer: job.killer });
+        emit(s, "eliminated", "all", `${p.name} is OUT — ${p.role} (${p.side === "V" ? "Tunga" : "Thief"}).`,
+          { seat: p.seat, role: p.role, side: p.side, killer: job.killer });
+      // (designer 2026-10-12) an out player's cards are NEVER shown to the table — only the player who receives them
+      // sees them (handoff_private)
+      } else emit(s, "eliminated", "all", `${p.name} is OUT. Their role stays hidden.`,
+        { seat: p.seat, killer: job.killer });
       // (designer 2026-10-12) a thief the MANDATORY VOTE puts out may still use Dal Badal, before the reveal — the
       // sides count after the shuffle, so this comes before "every thief is out"
       if (s.after?.kind === "finalReveal" && p.side === "T" && p.hand.includes("DAL_BADAL") && living(s).length >= 2) {
@@ -606,7 +656,8 @@ function doElimStep(s: GameState, seat: number, a: Action): GameState {
     const t = P(s, to);
     const cards = p.hand.splice(0);
     t.hand.push(...cards);
-    emit(s, "handoff", "all", `${p.name}'s cards go to ${t.name}: ${names(cards)}.`, { seat, target: t.seat, cards, auto: true });
+    emit(s, "handoff", "all", `${p.name}'s cards go to ${t.name}.`, { seat, target: t.seat, count: cards.length, auto: true });
+    emit(s, "handoff_private", [seat, t.seat], `${p.name}'s cards to ${t.name}: ${names(cards)}.`, { seat, target: t.seat, cards });
     return finishElim(s);
   }
 
@@ -617,7 +668,8 @@ function doElimStep(s: GameState, seat: number, a: Action): GameState {
   if (!live.includes(t)) throw new RuleError("Hand them to a living player");
   const cards = p.hand.splice(0);
   t.hand.push(...cards);
-  emit(s, "handoff", "all", `${p.name} hands ${names(cards)} to ${t.name}.`, { seat, target: t.seat, cards });
+  emit(s, "handoff", "all", `${p.name} hands their cards to ${t.name}.`, { seat, target: t.seat, count: cards.length });
+  emit(s, "handoff_private", [seat, t.seat], `${p.name}'s cards to ${t.name}: ${names(cards)}.`, { seat, target: t.seat, cards });
   return finishElim(s);
 }
 

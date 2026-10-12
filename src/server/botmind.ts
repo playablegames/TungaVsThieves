@@ -399,7 +399,7 @@ export function botTalk(s: GameState, from: number, bots: number[], seed: number
         }
         break;
       }
-      case "handoff": if (target !== null) say(target, stonesIn(d?.cards) && side(target) === "V" ? `Got a Stone! Thanks ${nm(actor)}, I'll keep it safe.` : `So many cards! Thank you, ${nm(actor)}.`); break;
+      case "handoff_private": if (target !== null) say(target, stonesIn(d?.cards) && side(target) === "V" ? `Got a Stone! Thanks ${nm(actor)}, I'll keep it safe.` : `So many cards! Thank you, ${nm(actor)}.`); break;
       // S18
       case "over": {
         const winners = bots.filter((b) => side(b) === d?.winner);

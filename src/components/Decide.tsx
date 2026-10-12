@@ -71,7 +71,7 @@ export function Decide({ v, act }: { v: PlayerView; act: (a: Action) => void }) 
     case "dal_pick": return <DalPick count={d.count} act={act} />;
     case "gift": return <OneOf title="Give your vote" hint="They vote with one more from now on." options={others}
       go={(s) => c.ask(`Give your vote to ${name(s)}`, { type: "gift", target: s })} skip={{ label: "Give it to nobody", action: { type: "gift", target: null } }} act={act} />;
-    case "handoff": return <OneOf title="Hand ALL your cards to someone" hint="Stones included. Everyone sees what you hand over." options={others}
+    case "handoff": return <OneOf title="Hand ALL your cards to someone" hint="Stones included. Only they see what you hand over." options={others}
       go={(s) => c.ask(`Hand everything to ${name(s)}`, { type: "handoff", target: s })} act={act} />;
   }
 }

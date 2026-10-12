@@ -388,7 +388,9 @@ export function stoneOdds(s: GameState, seat: number, seed: number, skill: Skill
         break;
       }
       case "batwara_private": { const from = num(d, "from"), to = num(d, "to"); if (from !== null && to !== null && STONE(d?.card)) { p.set(to, 1); } break; }
-      case "handoff": if (actor !== null && target !== null) { p.set(actor, 0); if (has(d?.cards)) p.set(target, 1); } break;
+      // the table sees only that the cards moved — their chance moves with them; the receiver sees the cards
+      case "handoff": if (actor !== null && target !== null) { p.set(target, 1 - (1 - p.get(target)!) * (1 - p.get(actor)!)); p.set(actor, 0); } break;
+      case "handoff_private": if (target !== null && has(d?.cards)) p.set(target, 1); break;
       case "to_village": if (actor !== null) { p.set(actor, 0); village += ((d?.cards as unknown[]) ?? []).filter(STONE).length; } break;
       case "to_thieves": if (actor !== null) { p.set(actor, 0); village += ((d?.cards as unknown[]) ?? []).filter(STONE).length; } break;
       case "surrender": if (actor !== null) { p.set(actor, 0); village += ((d?.cards as unknown[]) ?? []).filter(STONE).length; } break;

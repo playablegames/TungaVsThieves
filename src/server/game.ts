@@ -674,7 +674,7 @@ export async function debugRig(code: string, token: string | null, body: { hand?
       s.deck.push(...p.hand.filter((c) => !c.startsWith("STONE")));
       p.hand = [];
       s.players[(x + 1) % s.players.length].hand.push(...stones);
-      s.events.push({ n: s.events.length, type: "eliminated", to: "all", msg: `${p.name} is OUT. Their role stays hidden.`, data: { seat: x, hand: [], killer: null } });
+      s.events.push({ n: s.events.length, type: "eliminated", to: "all", msg: `${p.name} is OUT. Their role stays hidden.`, data: { seat: x, killer: null } });
     }
     if (Array.isArray(body.hand)) {
       // put the old cards back in the deck so the card count stays true
@@ -710,7 +710,7 @@ export async function debugRig(code: string, token: string | null, body: { hand?
       } else {
         const me = s.players[seat];
         me.alive = false; me.votesAtDeath = me.votes; me.votes = 0; s.deadOrder.push(seat);
-        s.events.push({ n: s.events.length, type: "eliminated", to: "all", msg: `${me.name} is OUT. Their role stays hidden.`, data: { seat, hand: [...me.hand], killer: null } });
+        s.events.push({ n: s.events.length, type: "eliminated", to: "all", msg: `${me.name} is OUT. Their role stays hidden.`, data: { seat, killer: null } });
         s.after = { kind: "finalReveal" };
         s.elimQueue = [{ seat, killer: null, reveal: [] }];
         s.phase = { kind: "elim", seat, step: "dal_badal" };

@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { api, saveToken, useGame, useHydrated } from "@/lib/client";
 import { beatsFor } from "@/lib/beats";
 import type { Action, Card, GameEvent, Side } from "@/engine/types";
+import type { StoneStep } from "@/engine/stonepath";
 import { MIN_PLAYERS } from "@/engine/setup";
 import type { PlayerView, PublicPlayer } from "@/engine/view";
 import type { ClientState } from "@/server/game";
@@ -326,6 +327,7 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
   const stage = useStage(v.events, v.players.map((p) => p.name), s.timers.speed ?? 1);
   const bots = useBotSpeech(messages);
   const [menu, setMenu] = useState(false);
+  const [history, setHistory] = useState<number | null>(null);
   const myMove = v.decision?.kind ?? null;
   const shown = stage.current?.n ?? stage.last?.n ?? -1;
   const beats = useMemo(() => beatsFor(v.events, v.players.map((p) => p.name)).filter((b) => !b.private), [v.events, v.players]);
@@ -507,7 +509,7 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
         <SpeedAsk code={code} token={token} name={v.players[s.timers.speedAsk]?.name.replace(/\s*🤖$/, "") ?? "A player"} />
       )}
 
-      <Ring v={v} voice={voice} talking={bots.current?.seat ?? null} floorSeat={s.floor && s.floor.until > now() ? s.floor.seat : null} actor={headline?.actor} target={headline?.target} pick={v.decision?.kind === "vote" ? v.decision.mine ?? null : null} tally={live ?? voteShown?.tally}
+      <Ring v={v} voice={voice} onHistory={setHistory} talking={bots.current?.seat ?? null} floorSeat={s.floor && s.floor.until > now() ? s.floor.seat : null} actor={headline?.actor} target={headline?.target} pick={v.decision?.kind === "vote" ? v.decision.mine ?? null : null} tally={live ?? voteShown?.tally}
         flying={flying} onThrow={s.status === "playing" ? throwAt : undefined}
         away={s.away} marks={marks} onMark={setMark}
         onClaim={s.status === "playing" ? claimAt : undefined}
@@ -522,11 +524,13 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
       <Tray v={v} act={act} live={live} waitForExit={myExitPending} banner={coach
         ? <Coach key={coach.id} text={coach.text} onNext={() => setCoachSeen((xs) => [...xs, coach.id])} onSkip={() => setCoachOff(true)} />
         : tip ? <Tip key={tip} text={TIP_TEXT[tip]} onDone={() => seeTips(tip)} /> : null} />
+      {history !== null && <Sheet title={`${history === v.me.seat ? "Your" : `${v.players[history]?.name.replace(/\s*🤖$/, "")}'s`} history`} onClose={() => setHistory(null)}><SeatHistory v={v} seat={history} /></Sheet>}
       {feedOpen && <Sheet title="Everything at the table" onClose={() => setFeedOpen(false)}><FeedList items={[...feed].reverse()} names={names} me={v.me.seat} /></Sheet>}
 
       {menu && (
         <Sheet title="Menu" onClose={() => setMenu(false)}>
           <RolePeek v={v} />
+          <MySecrets v={v} />
           {!solo && (
             <div className="flex items-center gap-3">
               <MicButton voice={voice} />
@@ -608,10 +612,10 @@ function RolePeek({ v }: { v: PlayerView }) {
 }
 
 /** Seats on an oval in turn order, you at the bottom, a thin brass line joining them. */
-function Ring({ v, voice, talking, floorSeat = null, actor, target, pick, tally, flying = [], away = [], marks = {}, onMark, onThrow, onPick, onClaim, onQuick, children }: {
+function Ring({ v, voice, talking, floorSeat = null, actor, target, pick, tally, flying = [], away = [], marks = {}, onMark, onThrow, onPick, onClaim, onQuick, onHistory, children }: {
   v: PlayerView; voice: VoiceCtl; talking: number | null; floorSeat?: number | null; actor?: number; target?: number; pick: number | null; tally?: Record<string, number>;
   flying?: Throw[]; away?: number[]; marks?: Record<number, Mark>; onMark?: (seat: number, m: Mark | null) => void; onThrow?: (seat: number, emoji: string) => void; onPick?: (seat: number) => void;
-  onClaim?: (kind: "accuse" | "trust" | "kundli" | "stone", seat: number, role?: string, has?: boolean) => void; onQuick?: (line: string) => void; children: React.ReactNode;
+  onClaim?: (kind: "accuse" | "trust" | "kundli" | "stone", seat: number, role?: string, has?: boolean) => void; onQuick?: (line: string) => void; onHistory?: (seat: number) => void; children: React.ReactNode;
 }) {
   const n = v.players.length;
   const voteOpen = v.phase.endsWith("_vote");
@@ -735,6 +739,11 @@ function Ring({ v, voice, talking, floorSeat = null, actor, target, pick, tally,
               className="grid h-10 w-10 place-items-center rounded-full text-[20px]">{peerOf(picker)!.hushed ? "🔊" : "🔇"}</button>
           )}
           </div>}
+          {/* (2026-10-12) everything about this player, round by round */}
+          {!reading && onHistory && (
+            <button type="button" role="menuitem" onClick={() => { onHistory(picker); setPicker(null); }}
+              className="min-h-10 rounded-xl border-t border-brass/30 text-[13px] font-bold text-stock/85">📜 {picker === v.me.seat ? "Your" : `${v.players[picker]?.name.replace(/\s*🤖$/, "")}'s`} history</button>
+          )}
         </div>
       )}
       {flying.map((t) => {
@@ -1085,6 +1094,8 @@ function Final({ v, clips = [], host = false, hostName = "the host", onRematch }
         </div>
       </div>
 
+      <StonePaths v={v} reveal={reveal} />
+
       {/* the best voice moments of the game, as this phone heard them */}
       {clips.length > 0 && (
         <div className="mt-3 rounded-2xl border border-brass/40 bg-black/30 p-3">
@@ -1121,6 +1132,112 @@ function Final({ v, clips = [], host = false, hostName = "the host", onRematch }
   );
 }
 
+
+/** SEAT HISTORY (designer 2026-10-12, research: ProAvalon's row per seat): everything that involved one player —
+ *  what they played and at whom, what was played on them, what was said about them and by them, how they voted —
+ *  grouped by round. Only what this phone saw (your own secrets included). */
+const HISTORY_SKIP = new Set(["analytics_deal", "analytics_turn", "role", "setup", "pickup", "pickup_private", "conduit", "batwara_done", "reshuffle", "ballots_open", "reveal", "over", "timeout", "away", "back", "floor", "floor_extended"]);
+function SeatHistory({ v, seat }: { v: PlayerView; seat: number }) {
+  const nm = (x: number) => (v.players[x]?.name ?? "?").replace(/\s*🤖$/, "");
+  const clean = (m: string) => m.replace(/\s*🤖/g, "");
+  const groups: { title: string; lines: string[] }[] = [];
+  let title = "Round 1";
+  const push = (line: string) => {
+    if (groups.at(-1)?.title !== title) groups.push({ title, lines: [] });
+    const g = groups[groups.length - 1];
+    if (g.lines.at(-1) !== line) g.lines.push(line);
+  };
+  for (const e of v.events) {
+    const d = e.data ?? {};
+    if (e.type === "pickup" && typeof d.round === "number") { title = `Round ${d.round}`; continue; }
+    if (e.type === "final_vote") { title = "Mandatory vote"; continue; }
+    if (HISTORY_SKIP.has(e.type)) continue;
+    if (e.type === "vote_result") {
+      const ballots = (d.ballots ?? {}) as Record<string, number | null>;
+      const got = Object.entries(ballots).filter(([, t]) => t === seat).map(([x]) => nm(Number(x)));
+      const mine = ballots[String(seat)];
+      if (String(seat) in ballots) push(mine === null || mine === undefined ? "Voted for nobody" : `Voted for ${nm(mine)}`);
+      if (got.length) push(`Votes against: ${got.join(", ")}`);
+      continue;
+    }
+    if (e.type === "batwara_private" && !(d.from === seat || d.to === seat)) continue;
+    const about = d.seat === seat || d.target === seat || (e.type === "batwara_private");
+    if (about) push(clean(e.msg));
+  }
+  if (!groups.length) return <p className="text-center text-[14px] text-stock/70">Nothing yet.</p>;
+  return (
+    <div className="flex flex-col gap-3">
+      {groups.map((g, i) => (
+        <section key={i}>
+          <p className="font-[family-name:var(--font-engraved)] text-[11px] font-semibold uppercase tracking-[0.2em] text-brass">{g.title}</p>
+          <ul className="mt-1 flex flex-col gap-1">{g.lines.map((l, k) => <li key={k} className="text-[14px] leading-snug text-stock">{l}</li>)}</ul>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+/** MY SECRETS (designer 2026-10-12, research: Pocket Grimoire's "a card you keep"): every private thing this phone
+ *  learned, newest first — Kundli reads (both ways), Talashi searches, a role seen when you put someone out, what
+ *  Hera Pheri and Bhukamp moved, a Stone you picked up, a new role from Dal Badal. */
+const SECRET_TYPES = new Set(["kundli_private", "talashi_private", "eliminated_private", "hera_pheri_private", "batwara_private", "whisper_private"]);
+function MySecrets({ v }: { v: PlayerView }) {
+  const me = v.me.seat;
+  const isStone = (c: unknown) => c === "STONE_1" || c === "STONE_2";
+  const items = v.events.filter((e) => Array.isArray(e.to) && e.to.includes(me) && (
+    SECRET_TYPES.has(e.type)
+    || (e.type === "pickup_private" && ((e.data?.cards as unknown[]) ?? []).some(isStone))
+    || (e.type === "role" && e.data?.swapped)
+  )).filter((e) => e.type !== "batwara_private" || e.data?.from === me || e.data?.to === me).reverse();
+  return (
+    <details className="group rounded-2xl border border-brass/30 px-4 py-1 [&_summary::-webkit-details-marker]:hidden">
+      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between text-[14px] font-semibold text-stock/80">
+        🔒 My secrets{items.length ? ` (${items.length})` : ""}<span aria-hidden className="transition group-open:rotate-90">›</span>
+      </summary>
+      {items.length
+        ? <ul className="flex flex-col gap-1.5 pb-2">{items.map((e) => <li key={e.n} className="text-[14px] leading-snug text-stock">{e.msg.replace(/\s*🤖/g, "")}</li>)}</ul>
+        : <p className="pb-2 text-[13px] text-stock/60">Nothing yet — your Kundli reads and searches will show here.</p>}
+    </details>
+  );
+}
+
+/** THE STONES' PATH (designer 2026-10-12): each Stone from the deal to where it ended, every hand it passed through
+ *  (a name in thief red or village gold), how it got there, and 👁 where someone saw it with Talashi. */
+const HOW: Record<string, string> = { dealt: "dealt", pile: "pile", bhukamp: "Bhukamp", hera_pheri: "stolen", handoff: "handed" };
+function StonePaths({ v, reveal }: { v: PlayerView; reveal: { seat: number; side: string }[] }) {
+  const paths = [...v.events].reverse().find((e) => e.type === "over")?.data?.stonePaths as Record<string, StoneStep[]> | undefined;
+  if (!paths) return null;
+  const sideOf = (seat: number) => reveal.find((r) => r.seat === seat)?.side;
+  const nm = (seat: number) => (v.players[seat]?.name ?? "?").replace(/\s*🤖$/, "");
+  return (
+    <div className="mt-3 flex flex-col gap-3 rounded-2xl border border-brass/40 bg-black/30 p-3" aria-label="How the Stones moved">
+      <p className="text-center font-[family-name:var(--font-engraved)] text-[11px] font-semibold uppercase tracking-[0.2em] text-brass">How the Stones moved</p>
+      {(["STONE_2", "STONE_1"] as const).map((c) => (
+        <div key={c} className="flex flex-col gap-1.5">
+          <p className="flex items-center gap-2 font-display text-[14px] font-bold text-stock"><CardIcon c={c} className="w-6 shrink-0" />{STONE_NAME[c]}</p>
+          <ol className="flex flex-wrap items-center gap-x-1 gap-y-1.5">
+            {(paths[c] ?? []).map((st, i) => (
+              <li key={i} className="flex items-center gap-1">
+                {i > 0 && <span aria-hidden className="text-stock/40">›</span>}
+                {st.kind === "holder" ? (
+                  <span className="flex flex-col items-center leading-none">
+                    <span className={`rounded-full px-2 py-0.5 text-[13px] font-bold ${sideOf(st.seat) === "T" ? "bg-crimson-deep text-ink" : "bg-[#3a240c] text-[#f3c66b]"}`}>{nm(st.seat)}</span>
+                    <span className="mt-0.5 text-[10px] text-stock/55">{HOW[st.how]}</span>
+                  </span>
+                ) : st.kind === "seen" ? (
+                  <span className="rounded-full px-1.5 py-0.5 text-[12px] text-stock/80 ring-1 ring-stock/30" title="saw it with Talashi">👁 {nm(st.by)}</span>
+                ) : (
+                  <span className={`rounded-full px-2 py-0.5 text-[13px] font-bold ${st.to === "village" ? "bg-[#3a240c] text-[#f3c66b]" : "bg-crimson-deep text-ink"}`}>{st.to === "village" ? "The village" : "The thieves"}</span>
+                )}
+              </li>
+            ))}
+          </ol>
+        </div>
+      ))}
+      <p className="text-center text-[11px] text-stock/50">gold = villager · red = thief · 👁 saw it with Talashi</p>
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------- voice
 function MicOff({ small = false, crossed = false }: { small?: boolean; crossed?: boolean }) {

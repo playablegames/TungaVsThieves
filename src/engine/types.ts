@@ -120,6 +120,9 @@ export interface GameState {
   /** BALANCE PROBE ONLY: show every eliminated player's role to the table (the old way), to measure what hiding costs.
    *  The game never sets it. */
   publicRoles?: boolean;
+  /** ANALYSIS ONLY (scripts/bhukamp.mts, 2026-10-12): a Bhukamp variant under test. Never set by the online game —
+   *  undefined = the rule as printed (everyone passes 1 left + 1 right). */
+  probeBhukamp?: "keep1" | "stonefix" | "nolate" | "pool" | "swap" | "keep1late";
   /** LEARN BY PLAYING (2026-10-09): a guided first game — the phone shows a coach; the rules are the same */
   tutorial?: boolean;
   deadOrder: number[];
