@@ -14,6 +14,8 @@ export interface GameRow {
   hostToken: string;
   /** bot = a bot seat from the lobby · away = a player who timed out twice; a stand-in plays safe for them */
   lobby: { name: string; token: string; bot?: boolean; away?: boolean; strikes?: number;
+    /** (2026-10-12) a bot's skill — casual (a beginner: gambles), average, sharp (holds, times Dal Badal) */
+    skill?: "casual" | "average" | "sharp";
     /** TURN ALERTS: this phone's web-push subscription, and whether it has switched away from the game right now */
     push?: { endpoint: string; keys: { p256dh: string; auth: string } } | null; hidden?: boolean }[];
   state: GameState | null;

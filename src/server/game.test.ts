@@ -1,3 +1,4 @@
+import { tkGuesses } from "@/engine/setup";
 import { describe, expect, it, vi } from "vitest";
 import { act, addBot, chat, createRoom, debateSeconds, extendDebate, reclaim, removeBot, sweep, getState, joinRoom, startGame, tick, HttpError, INTRO_MS, BOT_DELAY_MS, VOTE_SETTLE_MS, ONLINE_MAX_PLAYERS, whisper, exportLog, takeFloor, FLOOR_MS } from "./game";
 import { botVote } from "./botmind";
@@ -354,7 +355,7 @@ describe("voice moments (designer 2026-10-07)", () => {
       await memoryStore.update({ ...row, version: row.version + 1 }, row.version);
       const t0 = Date.now();
       const other = s.rolesInPlay.find((r) => r !== s.players[victim].role)!;
-      await act(host.code, host.token, { type: "play", card: "TEER_KAMAN", pass: ["FAISLA", "KUNDLI", "HERA_PHERI"], target: victim, roles: [s.players[victim].role, other] });
+      await act(host.code, host.token, { type: "play", card: "TEER_KAMAN", pass: ["FAISLA", "KUNDLI", "HERA_PHERI"], target: victim, roles: [s.players[victim].role, other].slice(0, tkGuesses(s.rolesInPlay)) });
       const after = (await memoryStore.get(host.code))!.state!;
       const out = after.events.find((e) => e.type === "eliminated" && e.data?.seat === victim)!;
       expect(out).toBeTruthy();

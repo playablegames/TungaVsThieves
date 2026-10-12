@@ -295,7 +295,7 @@ function status(v: PlayerView): string {
   if (p.endsWith("_debate")) return `${p.startsWith("final") ? "Last debate" : "Faisla"} — the floor is open`;
   if (p.endsWith("_vote")) return mine ? "Your vote" : `Voting — waiting for ${list}`;
   if (p === "surrender") return mine ? "Surrender your Stone?" : "The Stone holders are deciding…";
-  if (p === "batwara") return mine ? "Bhukamp — pass one card clockwise" : `Bhukamp — waiting for ${list}`;
+  if (p === "batwara") return mine ? "Bhukamp — one card left, one right" : `Bhukamp — waiting for ${list}`;
   if (p.startsWith("dal_badal")) return mine ? "Dal Badal — pick a role card" : `Dal Badal — ${list} picking a role card`;
   if (p.startsWith("elim")) {
     const seat = Number(p.split(":")[2]);

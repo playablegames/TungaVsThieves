@@ -39,11 +39,12 @@ export type Phase =
       extended?: boolean;
     }
   | {
-      /** BHUKAMP (designer 2026-10-09): every living player passes 1 card to the next player clockwise, chosen in secret */
+      /** BHUKAMP (designer 2026-10-12): every living player — the one who played it too — passes 1 card LEFT (the next
+       *  player in turn order) and 1 RIGHT (the one before), each choosing which goes where, in secret */
       kind: "batwara";
       actor: number;
       givers: number[];
-      picks: Record<number, Card>;
+      picks: Record<number, { left: Card; right: Card | null }>;
     }
   | {
       /** DAL BADAL (designer 2026-10-09): the thief's whole turn — pass 3, show their role, then their role card and those
@@ -52,8 +53,12 @@ export type Phase =
       pool: { role: string; side: Side }[]; pickers: number[];
       /** roles already picked, held aside until everyone has one */
       drawn: { seat: number; role: string; side: Side }[];
+      /** (2026-10-12) used in the MANDATORY VOTE — during the debate, or by a thief just voted out: where the game
+       *  goes back to once everyone has picked (no draw, no end of turn) */
+      resume?: Phase;
     }
-  | { kind: "elim"; seat: number; step: "dying" | "handoff" }
+  /** step "dal_badal" (2026-10-12): a thief the mandatory vote put out, holding Dal Badal, may use it before the reveal */
+  | { kind: "elim"; seat: number; step: "dying" | "handoff" | "dal_badal" }
   | {
       /** SURRENDER (designer 2026-10-07): after the last round, everyone holding a Stone decides — together and in
        *  secret — whether to give it up to the village. 2 with the village: Tunga wins; 0: Thieves win; 1: the
@@ -115,9 +120,6 @@ export interface GameState {
   /** BALANCE PROBE ONLY: show every eliminated player's role to the table (the old way), to measure what hiding costs.
    *  The game never sets it. */
   publicRoles?: boolean;
-  /** BALANCE PROBE ONLY (2026-10-12): Bhukamp two ways (paper v16, the player included) — everyone passes 1 card to
-   *  each neighbour. The probe passes the picked card + one more, and a coin decides which goes which way */
-  twoWayBhukamp?: boolean;
   /** LEARN BY PLAYING (2026-10-09): a guided first game — the phone shows a coach; the rules are the same */
   tutorial?: boolean;
   deadOrder: number[];
@@ -138,8 +140,11 @@ export type Action =
   | { type: "ready" }
   | { type: "surrender"; give: boolean }
   | { type: "vote"; target: number | null }
-  | { type: "batwara"; card: Card }
-  | { type: "dal_badal"; seats: number[]; /** Dal Badal is the turn: 3 cards passed first */ pass: Card[] }
+  /** Bhukamp: `card` goes LEFT (the next player in turn order), `right` to the player before you (needed when you hold 2+) */
+  | { type: "batwara"; card: Card; right?: Card }
+  /** Dal Badal. On your turn: 3 cards passed first. In the mandatory vote (debate, or voted out): `pass` is empty.
+   *  Voted out and keeping it: `seats` empty. */
+  | { type: "dal_badal"; seats: number[]; pass: Card[] }
   | { type: "dal_pick"; index: number }
   | { type: "gift"; target: number | null }
   | { type: "handoff"; target: number };

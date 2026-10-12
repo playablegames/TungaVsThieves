@@ -36,7 +36,7 @@ console.log("players | today | best (casual / average / sharp) | all options (me
 for (let n = lo; n <= hi; n++) {
   const [, t0, r0] = ROLE_TABLE[n];
   const tried: { t: number; ws: number[]; m: number }[] = [];
-  for (let t = 1; t <= Math.ceil(n / 2) - 1; t++) {
+  for (let t = 1; t <= Math.floor(n / 2); t++) { // up to half the table (6p 3T is today's pick)
     const ws = SK.map((k) => rate(n, t, 3, k, GAMES));
     tried.push({ t, ws, m: ws.reduce((a, b) => a + b, 0) / ws.length });
   }

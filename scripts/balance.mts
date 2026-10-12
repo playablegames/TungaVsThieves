@@ -18,7 +18,7 @@ const HAND = Number(process.env.DEAL_HAND ?? DEAL_HAND);
 let seed = 1;
 const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
 
-interface Config { name: string; skill: Skill; publicRoles: boolean; randomVote?: boolean }
+interface Config { name: string; skill: Skill; publicRoles: boolean; randomVote?: boolean; mixed?: boolean }
 const ALL: Config[] = [
   { name: "floor", skill: SKILLS.average, publicRoles: false, randomVote: true },
   ...(["casual", "average", "sharp"] as const).flatMap((k) => [
@@ -27,7 +27,10 @@ const ALL: Config[] = [
   ]),
   // stage 1 of the DeepRole-style bots (deduce.ts): exact deduction over every placement of the thieves
   ...(["casual", "average", "sharp"] as const).map((k) => ({ name: `${k} exact`, skill: { ...SKILLS[k], exact: true }, publicRoles: false })),
+  // (2026-10-12) a MIXED table, as online bot tables are: average, casual, sharp, seat by seat
+  { name: "mixed", skill: SKILLS.average, publicRoles: false, mixed: true },
 ];
+const MIX = [SKILLS.average, SKILLS.casual, SKILLS.sharp];
 const pickCols = process.argv[4]?.split(",");
 const CONFIGS = pickCols ? ALL.filter((c) => pickCols.includes(c.name)) : ALL;
 
@@ -35,16 +38,15 @@ export interface Tally { winner: "V" | "T"; claims: number; lies: number }
 export function play(n: number, gameSeed: number, c: Config): Tally {
   let s: GameState = start(Array.from({ length: n }, (_, i) => `P${i}`), gameSeed, ROLE_TABLE, HAND);
   if (c.publicRoles) s.publicRoles = true;
-  // rule switch still open (2026-10-12): TWO_WAY_BHUKAMP=1
-  if (process.env.TWO_WAY_BHUKAMP === "1") s.twoWayBhukamp = true;
   for (let k = 0; k < 20000 && s.phase.kind !== "over"; k++) {
     const seat = waitingOn(s)[0];
     const ph = s.phase;
-    if (ph.kind === "vote" && ph.debate) pushBotClaim(s, seat, s.seed, rnd, c.skill);
+    const sk = c.mixed ? MIX[seat % MIX.length] : c.skill;
+    if (ph.kind === "vote" && ph.debate) pushBotClaim(s, seat, s.seed, rnd, sk);
     const others = s.players.filter((p) => p.alive && p.seat !== seat).map((p) => p.seat);
     const a = c.randomVote && ph.kind === "vote" && !ph.debate
       ? { type: "vote" as const, target: others.length ? others[Math.floor(rnd() * others.length)] : null }
-      : skilledAction(s, seat, s.seed, rnd, c.skill);
+      : skilledAction(s, seat, s.seed, rnd, sk);
     s = apply(s, seat, a);
   }
   if (s.phase.kind !== "over") throw new Error(`game ${n}p seed ${gameSeed} did not end`);

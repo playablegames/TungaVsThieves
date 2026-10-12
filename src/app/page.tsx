@@ -209,7 +209,7 @@ function HowToPlay({ onClose, onLearn }: { onClose: () => void; onLearn: () => v
         </section>
         <section>
           <p className={h}>The end</p>
-          <p className="mt-1">After 3 rounds, a last vote: the one voted out gives their cards to the village. Then every role and hand is shown — <b>Thieves win if a thief still holds a Stone.</b></p>
+          <p className="mt-1">After 3 rounds, a last vote. Vote out a thief holding a Stone and the village gets it — vote out a villager holding one and <b>it goes to the thieves</b>. Then every role and hand is shown — <b>Thieves win if a Stone is theirs.</b></p>
         </section>
         <button type="button" onClick={onClose} className="min-h-12 rounded-full border-2 border-brass/80 font-[family-name:var(--font-engraved)] text-[15px] font-bold uppercase tracking-[0.12em]">Got it</button>
       </div>

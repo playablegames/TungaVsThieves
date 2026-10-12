@@ -1,5 +1,5 @@
 // Does the MANDATORY VOTE decide anything? (2026-10-12) For each game: who would win if the reveal came straight after
-// the last round (no vote), against who actually won. Same switch as balance.mts (TWO_WAY_BHUKAMP).
+// the last round (no vote), against who actually won. Same bots as balance.mts.
 //   npx tsx scripts/vote-matters.mts [games=300] [counts=8-8] [skill=average]
 import { apply, start, waitingOn } from "@/engine/engine";
 import { DEAL_HAND, ROLE_TABLE } from "@/engine/setup";
@@ -21,7 +21,6 @@ for (let n = lo; n <= hi; n++) {
   let reached = 0, flipVT = 0, flipTV = 0, settledV = 0, vWins = 0;
   for (let g = 0; g < GAMES; g++) {
     let s: GameState = start(Array.from({ length: n }, (_, i) => `P${i}`), 100_000 * n + g, ROLE_TABLE, DEAL_HAND);
-    if (process.env.TWO_WAY_BHUKAMP === "1") s.twoWayBhukamp = true;
     let before: "V" | "T" | null = null;
     for (let k = 0; k < 20000 && s.phase.kind !== "over"; k++) {
       const ph = s.phase;

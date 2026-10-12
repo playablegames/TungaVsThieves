@@ -78,12 +78,12 @@ export function deduce(s: GameState, seat: number, m: Model = MODEL, publicOnly 
       case "eliminated_private": if (actor !== null && d?.side) fact(actor, d.side as Side); break;
       case "eliminated": if (actor !== null && d?.side) fact(actor, d.side as Side); break;
       case "dal_badal": {
-        // the thief showed its role, then three role cards were shuffled and dealt back: spread every answer over
-        // the six deals of those three seats
+        // the thief showed its role, then the role cards were shuffled and dealt back: spread every answer over
+        // every deal of those seats (3 seats → 6 deals; a probe may shuffle more)
         if (actor !== null) fact(actor, "T");
-        const seats = ((d?.seats as number[]) ?? []).slice(0, 3);
-        if (seats.length !== 3) break;
-        const perms = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
+        const seats = (d?.seats as number[]) ?? [];
+        if (seats.length < 2) break;
+        const perms = permutations(seats.length);
         const out = new Float64Array(H.length);
         for (let i = 0; i < H.length; i++) {
           if (!w[i]) continue;
@@ -91,7 +91,7 @@ export function deduce(s: GameState, seat: number, m: Model = MODEL, publicOnly 
           for (const pm of perms) {
             let h = H[i];
             seats.forEach((x, j) => { h = bits[pm[j]] ? h | (1 << x) : h & ~(1 << x); });
-            out[index.get(h)!] += w[i] / 6;
+            out[index.get(h)!] += w[i] / perms.length;
           }
         }
         w.set(out);
@@ -178,4 +178,10 @@ export function deduce(s: GameState, seat: number, m: Model = MODEL, publicOnly 
   let live = 0;
   for (const x of w) if (x > 1e-9) live++;
   return { p, live };
+}
+
+/** every ordering of 0..n-1 */
+function permutations(n: number): number[][] {
+  if (n <= 1) return [[0]];
+  return permutations(n - 1).flatMap((p) => Array.from({ length: n }, (_, i) => [...p.slice(0, i), n - 1, ...p.slice(i)]));
 }

@@ -62,7 +62,9 @@ export function Decide({ v, act }: { v: PlayerView; act: (a: Action) => void }) 
   const name = (s: number) => v.players[s]?.name ?? "?";
   switch (d.kind) {
     case "turn": return <Turn v={v} playable={d.playable as ActionCard[]} passSize={d.passSize} dalBadal={d.dalBadal} act={act} ask={c.ask} />;
-    case "debate": case "vote": return null;
+    case "debate": return d.dalBadal ? <DebateDalBadal v={v} act={act} /> : null;
+    case "vote": return null;
+    case "dal_badal_out": return <DalBadalOut v={v} act={act} />;
     case "batwara": return <Bhukamp v={v} act={act} />;
     case "surrender": return <Surrender stones={d.stones as Card[]} act={act} />;
     case "dal_pick": return <DalPick count={d.count} act={act} />;
@@ -115,17 +117,80 @@ function Surrender({ stones, act }: { stones: Card[]; act: (a: Action) => void }
   );
 }
 
-/** BHUKAMP (2026-10-09): everyone passes 1 card to the next player clockwise — one tap passes it */
+/** BHUKAMP (2026-10-12): 1 card to your left (the next player), 1 to your right — tap the left one, then the right one */
 function Bhukamp({ v, act }: { v: PlayerView; act: (a: Action) => void }) {
+  const [first, setFirst] = useState<number | null>(null);
   const living = v.players.filter((p) => p.alive).map((p) => p.seat);
   const i = living.indexOf(v.me.seat);
-  const next = v.players[living[(i + 1) % living.length]].name;
+  const left = v.players[living[(i + 1) % living.length]].name;
+  const right = v.players[living[(i - 1 + living.length) % living.length]].name;
+  const hand = v.me.hand;
+  if (hand.length < 2) {
+    return (
+      <div className="flex flex-col gap-3">
+        <Head title={`Bhukamp — 1 card to ${left}`} />
+        <div className="pt-2"><HandRow cards={hand} onTap={(k) => act({ type: "batwara", card: hand[k] })} /></div>
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col gap-3">
-      <Head title={`Bhukamp — 1 card to ${next}`} />
+      <Head title={first === null ? `Bhukamp — which card to ${left}?` : `…and which to ${right}?`} />
       <div className="pt-2">
-        <HandRow cards={v.me.hand} onTap={(k) => act({ type: "batwara", card: v.me.hand[k] })} />
+        <HandRow cards={hand} selected={first === null ? [] : [first]} labels={first === null ? {} : { [first]: left.replace(/\s*🤖$/, "") }}
+          onTap={(k) => {
+            if (first === null) return setFirst(k);
+            if (k === first) return setFirst(null);
+            act({ type: "batwara", card: hand[first], right: hand[k] });
+          }} />
       </div>
+    </div>
+  );
+}
+
+/** DAL BADAL in the mandatory vote (2026-10-12): during the debate a thief may use it — no cards passed, nothing drawn */
+function DebateDalBadal({ v, act }: { v: PlayerView; act: (a: Action) => void }) {
+  const [open, setOpen] = useState(false);
+  const [swap, setSwap] = useState<number[]>([]);
+  const others = v.players.filter((p) => p.alive && p.seat !== v.me.seat);
+  if (!open) return <Btn voice="lethal" onClick={() => setOpen(true)}>Use Dal Badal</Btn>;
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <Head title="Dal Badal — swap with which 2?" />
+        <button type="button" onClick={() => { setOpen(false); setSwap([]); }} className="min-h-10 shrink-0 text-[13px] text-stock/60 underline">Back</button>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        {others.map((p) => (
+          <PlayerChip key={p.seat} p={p} selected={swap.includes(p.seat)} onClick={() => {
+            const next = swap.includes(p.seat) ? swap.filter((x) => x !== p.seat) : swap.length < 2 ? [...swap, p.seat] : swap;
+            setSwap(next);
+            if (next.length === 2) act({ type: "dal_badal", seats: next, pass: [] });
+          }} />
+        ))}
+      </div>
+      <p className="text-center text-[12px] text-stock/60">Everyone sees your role.</p>
+    </div>
+  );
+}
+
+/** DAL BADAL when the mandatory vote puts you out (2026-10-12): before the reveal — sides count after the shuffle */
+function DalBadalOut({ v, act }: { v: PlayerView; act: (a: Action) => void }) {
+  const [swap, setSwap] = useState<number[]>([]);
+  const others = v.players.filter((p) => p.alive && p.seat !== v.me.seat);
+  return (
+    <div className="flex flex-col gap-3">
+      <Head title="You're out — use Dal Badal?" />
+      <div className="grid grid-cols-2 gap-2">
+        {others.map((p) => (
+          <PlayerChip key={p.seat} p={p} selected={swap.includes(p.seat)} onClick={() => {
+            const next = swap.includes(p.seat) ? swap.filter((x) => x !== p.seat) : swap.length < 2 ? [...swap, p.seat] : swap;
+            setSwap(next);
+            if (next.length === 2) act({ type: "dal_badal", seats: next, pass: [] });
+          }} />
+        ))}
+      </div>
+      <Btn voice="ghost" onClick={() => act({ type: "dal_badal", seats: [], pass: [] })}>Keep it</Btn>
     </div>
   );
 }

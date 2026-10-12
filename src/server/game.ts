@@ -3,9 +3,9 @@ import { iceServers } from "./turn";
 import { livekitConfigured, voicePasses } from "./livekit";
 import { randomBytes, randomInt } from "node:crypto";
 import { apply, closeVote, start, waitingOn } from "@/engine/engine";
-import { botAction, defaultAction } from "@/engine/decisions";
-import { botTalk, botVote } from "./botmind";
-import { pushBotClaim } from "./belief";
+import { defaultAction } from "@/engine/decisions";
+import { botTalk } from "./botmind";
+import { pushBotClaim, skilledAction, SKILLS } from "./belief";
 import { hear } from "./hear";
 import { sendPush, type Alert } from "./push";
 import { MIN_PLAYERS, ROLE_TABLE, THIEF_ROLES } from "@/engine/setup";
@@ -33,6 +33,7 @@ export const VOTE_SETTLE_MS = 5_000;
 export const ONLINE_MAX_PLAYERS = 12;
 /** the intro every phone shows when the game starts (RoleReveal.tsx): role 15s, the Stones 10s, the deal 8.4s (DealIntro.tsx) */
 export const INTRO_MS = 34_000;
+const BOT_SKILLS = ["average", "casual", "sharp"] as const;
 const BOT_NAMES = ["Raju", "Shyam", "Babu Rao", "Pappu", "Munna", "Circuit", "Chintu", "Bunty", "Golu", "Tinku",
   "Gabbar", "Basanti", "Mogambo", "Jhumru", "Lallan", "Kallu", "Bholu", "Chhotu", "Guddu", "Sonu",
   "Monu", "Titu", "Bablu", "Pinky", "Dolly", "Rinku", "Mintu", "Sweety", "Lucky", "Happy"];
@@ -194,7 +195,9 @@ export async function addBot(code: string, token: string | null) {
     if (row.lobby.length >= ONLINE_MAX_PLAYERS) throw new HttpError(409, `The table is full (${ONLINE_MAX_PLAYERS})`);
     const taken = new Set(row.lobby.map((p) => p.name.toLowerCase()));
     const name = BOT_NAMES.map((n) => `${n} 🤖`).find((n) => !taken.has(n.toLowerCase())) ?? `Bot ${row.lobby.length + 1} 🤖`;
-    row.lobby.push({ name, token: newToken(), bot: true });
+    // (2026-10-12) a table of bots is a mix: average, casual, sharp, in turn
+    const n = row.lobby.filter((p) => p.bot).length;
+    row.lobby.push({ name, token: newToken(), bot: true, skill: BOT_SKILLS[n % BOT_SKILLS.length] });
     return row;
   });
 }
@@ -235,7 +238,8 @@ const TUTORIAL_TIMERS: Timers = { turn: 180, vote: 120, elim: 120, debate: 120 }
 export async function createTutorial(name: unknown) {
   const token = newToken();
   const human = { name: cleanName(name), token };
-  const bots = BOT_NAMES.slice(0, TUTORIAL_BOTS).map((n) => ({ name: `${n} 🤖`, token: newToken(), bot: true }));
+  // the learning game: forgiving bots (beginners)
+  const bots = BOT_NAMES.slice(0, TUTORIAL_BOTS).map((n) => ({ name: `${n} 🤖`, token: newToken(), bot: true, skill: "casual" as const }));
   // the first seat to act is seat 0
   const lobby = [human, ...bots];
   const names = lobby.map((p) => p.name);
@@ -275,7 +279,7 @@ export async function rematch(code: string, token: string | null): Promise<{ cod
   for (let i = 0; i < 10; i++) {
     const fresh: GameRow = {
       code: newCode(), version: 1, status: "lobby", hostToken: row.hostToken,
-      lobby: row.lobby.map((p) => ({ name: p.name, token: p.token, ...(p.bot ? { bot: true } : {}), ...(p.push ? { push: p.push } : {}) })),
+      lobby: row.lobby.map((p) => ({ name: p.name, token: p.token, ...(p.bot ? { bot: true, ...(p.skill ? { skill: p.skill } : {}) } : {}), ...(p.push ? { push: p.push } : {}) })),
       state: null, deadline: null, timers: row.timers, createdAt: new Date().toISOString(),
     };
     if (!(await store.create(fresh))) continue;
@@ -306,11 +310,12 @@ const isBot = (row: GameRow, seat: number) => Boolean(row.lobby[seat]?.bot);
 /** seats the server plays: lobby bots, and players who went quiet */
 const isAuto = (row: GameRow, seat: number) => isBot(row, seat) || Boolean(row.lobby[seat]?.away);
 /** a bot plays like a player; a stand-in for someone who went quiet only plays safe (pass, abstain) so it never leaks their role */
+const botSkill = (row: GameRow, seat: number) => SKILLS[row.lobby[seat]?.skill ?? "average"];
 const autoAction = (row: GameRow, s: GameState, seat: number): Action => {
   if (!isBot(row, seat)) return defaultAction(s, seat);
-  // a bot votes on what it has seen and heard (botmind), not at random
-  if (s.phase.kind === "vote" && !s.phase.debate) return { type: "vote", target: botVote(s, seat, s.seed, Math.random) };
-  return botAction(s, seat);
+  // (2026-10-12) a bot plays the whole game from what it has seen and heard, at its skill (belief.ts — the playbook:
+  // a beginner gambles the Stone and uses Dal Badal whenever; a skilled bot sits on the Stone and times Dal Badal)
+  return skilledAction(s, seat, s.seed, Math.random, botSkill(row, seat));
 };
 const AWAY_AFTER = 2; // consecutive timeouts before a stand-in takes the seat
 
@@ -323,7 +328,7 @@ function runBots(row: GameRow, s: GameState): GameState {
     if (!bots.length) break;
     for (const seat of bots) if (waitingOn(s).includes(seat)) {
       // a bot says what it knows (or lies) before it is ready (2026-10-09, belief.ts)
-      if (s.phase.kind === "vote" && s.phase.debate && isBot(row, seat)) pushBotClaim(s, seat, s.seed, Math.random);
+      if (s.phase.kind === "vote" && s.phase.debate && isBot(row, seat)) pushBotClaim(s, seat, s.seed, Math.random, botSkill(row, seat));
       s = apply(s, seat, autoAction(row, s, seat));
     }
   }

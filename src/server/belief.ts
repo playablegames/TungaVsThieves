@@ -10,7 +10,8 @@
 //   · thieves lie plausibly and vote with the table's suspicion (they don't know their partners)
 // A bot reads ONLY viewFor(its seat) — no secrets. Three SKILL levels; every balance number is reported as a band.
 // ⚠ The skill numbers are starting guesses until they are set from real playtest logs.
-import type { GameState, Side } from "@/engine/types";
+import type { Card, GameState, Side } from "@/engine/types";
+import { canDalBadal, canPlay, dalBadalPick, passSize } from "@/engine/engine";
 import { viewFor } from "@/engine/view";
 import { THIEF_ROLES, tkGuesses } from "@/engine/setup";
 import { randomAction, readsOf } from "@/engine/decisions";
@@ -41,14 +42,46 @@ export interface Skill {
   /** the behaviour model deduce.ts weighs moves with (default MODEL) — passed here, never by mutating an import
    *  (tsx loads modules twice: a script's MODEL is not the bots' MODEL) */
   model?: Model;
+  // ---- THE PLAYBOOK (designer 2026-10-12: "beginners gamble, skilful players hold"). Each line is a measured finding
+  // (scripts/sdlab.mts): what a skilled player does, and how often a beginner does the opposite.
+  /** a thief holding a Stone plays its pair anyway and lets the Stone go on, on luck. Measured: sitting on the Stone is
+   *  worth +10..+13 to the thieves; the gamble pays nothing */
+  stoneGamble?: number;
+  /** a villager passes at random now and then, Stones and all (passing carelessly costs the village 3..13) */
+  careless?: number;
+  /** DAL BADAL: "random" = whenever, with anyone (how it was played before — costs the thieves); "exposed" = once
+   *  called a thief or read, shuffle with the accusers; voted out → with the likeliest Stone holders. "full" = that,
+   *  plus round 3 with no Stone ever seen → with the Stone holders, and in the mandatory debate once exposed
+   *  (the designer's table: +10..+21 for the thieves) */
+  dalBadal?: "random" | "exposed" | "full";
+  /** never pass Dal Badal on: a thief banks it; a villager holds it so no thief gets it */
+  keepDalBadal?: boolean;
+  /** a villager holding a Teer Kaman pair shoots a player whose ROLE an accusation named (the designer's table) */
+  accuseShot?: number;
+  /** ... even when the bot itself doesn't believe the accusation (beginners follow the loudest voice) */
+  followAnyAccusation?: boolean;
+  /** a thief keeps its cards to itself: no Kundli (it shows its own role back) and no blind Teer Kaman — playing
+   *  those costs the thieves (restricted play) */
+  thiefRestraint?: boolean;
+  /** chance a villager calls Faisla only with a suspect who stands out (forcing it costs the village ~10 at 6p) */
+  faislaDiscipline?: number;
+  /** THE QUIET TELL (the designer's "the table notices who stops playing"): a player who keeps passing while others
+   *  play is likely sitting on a Stone — and a skilled thief does exactly that. How hard this bot reads it (0 = never):
+   *  it raises their odds of holding a Stone and of being a thief, so Talashi, Hera Pheri and the votes go their way */
+  readQuiet?: number;
 }
 
 export const SKILLS: Record<Skill["name"], Skill> = {
-  casual: { name: "casual", activity: 0.6, sharp: 0.5, noise: 1.2, voteNoise: 0.35, lie: 0.4, claimRate: 0.5, blindShot: 0.3 },
+  // a BEGINNER: gambles the Stone, passes carelessly, uses Dal Badal whenever, follows any accusation, calls Faisla freely
+  casual: { name: "casual", activity: 0.6, sharp: 0.5, noise: 1.2, voteNoise: 0.35, lie: 0.4, claimRate: 0.5, blindShot: 0.3,
+    stoneGamble: 0.6, careless: 0.3, dalBadal: "random", keepDalBadal: false, accuseShot: 0.7, followAnyAccusation: true, thiefRestraint: false, faislaDiscipline: 0.5, readQuiet: 0 },
   // (designer 2026-10-09) average and sharp bots weigh every placement of the thieves (deduce.ts); casual bots keep the
   // rougher score-nudging, so a table still has bots that misjudge like people do
-  average: { name: "average", activity: 0.8, sharp: 1, noise: 0.7, voteNoise: 0.15, lie: 0.6, claimRate: 0.8, blindShot: 0, exact: true },
-  sharp: { name: "sharp", activity: 0.85, sharp: 1.6, noise: 0.3, voteNoise: 0.05, lie: 0.8, claimRate: 1, blindShot: 0, exact: true },
+  average: { name: "average", activity: 0.8, sharp: 1, noise: 0.7, voteNoise: 0.15, lie: 0.6, claimRate: 0.8, blindShot: 0, exact: true,
+    stoneGamble: 0.25, careless: 0, dalBadal: "exposed", keepDalBadal: true, accuseShot: 0.8, followAnyAccusation: false, thiefRestraint: false, faislaDiscipline: 1, readQuiet: 0.5 },
+  // SKILLED: sits on the Stone, holds Dal Badal for the right moment (or so no thief gets it), keeps its cards close as a thief
+  sharp: { name: "sharp", activity: 0.85, sharp: 1.6, noise: 0.3, voteNoise: 0.05, lie: 0.8, claimRate: 1, blindShot: 0, exact: true,
+    stoneGamble: 0, careless: 0, dalBadal: "full", keepDalBadal: true, accuseShot: 0.9, followAnyAccusation: false, thiefRestraint: true, faislaDiscipline: 1, readQuiet: 1 },
 };
 export const DEFAULT_SKILL = SKILLS.average;
 
@@ -70,6 +103,34 @@ export interface Belief {
 
 /** `asTable`: a thief's view of what the TABLE thinks — its own side is set aside and it spreads all the thieves
  *  over the others (it doesn't know its partners), which is what it votes with to blend in */
+/** THE QUIET TELL (2026-10-12): each living player's share of turns spent passing, against the table's average
+ *  (only once they have had 2 turns) — positive = quieter than the table */
+export function quietness(s: GameState): Map<number, number> {
+  const turns = new Map<number, number>(), passes = new Map<number, number>();
+  for (const e of s.events) {
+    const x = e.data?.seat;
+    if (typeof x !== "number") continue;
+    if (e.type === "pickup") turns.set(x, (turns.get(x) ?? 0) + 1);
+    if (e.type === "pass") passes.set(x, (passes.get(x) ?? 0) + 1);
+  }
+  const seen = s.players.filter((p) => p.alive && (turns.get(p.seat) ?? 0) >= 2).map((p) => p.seat);
+  if (seen.length < 2) return new Map();
+  const rate = (x: number) => (passes.get(x) ?? 0) / (turns.get(x) ?? 1);
+  const mean = seen.reduce((a, x) => a + rate(x), 0) / seen.length;
+  return new Map(seen.map((x) => [x, rate(x) - mean]));
+}
+
+/** a skilled reader leans toward the quiet player being a thief (never against what it knows for certain) */
+function readQuietTell(s: GameState, seat: number, skill: Skill, known: Map<number, Side>, p: Map<number, number>): Map<number, number> {
+  if (!skill.readQuiet) return p;
+  for (const [x, q] of quietness(s)) {
+    if (x === seat || known.has(x) || !p.has(x)) continue;
+    const v = Math.min(0.98, Math.max(0.02, p.get(x)!));
+    p.set(x, sig(logit(v) + 2 * skill.readQuiet * q));
+  }
+  return p;
+}
+
 export function beliefOf(s: GameState, seat: number, seed: number, skill: Skill = DEFAULT_SKILL, asTable = false): Belief {
   const v = viewFor(s, seat);
   const n = v.players.length;
@@ -188,9 +249,9 @@ export function beliefOf(s: GameState, seat: number, seed: number, skill: Skill 
     const ex = deduce(s, seat, skill.model, asTable && thiefSide).p;
     ex.delete(seat);
     if (self) ex.set(seat, 0);
-    return { p: ex, known, trust };
+    return { p: readQuietTell(s, seat, skill, known, ex), known, trust };
   }
-  return { p: probs(), known, trust };
+  return { p: readQuietTell(s, seat, skill, known, probs()), known, trust };
 }
 
 /** A ballot from beliefs. A villager votes a thief it knows, else its likeliest thief (with some noise). A thief votes
@@ -276,11 +337,10 @@ export function stoneOdds(s: GameState, seat: number, seed: number, skill: Skill
       case "talashi_private": if (target !== null && actor === seat) p.set(target, has(d?.hand) ? 1 : 0); break;
       case "hera_pheri_private": if (has(d?.taken) && actor !== null) { p.set(actor, 1); } break;
       case "batwara": {
-        // everyone passes 1 card clockwise: a little of each seat's chance moves one seat on
+        // (2026-10-12) everyone passes 1 card left and 1 right: with 2 in hand both leave, one each way — a seat's
+        // chance comes half from each neighbour
         const was = new Map(p);
-        for (let x = 0; x < n; x++) p.set(x, s.twoWayBhukamp
-          ? 0.5 * was.get((x - 1 + n) % n)! + 0.5 * was.get((x + 1) % n)! // probe: both cards leave, one each way
-          : was.get(x)! * 0.75 + was.get((x - 1 + n) % n)! * 0.25);
+        for (let x = 0; x < n; x++) p.set(x, 0.5 * was.get((x - 1 + n) % n)! + 0.5 * was.get((x + 1) % n)!);
         break;
       }
       case "batwara_private": { const from = num(d, "from"), to = num(d, "to"); if (from !== null && to !== null && STONE(d?.card)) { p.set(to, 1); } break; }
@@ -297,6 +357,8 @@ export function stoneOdds(s: GameState, seat: number, seed: number, skill: Skill
         break;
     }
   }
+  // the quiet tell: a player who keeps passing is likelier to be sitting on a Stone
+  if (skill.readQuiet) for (const [x, q] of quietness(s)) if (x !== seat) p.set(x, Math.min(0.95, Math.max(0, p.get(x)! * (1 + 1.5 * skill.readQuiet * q))));
   // your own hand is the truth
   p.set(seat, v.me.hand.some(STONE) ? 1 : 0);
   // no more Stones than are left out of the village
@@ -387,19 +449,48 @@ export function topSuspect(s: GameState, seat: number, seed: number, skill: Skil
  *  only on a Kundli read — or, for a casual bot, sometimes blind at its top suspect — and Dal Badal half the time. */
 export function skilledAction(s: GameState, seat: number, seed: number, r: R, skill: Skill = DEFAULT_SKILL): Action {
   const ph = s.phase;
-  if (ph.kind === "vote" && ph.debate) return { type: "ready" };
+  const me = s.players[seat];
+  if (ph.kind === "vote" && ph.debate) return dalBadalMove(s, seat, seed, r, skill, "debate") ?? { type: "ready" };
   if (ph.kind === "vote") return { type: "vote", target: beliefVote(s, seat, seed, r, skill) };
-  if (ph.kind === "surrender") return { type: "surrender", give: s.players[seat].side === "V" };
-  let a = randomAction(s, seat, r, skill.activity, true);
+  if (ph.kind === "surrender") return { type: "surrender", give: me.side === "V" };
+  if (ph.kind === "elim" && ph.step === "dal_badal") return dalBadalMove(s, seat, seed, r, skill, "votedOut") ?? { type: "dal_badal", seats: [], pass: [] };
+  if (ph.kind === "batwara") return bhukampMove(s, seat, seed, r, skill);
+  if (ph.kind !== "turn") return randomAction(s, seat, r, skill.activity, true);
+
+  // ---- your turn
+  const db = dalBadalMove(s, seat, seed, r, skill, "turn");
+  if (db) return db;
+  const shot = me.side === "V" ? accusationShot(s, seat, seed, r, skill) : null;
+  if (shot) return shot;
+  // the random pair policy — with Dal Badal out of reach when the plan is to hold it (banked by a thief, kept from the
+  // thieves by a villager)
+  const hide = skill.dalBadal !== "random" || (skill.keepDalBadal ?? false);
+  let a = withoutDalBadal(s, seat, hide, () => randomAction(s, seat, r, skill.activity, true));
+  // the Stone gamble: a thief holding a Stone either plays a pair anyway (luck) or sits on it
+  if (me.side === "T" && me.hand.some((c) => c === "STONE_1" || c === "STONE_2")) {
+    if (r() < (skill.stoneGamble ?? 0)) {
+      if (a.type === "pass") a = withoutDalBadal(s, seat, hide, () => randomAction(s, seat, r, 1, false));
+    } else if (a.type === "play" && a.pass.some((c) => c === "STONE_1" || c === "STONE_2")) {
+      a = { type: "pass", pass: stonesLastOf(me.hand.filter((c) => !hide || c !== "DAL_BADAL"), passSize(me.hand)) };
+      if (a.pass.length < passSize(me.hand)) a = { type: "pass", pass: stonesLastOf(me.hand, passSize(me.hand)) };
+    }
+  }
+  // a careless villager passes at random
+  if (me.side === "V" && (a.type === "pass" || a.type === "play") && r() < (skill.careless ?? 0)) {
+    const rest = [...me.hand];
+    if (a.type === "play") { rest.splice(rest.indexOf(a.card), 1); rest.splice(rest.indexOf(a.card), 1); }
+    a = { ...a, pass: sampleOf(r, rest, a.pass.length) };
+  }
+  // a skilled thief keeps its cards close: no Kundli (Mutual Kundli shows its own role back)
+  if (me.side === "T" && skill.thiefRestraint && a.type === "play" && a.card === "KUNDLI") a = { type: "pass", pass: a.pass };
   if (a.type === "play" && a.card !== "TEER_KAMAN") a = withReason(s, seat, seed, r, skill, a);
   if (a.type !== "play" || a.card !== "TEER_KAMAN") return a;
-  const me = s.players[seat];
   const foes = [...readsOf(s, seat)].filter(([x, k]) => k.side !== me.side && s.players[x].alive);
   if (foes.length) {
     const [target, k] = pick(r, foes);
     return { ...a, target, roles: [k.role, pick(r, s.rolesInPlay.filter((x) => x !== k.role))].slice(0, tkGuesses(s.rolesInPlay)) };
   }
-  if (r() < skill.blindShot) {
+  if (!(me.side === "T" && skill.thiefRestraint) && r() < skill.blindShot) {
     const target = topSuspect(s, seat, seed, skill);
     const want = s.rolesInPlay.filter((x) => (me.side === "V") === THIEF_ROLES.includes(x));
     if (target !== null && want.length >= 2) {
@@ -409,6 +500,119 @@ export function skilledAction(s: GameState, seat: number, seed: number, r: R, sk
   }
   return { type: "pass", pass: a.pass };
 }
+
+// ------------------------------------------------------------------ THE PLAYBOOK (2026-10-12)
+const isStoneCard = (c: Card) => c === "STONE_1" || c === "STONE_2";
+const stonesLastOf = (h: Card[], k: number) => [...h.filter((c) => !isStoneCard(c)), ...h.filter(isStoneCard)].slice(0, k);
+const sampleOf = <T,>(r: R, xs: T[], k: number) => { const a = [...xs]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a.slice(0, k); };
+
+/** decide as if Dal Badal were not in hand (it stays there — never passed on) */
+function withoutDalBadal(s: GameState, seat: number, hide: boolean, f: () => Action): Action {
+  const h = s.players[seat].hand;
+  const i = h.indexOf("DAL_BADAL");
+  if (!hide || i < 0) return f();
+  h.splice(i, 1);
+  try {
+    const a = f();
+    // a pass sized for the smaller hand must still be a legal pass for the real one
+    if (a.type === "pass" && a.pass.length !== passSize([...h, "DAL_BADAL"])) return { type: "pass", pass: stonesLastOf([...h, "DAL_BADAL"], passSize([...h, "DAL_BADAL"])) };
+    if (a.type === "play") {
+      const after = [...h]; after.splice(after.indexOf(a.card), 1); after.splice(after.indexOf(a.card), 1);
+      if (a.pass.length !== passSize([...after, "DAL_BADAL"])) return { ...a, pass: [...a.pass, "DAL_BADAL" as Card].slice(0, passSize([...after, "DAL_BADAL"])) };
+    }
+    return a;
+  } finally { h.splice(i, 0, "DAL_BADAL"); }
+}
+
+/** who called this player a thief, or read its Kundli as a villager (Mutual Kundli shows the thief who read it) */
+function accusersOf(s: GameState, seat: number): number[] {
+  const xs = new Set<number>();
+  for (const e of s.events) {
+    if (e.type === "claim" && e.data?.target === seat && e.data?.side === "T" && typeof e.data?.seat === "number") xs.add(e.data.seat);
+    if (e.type === "kundli_private" && e.data?.mutual && e.data?.side === "V" && Array.isArray(e.to) && e.to.includes(seat)) xs.add(e.data.target as number);
+  }
+  return [...xs].filter((x) => x !== seat && s.players[x]?.alive);
+}
+
+/** has this player ever seen a Stone (in hand, passed to it, searched, shown)? */
+const sawStone = (s: GameState, seat: number) => s.players[seat].hand.some(isStoneCard)
+  || s.events.some((e) => (e.to === "all" || (Array.isArray(e.to) && e.to.includes(seat))) && JSON.stringify(e.data ?? {}).includes("STONE"));
+
+/** DAL BADAL — when, and with whom (the designer's table: once exposed → the accusers; round 3 having never seen a
+ *  Stone → the likeliest Stone holders, so the thief card may land on a Stone; voted out → the Stone holders) */
+function dalBadalMove(s: GameState, seat: number, seed: number, r: R, skill: Skill, when: "turn" | "debate" | "votedOut"): Action | null {
+  const me = s.players[seat];
+  if (me.side !== "T" || !me.hand.includes("DAL_BADAL")) return null;
+  if (when !== "votedOut" && !canDalBadal(s, seat)) return null;
+  const k = dalBadalPick(s, seat);
+  const others = s.players.filter((p) => p.alive && p.seat !== seat).map((p) => p.seat);
+  if (k < 2) return null;
+  const plan = skill.dalBadal ?? "random";
+  const turnPass = () => { const rest = [...me.hand]; rest.splice(rest.indexOf("DAL_BADAL"), 1); return stonesLastOf(rest, passSize(rest)); };
+  const random = () => sampleOf(r, others, k);
+  if (plan === "random") {
+    // a beginner: the random policy decides on its turn (half the time); in the vote, now and then
+    if (when === "turn") return null;
+    if (r() < (when === "votedOut" ? 0.5 : 0.15)) return { type: "dal_badal", seats: random(), pass: [] };
+    return null;
+  }
+  const acc = accusersOf(s, seat);
+  const st = stoneOdds(s, seat, seed, skill);
+  const holders = () => [...others].sort((x, y) => (st.get(y) ?? 0) - (st.get(x) ?? 0)).slice(0, k);
+  const fill = (first: number[]) => [...first, ...sampleOf(r, others.filter((x) => !first.includes(x)), k - first.length)].slice(0, k);
+  let seats: number[] | null = null;
+  if (when === "votedOut") seats = holders();
+  else if (acc.length && (when === "turn" || plan === "full")) seats = fill(sampleOf(r, acc, k));
+  else if (when === "turn" && plan === "full" && s.round >= s.rounds && !sawStone(s, seat)) seats = holders();
+  if (!seats) return null;
+  return { type: "dal_badal", seats, pass: when === "turn" ? turnPass() : [] };
+}
+
+/** TEER KAMAN the way the designer's table plays it: a villager holding the pair shoots the player whose ROLE an
+ *  accusation named ("she is Chor"), naming that role (+ one more thief role at a table of 3+ thieves) */
+function accusationShot(s: GameState, seat: number, seed: number, r: R, skill: Skill): Action | null {
+  if (!canPlay(s, seat, "TEER_KAMAN") || r() > (skill.accuseShot ?? 0)) return null;
+  const me = s.players[seat];
+  const reads = readsOf(s, seat);
+  const bel = skill.followAnyAccusation ? null : beliefOf(s, seat, seed, skill, false);
+  const c = s.events.filter((e) => e.type === "claim" && e.data?.side === "T" && typeof e.data?.role === "string"
+    && e.data.seat !== seat && e.data.target !== seat && s.players[e.data.target as number]?.alive
+    && reads.get(e.data.target as number)?.side !== "V"
+    && (!bel || (bel.p.get(e.data.target as number) ?? 0) >= 0.5)).at(-1);
+  if (!c) return null;
+  const role = String(c.data!.role);
+  const more = s.rolesInPlay.filter((x) => THIEF_ROLES.includes(x) && x !== role);
+  const rest = [...me.hand]; rest.splice(rest.indexOf("TEER_KAMAN"), 1); rest.splice(rest.indexOf("TEER_KAMAN"), 1);
+  return { type: "play", card: "TEER_KAMAN", target: c.data!.target as number, pass: stonesLastOf(rest, passSize(rest)),
+    roles: [role, ...(more.length ? [pick(r, more)] : [])].slice(0, tkGuesses(s.rolesInPlay)) };
+}
+
+/** BHUKAMP: 1 card left, 1 right. A skilled player keeps Dal Badal if it can; a Stone it must give goes to the
+ *  neighbour it trusts (a villager) or, as a thief, the neighbour it takes for a partner. A beginner deals at random. */
+function bhukampMove(s: GameState, seat: number, seed: number, r: R, skill: Skill): Action {
+  const me = s.players[seat];
+  const h = [...me.hand];
+  if (h.length < 2) return { type: "batwara", card: h[0] };
+  if (skill.dalBadal === "random") { const [a, b] = sampleOf(r, h, 2); return { type: "batwara", card: a, right: b }; }
+  // what to give: non-Stones and not Dal Badal first
+  const order = [...h].sort((x, y) => rank(x) - rank(y));
+  const [g1, g2] = order.slice(0, 2);
+  const left = nb(s, seat, 1), right = nb(s, seat, -1);
+  const bel = beliefOf(s, seat, seed, skill, me.side === "T");
+  const pT = (x: number) => bel.p.get(x) ?? 0.5;
+  // the "precious" card of the two (a Stone, else Dal Badal) goes to the friendlier side
+  const precious = [g1, g2].find(isStoneCard) ?? [g1, g2].find((c) => c === "DAL_BADAL");
+  if (!precious) return { type: "batwara", card: g1, right: g2 };
+  const other = precious === g1 ? g2 : g1;
+  const friendLeft = me.side === "V" ? pT(left) <= pT(right) : pT(left) >= pT(right);
+  return friendLeft ? { type: "batwara", card: precious, right: other } : { type: "batwara", card: other, right: precious };
+  function rank(c: Card) { return isStoneCard(c) ? 2 : c === "DAL_BADAL" ? 1 : 0; }
+}
+const nb = (s: GameState, seat: number, dir: 1 | -1) => {
+  const n = s.players.length;
+  for (let k = 1; k < n; k++) { const x = (seat + dir * k + n * n) % n; if (s.players[x].alive) return x; }
+  return seat;
+};
 
 /** PLAYS WITH A REASON (playtest LLE3Q 2026-10-09: a Faisla in round 1 with no suspect; random targets). The pair the
  *  random policy picked keeps its card, but:
@@ -428,7 +632,8 @@ function withReason(s: GameState, seat: number, seed: number, r: R, skill: Skill
   switch (a.card) {
     case "FAISLA": {
       const top = best(others, p);
-      const ok = lastRound || (top !== undefined && (thief ? me.side !== s.players[top]?.side && p(top) >= 0.45 : p(top) >= 0.5));
+      const ok = lastRound || (!thief && r() > (skill.faislaDiscipline ?? 1))
+        || (top !== undefined && (thief ? me.side !== s.players[top]?.side && p(top) >= 0.45 : p(top) >= 0.5));
       return ok ? a : randomAction(s, seat, r, 0, true);
     }
     case "KUNDLI": {

@@ -37,7 +37,7 @@ export const HOLD_CAP = Math.round(18000 * PACE);
 export const LAST_WORDS_MS = 10_000;
 
 /** events the stage never shows: bookkeeping, analytics, and things the end screen tells better */
-const SKIP = new Set(["setup", "role", "pickup", "pickup_private", "conduit", "reshuffle", "batwara_done",
+const SKIP = new Set(["dal_badal_kept", "setup", "role", "pickup", "pickup_private", "conduit", "reshuffle", "batwara_done",
   "reveal", "play", "analytics_deal", "analytics_turn", "batwara_private", "batwara_pile"]);
 
 type D = Record<string, unknown>;
@@ -79,7 +79,7 @@ function rawBeat(e: GameEvent, names: string[]): Beat | null {
     case "hera_pheri_private":
       return { ...base, card: "HERA_PHERI", title: "What moved", detail: e.msg, tone: "lethal", big: false, hold: SMALL };
     case "batwara":
-      return { ...base, card: "BATWARA", title: `Bhukamp — ${nm(actor)} shakes the table`, detail: "Everyone passes one card to the next player, clockwise.", tone: "gold", big: true, hold: BIG };
+      return { ...base, card: "BATWARA", title: `Bhukamp — ${nm(actor)} shakes the table`, detail: "Everyone passes one card left and one right.", tone: "gold", big: true, hold: BIG };
     case "teer_kaman": {
       const roles = (d?.roles as string[]) ?? [];
       const hit = d?.hit === true;
@@ -110,10 +110,11 @@ function rawBeat(e: GameEvent, names: string[]): Beat | null {
       return { ...base, target: actor, title: `${nm(actor)} was ${String(d?.role)}`, detail: d?.side === "T" ? "A thief. Only you know." : "A villager. Only you know.", tone: d?.side === "T" ? "relic" : "lethal", big: true, hold: BIG };
     case "dal_badal": {
       const others = ((d?.seats as number[]) ?? []).filter((x) => x !== actor).map((x) => nm(x));
-      return { ...base, title: `Dal Badal — ${nm(actor)} is ${String(d?.role)}!`, detail: `A thief. Role cards shuffled with ${others.join(" and ")} — each picks one back, face down.`, tone: "lethal", big: true, hold: BIG + 800 };
+      const when = d?.when === "voted_out" ? " Voted out — before the reveal." : "";
+      return { ...base, title: `Dal Badal — ${nm(actor)} is ${String(d?.role)}!`, detail: `A thief. Role cards shuffled with ${others.join(" and ")} — each picks one back, face down.${when}`, tone: "lethal", big: true, hold: BIG + 800 };
     }
     case "dal_badal_done":
-      return { ...base, title: `Dal Badal is done — ${nm(actor)} draws 1`, tone: "neutral", big: false, hold: SMALL };
+      return { ...base, title: d?.inVote ? "Dal Badal is done" : `Dal Badal is done — ${nm(actor)} draws 1`, tone: "neutral", big: false, hold: SMALL };
     case "gift":
       return { ...base, title: target === undefined || d?.target === null ? `${nm(actor)} gives the vote to nobody` : `${nm(actor)} gives a vote to ${nm(target)}`, tone: "vote", big: false, hold: SMALL };
     case "handoff":
