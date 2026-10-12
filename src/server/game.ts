@@ -128,6 +128,8 @@ async function play(code: string, f: (row: GameRow) => GameRow): Promise<GameRow
     if (!st || st.phase.kind === "over") return r;
     for (const { seat, c } of said) {
       if (!st.players[c.target]) continue;
+      // already marked: a discovery becomes one mark, not a mark and a line (botsSayWhatTheyFound)
+      if (st.events.some((e) => e.type === "claim" && e.data?.seat === seat && e.data?.target === c.target && e.data?.kind === c.kind)) continue;
       const them = st.players[c.target].name;
       st.events.push({ n: st.events.length, type: "claim", to: "all", msg: `${st.players[seat].name}: "${c.kind === "stone" ? `${them} ${c.has ? "has a Stone" : "has no Stone"}` : `${them} is ${c.role ?? (c.side === "T" ? "a thief" : "a villager")}`}."`,
         data: { seat, kind: c.kind, target: c.target, role: c.role ?? null, side: c.side, ...(c.kind === "stone" ? { has: c.has } : {}), fromLine: true } });
@@ -628,14 +630,16 @@ function botsSayWhatTheyFound(row: GameRow, from: number) {
     const kind = e.type === "eliminated_private" ? "was" : "kundli";
     if (kind === "kundli" && !s.players[target].alive) continue;
     if (!thief) { if (speaks) mark(seen, kind, target, role, side); continue; }
-    // a thief: a lie (the other side, a believable role) — or nothing at all
-    if (lies) mark(seen, kind, target, side === "V" ? pickOf(thiefRoles) : pickOf(villagerRoles), side === "V" ? "T" : "V");
+    // a thief: a lie (the other side, a believable role — never its own, which the player it read may now know) —
+    // or nothing at all
+    const own = s.players[seen].role;
+    if (lies) mark(seen, kind, target, side === "V" ? pickOf(thiefRoles.filter((r) => r !== own)) : pickOf(villagerRoles.filter((r) => r !== own)), side === "V" ? "T" : "V");
   }
 }
 
 /** DEVELOPMENT ONLY — screen checks: give the caller a chosen hand and, if a turn is on, the turn. Refuses to run
  *  anywhere but `next dev` (NODE_ENV is "production" on Vercel), so it can never touch a real game. */
-export async function debugRig(code: string, token: string | null, body: { hand?: unknown; out?: unknown; jump?: unknown; thief?: unknown }) {
+export async function debugRig(code: string, token: string | null, body: { hand?: unknown; out?: unknown; jump?: unknown; thief?: unknown; skills?: unknown }) {
   if (process.env.NODE_ENV !== "development") throw new HttpError(404, "Not found");
   await play(code, (row) => {
     const seat = seatOf(row, token);
@@ -670,6 +674,8 @@ export async function debugRig(code: string, token: string | null, body: { hand?
         s.players[seat].hand.push(c);
       }
     }
+    // every bot at one skill (screen checks)
+    if (body.skills === "casual" || body.skills === "average" || body.skills === "sharp") for (const p of row.lobby) if (p.bot) p.skill = body.skills;
     // make the caller a thief (swap role cards with a living thief — the thief count stays the same)
     if (body.thief === true && s.players[seat].side !== "T") {
       const t = s.players.find((p) => p.alive && p.side === "T" && p.seat !== seat);

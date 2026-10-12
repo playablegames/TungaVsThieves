@@ -753,10 +753,19 @@ function Seat({ p, me, size, initials, got, tag, spot, voted, picked, speaking, 
 }) {
   const z = SEAT[size];
   const label = `${p.name}${me ? " (you)" : ""}${got ? `, got ${got} vote${got === 1 ? "" : "s"}` : ""}: ${p.handSize} cards, ${p.votes} vote${p.votes === 1 ? "" : "s"}${p.alive ? "" : p.revealedRole ? `, out — was ${p.revealedRole}` : ", out"}${spot ? ", their move" : ""}${speaking ? ", talking" : ""}${voted ? ", has voted" : ""}${away ? ", away" : ""}${mark ? `, you marked ${MARK[mark].label}` : ""}${said?.accuse ? `, called a thief ${said.accuse} times` : ""}${said?.trust ? `, called a villager ${said.trust} times` : ""}${said?.role ? `, read as ${said.role}` : ""}${said?.stone !== undefined ? (said.stone ? ", said to hold a Stone" : ", said to hold no Stone") : ""}`;
+  const saidChip = p.alive && said && (said.accuse || said.trust || said.role || said.stone !== undefined) ? (
+    <span className={`flex max-w-full items-center gap-1 truncate rounded-full bg-black/50 px-1.5 text-[11px] leading-[16px] text-stock ${me ? "mb-0.5" : "mt-0.5"}`} aria-hidden>
+      {said.accuse ? <span className="text-crimson-soft">🫵{said.accuse}</span> : null}
+      {said.trust ? <span className="text-jade-soft">🌾{said.trust}</span> : null}
+      {said.role ? <span className="truncate text-stock">🔮{said.role}</span> : null}
+      {said.stone !== undefined ? <span className="text-[#f3c66b]">💎{said.stone ? "✓" : "✗"}</span> : null}
+    </span>
+  ) : null;
   return (
     <div className={`relative flex flex-col items-center text-center ${z.w} ${p.alive ? "" : "opacity-45 grayscale"}`}>
       {/* the play in the centre panel, on the ring: who played it, and at whom (12-player playtest: "who did what to whom") */}
       {tag && <span className={`absolute -top-3.5 z-20 rounded-full px-1.5 text-[9px] font-black uppercase tracking-wide ${tag === "played" ? "bg-[#f0a32e] text-card-ink" : "bg-crimson text-ink"}`}>{tag}</span>}
+      {me && saidChip}
       <button type="button" disabled={!onTap} onClick={onTap} aria-label={label} aria-pressed={onTap ? picked : undefined}
         className={`relative grid select-none place-items-center rounded-full font-medium text-card-ink ${z.disc}
           ${me ? "outline-[3px] outline-offset-2 outline-jade" : ""} ${spot ? "outline-[3px] outline-offset-[3px] outline-[#f0a32e] shadow-[0_0_18px_4px_rgba(240,163,46,.45)]" : ""}
@@ -776,15 +785,9 @@ function Seat({ p, me, size, initials, got, tag, spot, voted, picked, speaking, 
       {p.alive
         ? <span className="mt-0.5 flex h-1.5 gap-0.5" aria-hidden>{p.votes > 1 && Array.from({ length: p.votes }).map((_, i) => <span key={i} className="h-1.5 w-1.5 rounded-full bg-[#f0a32e]" />)}</span>
         : <span className="text-[10px] leading-tight text-crimson-soft">{p.revealedRole ?? "out"}</span>}
-      {/* what the table has said ABOUT them — kept on the seat once the feed has scrolled on (Town of Salem's notepad, BGA's player panels) */}
-      {p.alive && said && (said.accuse || said.trust || said.role || said.stone !== undefined) && (
-        <span className="mt-0.5 flex max-w-full items-center gap-1 truncate rounded-full bg-black/50 px-1.5 text-[11px] leading-[16px] text-stock" aria-hidden>
-          {said.accuse ? <span className="text-crimson-soft">🫵{said.accuse}</span> : null}
-          {said.trust ? <span className="text-jade-soft">🌾{said.trust}</span> : null}
-          {said.role ? <span className="truncate text-stock">🔮{said.role}</span> : null}
-          {said.stone !== undefined ? <span className="text-[#f3c66b]">💎{said.stone ? "✓" : "✗"}</span> : null}
-        </span>
-      )}
+      {/* what the table has said ABOUT them — kept on the seat once the feed has scrolled on (Town of Salem's notepad,
+          BGA's player panels). Your own seat sits on the tray's edge, so yours shows above your circle (2026-10-12) */}
+      {!me && saidChip}
       {spot && <span aria-hidden className="absolute -bottom-3 text-[12px] leading-none text-[#f0a32e]">▲</span>}
     </div>
   );

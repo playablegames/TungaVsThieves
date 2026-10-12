@@ -388,8 +388,9 @@ export function botClaim(s: GameState, seat: number, seed: number, r: R, skill: 
   const v = viewFor(s, seat);
   const said = new Set(v.events.filter((e) => e.type === "claim" && e.data?.seat === seat).map((e) => `${e.data?.kind}:${e.data?.target}`));
   const fresh = (kind: string, t: number) => !said.has(`${kind}:${t}`);
-  const thiefRoles = v.rolesInPlay.filter((x) => THIEF_ROLES.includes(x));
-  const villagerRoles = v.rolesInPlay.filter((x) => !THIEF_ROLES.includes(x));
+  // a lie never names the liar's own role (Mutual Kundli: the player it read may know it)
+  const thiefRoles = v.rolesInPlay.filter((x) => THIEF_ROLES.includes(x) && x !== me.role);
+  const villagerRoles = v.rolesInPlay.filter((x) => !THIEF_ROLES.includes(x) && x !== me.role);
   const outs = v.events.filter((e) => e.type === "eliminated_private" && Array.isArray(e.to) && e.to.includes(seat))
     .map((e) => ({ target: e.data!.seat as number, role: e.data!.role as string, side: e.data!.side as Side }));
   const reads = [...readsOf(s, seat)].map(([target, k]) => ({ target, ...k }));
@@ -430,6 +431,8 @@ export function botClaim(s: GameState, seat: number, seed: number, r: R, skill: 
 export function pushBotClaim(s: GameState, seat: number, seed: number, r: R, skill: Skill = DEFAULT_SKILL): boolean {
   const c = botClaim(s, seat, seed, r, skill);
   if (!c) return false;
+  // one mark per player and side: "X is Lootera" already says "X is a thief" (screen check 2026-10-12)
+  if (s.events.some((e) => e.type === "claim" && e.data?.seat === seat && e.data?.target === c.target && e.data?.side === c.side)) return false;
   const me = s.players[seat].name, them = s.players[c.target].name;
   // designer 2026-10-09: Villager / Thief / Role / Stone — a Kundli reader may name the exact role (true or a lie)
   const what = c.side === "T" ? "a thief" : "a villager";
