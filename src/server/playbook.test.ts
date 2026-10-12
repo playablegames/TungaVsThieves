@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { apply, start, waitingOn } from "@/engine/engine";
 import type { Card, GameState } from "@/engine/types";
-import { skilledAction, SKILLS } from "./belief";
+import { beliefOf, skilledAction, SKILLS } from "./belief";
 
 const NAMES = (n: number) => Array.from({ length: n }, (_, i) => `P${i}`);
 const counter = () => { let x = 0; return () => { x = (x + 0.6180339887) % 1; return x; }; };
@@ -53,6 +53,18 @@ describe("THE PLAYBOOK — beginners gamble, skilled players hold", () => {
     const shots = runs(s, SKILLS.casual).filter((a) => a.type === "play" && a.card === "TEER_KAMAN");
     // (a beginner may also fire its own blind shot, naming a random thief role — that is the gamble)
     expect(shots.some((a) => a.type === "play" && a.target === 2 && a.roles?.includes(s.players[2].role))).toBe(true);
+  });
+  it("WAIT FOR THE ANSWER: an accusation moves a bot less until the accused has answered (or the floor closed)", () => {
+    for (const skill of [SKILLS.casual, SKILLS.sharp]) {
+      const s = table(["V", "V", "T", "V", "T", "V"], [["FAISLA", "KUNDLI"], ["FAISLA", "KUNDLI"], ["FAISLA", "KUNDLI"], ["FAISLA", "KUNDLI"], ["FAISLA", "KUNDLI"], ["FAISLA", "KUNDLI"]]);
+      const before = beliefOf(s, 0, s.seed, skill).p.get(2)!;
+      s.events.push({ n: s.events.length, type: "claim", to: "all", msg: "", data: { seat: 4, target: 2, kind: "kundli", role: s.players[2].role, side: "T" } });
+      const pending = beliefOf(s, 0, s.seed, skill).p.get(2)!;
+      s.events.push({ n: s.events.length, type: "ballots_open", to: "all", msg: "" }); // the floor closed: silence is an answer
+      const settled = beliefOf(s, 0, s.seed, skill).p.get(2)!;
+      expect(pending).toBeGreaterThan(before);
+      expect(settled).toBeGreaterThan(pending);
+    }
   });
   it("every move the playbook makes is legal (a quick game per skill)", () => {
     for (const skill of [SKILLS.casual, SKILLS.average, SKILLS.sharp]) {

@@ -128,6 +128,8 @@ describe("claims out loud", () => {
       const thief = s.players.find((p) => p.side === "T")!.seat;
       const speaker = s.players.find((p) => p.side === "V")!.seat;
       claim(s, speaker, thief, "T");
+      // the vote opens after the floor closes — the accused's chance to answer (2026-10-12)
+      s.events.push({ n: s.events.length, type: "ballots_open", to: "all", msg: "" });
       for (const p of s.players) {
         if (p.seat === speaker || p.seat === thief) continue;
         if (p.side === "V") { total++; if (botVote(s, p.seat, s.seed, fixed(g + p.seat)) === thief) votedThief++; }

@@ -15,7 +15,7 @@ import { canDalBadal, canPlay, dalBadalPick, passSize } from "@/engine/engine";
 import { viewFor } from "@/engine/view";
 import { THIEF_ROLES, tkGuesses } from "@/engine/setup";
 import { randomAction, readsOf } from "@/engine/decisions";
-import { deduce, type Model } from "./deduce";
+import { deduce, unanswered, UNANSWERED, type Model } from "./deduce";
 import type { Action } from "@/engine/types";
 
 type R = () => number;
@@ -91,7 +91,7 @@ const sig = (x: number) => 1 / (1 + Math.exp(-x));
 const logit = (p: number) => Math.log(p / (1 - p));
 const pick = <T,>(r: R, xs: T[]): T => xs[Math.floor(r() * xs.length)];
 
-export interface Claim { actor: number; target: number; side: Side; kind: string }
+export interface Claim { actor: number; target: number; side: Side; kind: string; /** an accusation not yet answered */ pending?: boolean }
 export interface Belief {
   /** P(thief) for every seat but the bot's own (living and out) */
   p: Map<number, number>;
@@ -162,7 +162,7 @@ export function beliefOf(s: GameState, seat: number, seed: number, skill: Skill 
         break;
       case "teer_kaman": if (target === seat && !thiefSide) bump(actor, 1.2); break;
       case "hera_pheri": if (target === seat) bump(actor, 0.3); break;
-      case "claim": if (actor !== null && target !== null && actor !== seat && d?.kind !== "stone") claims.push({ actor, target, side: d?.side as Side, kind: String(d?.kind) }); break;
+      case "claim": if (actor !== null && target !== null && actor !== seat && d?.kind !== "stone") claims.push({ actor, target, side: d?.side as Side, kind: String(d?.kind), pending: d?.side === "T" && unanswered(s.events, e.n, target) }); break;
       // a word whispered to this bot alone (playtest 2026-10-07) weighs like a claim out loud
       case "whisper_private":
         if (actor !== null && target !== null && actor !== seat && num(d, "to") === seat && d?.side) claims.push({ actor, target, side: d.side as Side, kind: "kundli" });
@@ -237,7 +237,7 @@ export function beliefOf(s: GameState, seat: number, seed: number, skill: Skill 
     // behind it) counts half.
     const prior = Math.min(0.98, Math.max(0.02, base.get(c.target) ?? 0.3));
     const post = Math.min(0.98, Math.max(0.02, c.side === "T" ? cr + (1 - cr) * prior : (1 - cr) * prior));
-    const shift = (logit(post) - logit(prior)) * (c.kind === "accuse" ? 0.5 : 1);
+    const shift = (logit(post) - logit(prior)) * (c.kind === "accuse" ? 0.5 : 1) * (c.pending ? UNANSWERED : 1);
     if (L.has(c.target)) L.set(c.target, L.get(c.target)! + shift * Math.min(1, skill.sharp));
     if (c.kind === "was") {
       // a word about a player already out also judges the voters who put them out

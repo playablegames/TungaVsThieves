@@ -30,6 +30,14 @@ export interface Model {
   /** the same for a bare accusation — thieves point fingers almost as freely as villagers */
   liarHunch: number;
 }
+/** WAIT FOR THE ANSWER (designer 2026-10-12, after a screen check where one lying Kundli mark had four bots
+ *  accusing within seconds): an accusation counts only this much until the accused has had the chance to answer —
+ *  until they say anything at all, or the floor closes (their silence is an answer too) */
+export const UNANSWERED = 0.3;
+export function unanswered(events: { n: number; type: string; data?: Record<string, unknown> }[], n: number, target: number): boolean {
+  return !events.some((x) => x.n > n && ((x.type === "claim" && x.data?.seat === target) || x.type === "ballots_open"));
+}
+
 export const MODEL: Model = { honest: 0.9, hunch: 1.6, ballot: 1.4, aim: 0.7, surrender: 0.9, liar: 0.6, liarHunch: 0.9 };
 
 const num = (d: Record<string, unknown> | undefined, k: string) => (typeof d?.[k] === "number" ? (d[k] as number) : null);
@@ -118,9 +126,12 @@ export function deduce(s: GameState, seat: number, m: Model = MODEL, publicOnly 
         if (said.has(key)) break;
         said.add(key);
         const seen = d?.kind === "kundli" || d?.kind === "was";
+        // an accusation the accused hasn't answered yet weighs less (tempered: the factor to a power below 1)
+        const k = says === "T" && unanswered(v.events, e.n, target) ? UNANSWERED : 1;
+        const tempered = (f: (h: number) => number) => scale(k === 1 ? f : (h) => Math.pow(f(h), k));
         if (seen) {
           // a villager who SAW tells the truth; a thief says it less often, and when it does it is noise
-          scale((h) => {
+          tempered((h) => {
             if (isT(h, actor)) return m.liar;
             const right = (isT(h, target) === 1) === (says === "T");
             return right ? m.honest : 1 - m.honest;
@@ -132,7 +143,7 @@ export function deduce(s: GameState, seat: number, m: Model = MODEL, publicOnly 
         // so on average a hunch says nothing about the SPEAKER — only about the target (playtest WJ9J9: two vouches
         // made Chilyy the bots' top suspect and all 8 voted her out)
         const others = n - 1;
-        scale((h) => {
+        tempered((h) => {
           if (isT(h, actor)) return 1 / others;
           const thievesOthers = K; // the speaker is a villager here, so all K thieves are among the others
           const leanT = says === "T" ? m.hunch : 1, leanV = says === "T" ? 1 : m.hunch;
