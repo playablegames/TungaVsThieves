@@ -47,12 +47,20 @@ describe("THE PLAYBOOK — beginners gamble, skilled players hold", () => {
     expect(a.type).toBe("dal_badal");
     if (a.type === "dal_badal") { expect(a.seats).toContain(4); expect(a.pass).toHaveLength(3); }
   });
-  it("a villager with a Teer Kaman pair shoots the player whose role an accusation named, naming that role", () => {
-    const s = table(["V", "V", "T", "V", "T", "V"], [["TEER_KAMAN", "TEER_KAMAN", "FAISLA", "KUNDLI", "BATWARA"], ["HERA_PHERI", "KUNDLI"], ["FAISLA", "BATWARA"], ["KUNDLI", "FAISLA"], ["TALASHI", "BATWARA"], ["FAISLA", "KUNDLI"]]);
+  // (designer 2026-10-13: "Teer Kaman only on an open Kundli") — the accusation must have a Kundli the table saw behind it
+  const tkTable = () => table(["V", "V", "T", "V", "T", "V"], [["TEER_KAMAN", "TEER_KAMAN", "FAISLA", "KUNDLI", "BATWARA"], ["HERA_PHERI", "KUNDLI"], ["FAISLA", "BATWARA"], ["KUNDLI", "FAISLA"], ["TALASHI", "BATWARA"], ["FAISLA", "KUNDLI"]]);
+  it("a villager with a Teer Kaman pair shoots the player an OPEN-KUNDLI accusation named, naming that role", () => {
+    const s = tkTable();
+    s.events.push({ n: s.events.length, type: "kundli", to: "all", msg: "", data: { seat: 3, target: 2 } });
     s.events.push({ n: s.events.length, type: "claim", to: "all", msg: "", data: { seat: 3, target: 2, kind: "kundli", role: s.players[2].role, side: "T" } });
     const shots = runs(s, SKILLS.casual).filter((a) => a.type === "play" && a.card === "TEER_KAMAN");
-    // (a beginner may also fire its own blind shot, naming a random thief role — that is the gamble)
     expect(shots.some((a) => a.type === "play" && a.target === 2 && a.roles?.includes(s.players[2].role))).toBe(true);
+  });
+  it("a bare accusation (no Kundli the table saw) never draws an arrow", () => {
+    const s = tkTable();
+    s.events.push({ n: s.events.length, type: "claim", to: "all", msg: "", data: { seat: 3, target: 2, kind: "kundli", role: s.players[2].role, side: "T" } });
+    for (const skill of [SKILLS.casual, SKILLS.average, SKILLS.sharp])
+      expect(runs(s, skill).some((a) => a.type === "play" && a.card === "TEER_KAMAN")).toBe(false);
   });
   it("WAIT FOR THE ANSWER: an accusation moves a bot less until the accused has answered (or the floor closed)", () => {
     for (const skill of [SKILLS.casual, SKILLS.sharp]) {

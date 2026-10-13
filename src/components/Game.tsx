@@ -21,7 +21,7 @@ import { CARD_BACK, CardIcon, roleArt } from "./CardIcon";
 import { Eject, thievesRemaining } from "./Eject";
 import { Confetti, ShareResult } from "./Share";
 import { buzz, duck, play, setSound, soundOn, unlockOnFirstTap, type Sound } from "@/lib/sfx";
-import { musicDuck, musicOn, setMood, setMusic, startMusicOnFirstTap, stopMusic, type Mood } from "@/lib/music";
+import { musicDuck, musicOn, playSting, setMood, setMusic, startMusicOnFirstTap, stopMusic, type Mood } from "@/lib/music";
 import { narrate, narratorOn, setNarrator } from "@/lib/narrator";
 import { REACTIONS, ThrowQueue, reactionText, type Throw } from "@/lib/reactions";
 import { setPtt, setTalking, usePtt } from "@/lib/ptt";
@@ -1133,7 +1133,7 @@ function Final({ v, clips = [], host = false, hostName = "the host", onRematch }
   const won = mine.side === v.winner;
   const name = (seat: number) => v.players[seat]?.name ?? "?";
   // the end lands with a fanfare (or a wah-wah) once
-  useEffect(() => { play(won ? "fanfare" : "sting"); buzz(won ? [60, 40, 60, 40, 160] : 200); }, [won]);
+  useEffect(() => { play(won ? "fanfare" : "sting"); void playSting(won); buzz(won ? [60, 40, 60, 40, 160] : 200); }, [won]);
   // where each Stone ended: in a living player's hand, or with the village (the cards left on the table at the end,
   // and the cards of anyone the mandatory vote put out)
   const stoneAt = (c: Card) => {

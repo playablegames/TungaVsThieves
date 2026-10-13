@@ -1,0 +1,80 @@
+{
+ "outcome": {
+  "turn": {
+   "pass": [
+    0.6743,
+    0.4816
+   ],
+   "play:HERA_PHERI": [
+    0.0708,
+    0.0967
+   ],
+   "play:BATWARA": [
+    0.0636,
+    0.0988
+   ],
+   "play:FAISLA:nobody": [
+    0.0481,
+    0.0982
+   ],
+   "play:KUNDLI": [
+    0.0518,
+    0.1044
+   ],
+   "play:TEER_KAMAN:blind": [
+    0.0129,
+    0.0062
+   ],
+   "play:TALASHI": [
+    0.0721,
+    0.0973
+   ],
+   "play:TEER_KAMAN:backed": [
+    0.0014,
+    0.009
+   ],
+   "play:FAISLA:suspect": [
+    0.0051,
+    0.0077
+   ]
+  },
+  "kundli_reader": {
+   "silent": [
+    0.6653,
+    0.5492
+   ],
+   "said": [
+    0.3347,
+    0.4508
+   ]
+  },
+  "kundli_read": {
+   "silent": [
+    0.7626,
+    0.7678
+   ],
+   "said": [
+    0.2374,
+    0.2322
+   ]
+  }
+ },
+ "aim": {
+  "HERA_PHERI": [
+   1.375,
+   1.674
+  ],
+  "KUNDLI": [
+   0.518,
+   1.536
+  ],
+  "TEER_KAMAN": [
+   0.05,
+   2.815
+  ],
+  "TALASHI": [
+   1.397,
+   1.259
+  ]
+ }
+}

@@ -191,6 +191,7 @@ function backing(e: GameEvent, history: GameEvent[], nm: (s: number | undefined)
   if (a === undefined || t === undefined) return "";
   const before = history.filter((x) => x.n < e.n && x.to === "all");
   const pair = (x: GameEvent) => { const s = num(x.data, "seat"), u = num(x.data, "target"); return (s === a && u === t) || (s === t && u === a); };
+  if (a === t) return d?.kind === "stone" ? "Their own word — a decoy, a cover, or the truth?" : "Their own last word.";
   if (d?.kind === "stone") {
     if (before.some((x) => x.type === "talashi" && num(x.data, "seat") === a && num(x.data, "target") === t)) return `${nm(a)} searched ${nm(t)} — true or a lie?`;
     if (before.some((x) => x.type === "hera_pheri" && num(x.data, "seat") === t && num(x.data, "target") === a)) return `${nm(t)} stole from ${nm(a)} — true or a lie?`;

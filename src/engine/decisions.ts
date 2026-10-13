@@ -110,7 +110,8 @@ const passFrom = (r: R, cards: Card[], k: number, keepStones: boolean) =>
   keepStones ? [...sample(r, cards.filter((c) => !isStone(c)), k), ...cards.filter(isStone)].slice(0, k) : sample(r, cards, k);
 
 /** A uniformly-ish random LEGAL action. `activity` = chance of playing a pair when one is playable. */
-export function randomAction(s: GameState, seat: number, r: R, activity = 0.8, keepStones = false): Action {
+/** `only`: consider just this pair (a bot that has ruled the others out) */
+export function randomAction(s: GameState, seat: number, r: R, activity = 0.8, keepStones = false, only?: Card): Action {
   const ph = s.phase;
   const me = s.players[seat];
   const h = me.hand;
@@ -122,7 +123,7 @@ export function randomAction(s: GameState, seat: number, r: R, activity = 0.8, k
         const rest = [...h]; rest.splice(rest.indexOf("DAL_BADAL"), 1);
         return { type: "dal_badal", seats: sample(r, others, dalBadalPick(s, seat)), pass: passFrom(r, rest, passSize(rest), keepStones) };
       }
-      const cards = playableCards(s, seat);
+      const cards = playableCards(s, seat).filter((c) => !only || c === only);
       if (cards.length && r() < activity) {
         const card = pick(r, cards);
         const rest = [...h]; rest.splice(rest.indexOf(card), 1); rest.splice(rest.indexOf(card), 1);

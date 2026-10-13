@@ -3,9 +3,9 @@ import { iceServers } from "./turn";
 import { listenPass, livekitConfigured, voicePasses } from "./livekit";
 import { randomBytes, randomInt } from "node:crypto";
 import { apply, closeVote, start, waitingOn } from "@/engine/engine";
-import { defaultAction } from "@/engine/decisions";
+import { defaultAction, readsOf } from "@/engine/decisions";
 import { botTalk } from "./botmind";
-import { botTieBreak, keptMyStone, pushBotClaim, roleFor, skilledAction, SKILLS } from "./belief";
+import { botTieBreak, keptMyStone, pushBotClaim, roleFor, skilledAction, SKILLS, thiefWord } from "./belief";
 import { hear } from "./hear";
 import { sendPush, type Alert } from "./push";
 import { MIN_PLAYERS, ROLE_TABLE, THIEF_ROLES } from "@/engine/setup";
@@ -624,12 +624,37 @@ export function pushStoneClaim(s: GameState, seat: number, target: number, has: 
  *  it saw (its own Kundli read, the reader who read it back, a player it put out), 💎✓/✗ for a hand it searched.
  *  By skill: a villager marks the truth (beginner sometimes forgets, skilled always); a thief may mark a lie instead
  *  (more often the more skilled), or say nothing. */
+/** CLOSE FRIENDS (designer 2026-10-13: "private chats, alliances, close friends"). A bot that saw a role whispers it to
+ *  ONE friend — a living player it knows is a villager (a Kundli read either way), a person first — once a round. A
+ *  villager whispers the truth; a thief whispers its lie to a villager who trusts it (a false friendship). The table
+ *  sees only "X whispered to Y" — itself a tell (who confides in whom). */
+function botWhisper(s: GameState, seat: number, about: number, role: string, side: "V" | "T") {
+  if (s.events.some((e) => e.type === "whisper" && e.data?.seat === seat && e.data?.round === s.round)) return;
+  const friends = [...readsOf(s, seat)].filter(([x, k]) => k.side === "V" && x !== about && s.players[x]?.alive).map(([x]) => x);
+  if (!friends.length) return;
+  const to = friends[0];
+  const me = s.players[seat].name, them = s.players[to].name;
+  s.events.push({ n: s.events.length, type: "whisper", to: "all", msg: `${me} whispered to ${them}.`, data: { seat, target: to, round: s.round } });
+  s.events.push({ n: s.events.length, type: "whisper_private", to: [seat, to], msg: `${me} whispers: "I read ${s.players[about].name}'s Kundli — ${role}."`,
+    data: { seat, target: about, role, side, kind: "kundli", to } });
+}
+
+/** A VILLAGER'S BLUFF (designer 2026-10-13: "villagers can mimic thief skills — let a villager sabotage themselves").
+ *  THE DECOY: a villager with no Stone says it holds one — a thief who then steals from it gives itself away (Hera
+ *  Pheri on a "Stone holder" is a thief tell, tells.ts). THE COVER: a villager whose Stone the table has heard about
+ *  denies it, so the thieves look elsewhere. Skilled villagers only, now and then, from round 2. */
+function villagerBluff(s: GameState, seat: number, skill: { name: string }) {
+  if (skill.name === "casual" || s.round < 2 || !s.players[seat].alive) return;
+  if (s.events.some((e) => e.type === "claim" && e.data?.seat === seat && e.data?.target === seat && e.data?.kind === "stone")) return;
+  const holds = s.players[seat].hand.some((c) => c === "STONE_1" || c === "STONE_2");
+  const heard = s.events.some((e) => e.type === "claim" && e.data?.kind === "stone" && e.data?.target === seat && e.data?.has === true);
+  if (!holds && Math.random() < 0.15) pushStoneClaim(s, seat, seat, true);
+  else if (holds && heard && Math.random() < 0.4) pushStoneClaim(s, seat, seat, false);
+}
+
 function botsSayWhatTheyFound(row: GameRow, from: number) {
   const s = row.state;
   if (!s) return;
-  const thiefRoles = s.rolesInPlay.filter((r) => THIEF_ROLES.includes(r));
-  const villagerRoles = s.rolesInPlay.filter((r) => !THIEF_ROLES.includes(r));
-  const pickOf = (xs: string[]) => xs[Math.floor(Math.random() * xs.length)] ?? null;
   const mark = (seat: number, kind: "kundli" | "was", target: number, role: string | null, side: "V" | "T") => {
     if (s.events.some((e) => e.type === "claim" && e.data?.seat === seat && e.data?.target === target && e.data?.kind === kind)) return;
     const them = s.players[target].name;
@@ -645,6 +670,7 @@ function botsSayWhatTheyFound(row: GameRow, from: number) {
       if (kept !== null) s.events.push({ n: s.events.length, type: "kept_private", to: [e.to[0]], msg: `Your Stone didn't come back — ${s.players[kept].name} kept it.`, data: { seat: kept, target: e.to[0] } });
       continue;
     }
+    if (e.type === "pickup_private" && Array.isArray(e.to) && row.lobby[e.to[0]]?.bot && s.players[e.to[0]]?.side === "V") villagerBluff(s, e.to[0] as number, SKILLS[row.lobby[e.to[0]].skill ?? "average"]);
     if (e.type === "pickup_private" && Array.isArray(e.to) && row.lobby[e.to[0]]?.bot && s.players[e.to[0]]?.side === "V") {
       const kept = keptMyStone(s, e.to[0], e.n);
       if (kept !== null && !s.events.some((c) => c.type === "claim" && c.data?.seat === e.to[0] && c.data?.target === kept && c.data?.kind === "stone" && c.n > e.n - 40)) pushStoneClaim(s, e.to[0] as number, kept, true);
@@ -662,6 +688,8 @@ function botsSayWhatTheyFound(row: GameRow, from: number) {
       const found = ((e.data?.hand as string[]) ?? []).some((c) => c === "STONE_1" || c === "STONE_2");
       // (2026-10-12, game HTKV9: Bunty saw the Tunga Stone with a thief and said nothing) a villager who SEES a Stone
       // always marks it, at every skill level
+      // a skilled thief keeps a Stone it found to itself — it means to steal it (thief skills, belief.ts)
+      if (thief && found && skill.name !== "casual") continue;
       if (!s.players[target]?.alive || (!speaks && !lies && !(found && !thief))) continue;
       pushStoneClaim(s, seen, target, lies ? !found : found);
       continue;
@@ -672,11 +700,13 @@ function botsSayWhatTheyFound(row: GameRow, from: number) {
     if (!s.players[target] || target === seen) continue;
     const kind = e.type === "eliminated_private" ? "was" : "kundli";
     if (kind === "kundli" && !s.players[target].alive) continue;
-    if (!thief) { if (speaks) mark(seen, kind, target, role, side); continue; }
+    // (designer 2026-10-13: "there's mutual Kundli now — you shouldn't stay silent, you're missing out on creating chaos")
+    // a villager ALWAYS says what it saw — the reader and the one read, both — and tells a close friend privately too
+    if (!thief) { if (kind === "kundli" || speaks) mark(seen, kind, target, role, side); botWhisper(s, seen, target, role, side); continue; }
     // a thief: a lie (the other side, a believable role — never its own, which the player it read may now know) —
     // or nothing at all
-    const own = s.players[seen].role;
-    if (lies) mark(seen, kind, target, side === "V" ? pickOf(thiefRoles.filter((r) => r !== own)) : pickOf(villagerRoles.filter((r) => r !== own)), side === "V" ? "T" : "V");
+    const w = thiefWord(s, seen, target, role, side, skill, Math.random);
+    if (w) { mark(seen, kind, target, w.role, w.side); if (skill.name !== "casual") botWhisper(s, seen, target, w.role, w.side); }
   }
 }
 
