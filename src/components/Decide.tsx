@@ -253,9 +253,9 @@ function Turn({ v, playable, passSize, dalBadal, act, ask }: { v: PlayerView; pl
       <div className="flex flex-col gap-3">
         <HandRow cards={hand} glow={glowing} />
         <div className="flex flex-col gap-2">
-          {playable.map((c) => (
+          {playable.map((c, i) => (
             <button key={c} type="button" onClick={() => declare(c)}
-              className="min-h-12 rounded-full border-2 border-brass/80 bg-[linear-gradient(180deg,var(--color-rust)_0%,var(--color-rust-deep)_100%)] font-[family-name:var(--font-engraved)] text-[16px] font-bold uppercase tracking-[0.08em] text-stock active:translate-y-px">
+              className={`${i === 0 ? "nudge" : ""} min-h-12 rounded-full border-2 border-brass/80 bg-[linear-gradient(180deg,var(--color-rust)_0%,var(--color-rust-deep)_100%)] font-[family-name:var(--font-engraved)] text-[16px] font-bold uppercase tracking-[0.08em] text-stock active:translate-y-px`}>
               Play {CARD[c].name} pair
             </button>
           ))}
@@ -266,7 +266,7 @@ function Turn({ v, playable, passSize, dalBadal, act, ask }: { v: PlayerView; pl
             </button>
           )}
           <button type="button" onClick={() => setCard("NONE")}
-            className="min-h-12 rounded-full border-2 border-brass/60 bg-black/30 font-[family-name:var(--font-engraved)] text-[15px] font-semibold uppercase tracking-[0.12em] text-stock active:translate-y-px">
+            className={`${playable.length ? "" : "nudge"} min-h-12 rounded-full border-2 border-brass/60 bg-black/30 font-[family-name:var(--font-engraved)] text-[15px] font-semibold uppercase tracking-[0.12em] text-stock active:translate-y-px`}>
             {playable.length ? `Or pass ${passSize}` : `Pass ${passSize} cards`}
           </button>
         </div>
@@ -340,7 +340,8 @@ function Turn({ v, playable, passSize, dalBadal, act, ask }: { v: PlayerView; pl
       {card === "TEER_KAMAN" && <RolePicker roles={shortlist(v, target)} known={[...knownRoles(v).values()]} said={claimedRoles(v, target)} max={guesses} sel={roles} setSel={setRoles} />}
       {complete(pass, target, roles) && (
         <button type="button" onClick={send}
-          className="min-h-12 rounded-full border-2 border-brass/80 bg-[linear-gradient(180deg,var(--color-rust)_0%,var(--color-rust-deep)_100%)] font-[family-name:var(--font-engraved)] text-[16px] font-bold uppercase tracking-[0.08em] text-stock active:translate-y-px">
+          // the next step glows green — never a lethal one (Teer Kaman)
+          className={`${card === "TEER_KAMAN" ? "" : "nudge"} min-h-12 rounded-full border-2 border-brass/80 bg-[linear-gradient(180deg,var(--color-rust)_0%,var(--color-rust-deep)_100%)] font-[family-name:var(--font-engraved)] text-[16px] font-bold uppercase tracking-[0.08em] text-stock active:translate-y-px`}>
           {card === "NONE" ? `Pass these ${passSize}` : card === "TEER_KAMAN" ? "Shoot" : `Play ${CARD[card as ActionCard].name}`}
         </button>
       )}

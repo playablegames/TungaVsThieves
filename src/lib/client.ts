@@ -37,7 +37,7 @@ export const api = {
     call(`/api/games/${code}/bots`, { method: "DELETE", token, body: JSON.stringify({ index }) }),
   rename: (code: string, token: string, index: number, name: string) =>
     call(`/api/games/${code}/name`, { method: "POST", token, body: JSON.stringify({ index, name }) }),
-  claim: (code: string, token: string, body: { kind: "kundli" | "accuse" | "trust" | "stone"; target: number; role?: string; has?: boolean }) =>
+  claim: (code: string, token: string, body: { kind: "kundli" | "stone"; target: number; role?: string; has?: boolean }) =>
     call(`/api/games/${code}/claim`, { method: "POST", token, body: JSON.stringify(body) }),
   whisper: (code: string, token: string, body: { to: number; kind: "v"; audio: string } | { to: number; kind: "t"; text: string } | { to: number; kind: "k"; about: number; role: string }) =>
     call(`/api/games/${code}/whisper`, { method: "POST", token, body: JSON.stringify(body) }),

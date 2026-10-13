@@ -5,7 +5,7 @@ import { randomBytes, randomInt } from "node:crypto";
 import { apply, closeVote, start, waitingOn } from "@/engine/engine";
 import { defaultAction } from "@/engine/decisions";
 import { botTalk } from "./botmind";
-import { botTieBreak, keptMyStone, pushBotClaim, skilledAction, SKILLS } from "./belief";
+import { botTieBreak, keptMyStone, pushBotClaim, roleFor, skilledAction, SKILLS } from "./belief";
 import { hear } from "./hear";
 import { sendPush, type Alert } from "./push";
 import { MIN_PLAYERS, ROLE_TABLE, THIEF_ROLES } from "@/engine/setup";
@@ -129,10 +129,19 @@ async function play(code: string, f: (row: GameRow) => GameRow): Promise<GameRow
     for (const { seat, c } of said) {
       if (!st.players[c.target]) continue;
       // already marked: a discovery becomes one mark, not a mark and a line (botsSayWhatTheyFound)
-      if (st.events.some((e) => e.type === "claim" && e.data?.seat === seat && e.data?.target === c.target && e.data?.kind === c.kind)) continue;
+      if (st.events.some((e) => e.type === "claim" && e.data?.seat === seat && e.data?.target === c.target && (e.data?.kind === "stone") === (c.kind === "stone"))) continue;
       const them = st.players[c.target].name;
-      st.events.push({ n: st.events.length, type: "claim", to: "all", msg: `${st.players[seat].name}: "${c.kind === "stone" ? `${them} ${c.has ? "has a Stone" : "has no Stone"}` : `${them} is ${c.role ?? (c.side === "T" ? "a thief" : "a villager")}`}."`,
-        data: { seat, kind: c.kind, target: c.target, role: c.role ?? null, side: c.side, ...(c.kind === "stone" ? { has: c.has } : {}), fromLine: true } });
+      if (c.kind === "stone") {
+        st.events.push({ n: st.events.length, type: "claim", to: "all", msg: `${st.players[seat].name}: "${them} ${c.has ? "has a Stone" : "has no Stone"}."`,
+          data: { seat, kind: "stone", target: c.target, role: null, side: null, has: c.has, fromLine: true } });
+        continue;
+      }
+      // (2026-10-13) every word names a role
+      const role = c.role ?? (c.side ? roleFor(st, seat, c.target, c.side) : null);
+      if (!role || !c.side) continue;
+      const was = !st.players[c.target].alive;
+      st.events.push({ n: st.events.length, type: "claim", to: "all", msg: `${st.players[seat].name}: "${them} ${was ? "was" : "is"} ${role}."`,
+        data: { seat, kind: was ? "was" : "kundli", target: c.target, role, side: THIEF_ROLES.includes(role) ? "T" : "V", fromLine: true } });
     }
     r.state = st;
     return r;
@@ -548,7 +557,7 @@ export async function chat(code: string, token: string | null, text: unknown) {
     const st = r.state;
     if (!st || st.phase.kind === "over" || !st.players[seat].alive || !st.players[h.target]?.alive) return r;
     st.events.push({ n: st.events.length, type: "claim", to: botSeats, msg: `${st.players[seat].name} (said): "${t.slice(CAPTION_PREFIX.length)}"`,
-      data: { seat, kind: h.kind, target: h.target, role: h.role ?? null, side: h.side, ...(h.kind === "stone" ? { has: h.has } : {}), heard: true } });
+      data: { seat, kind: h.kind === "stone" ? "stone" : "kundli", target: h.target, role: h.kind === "stone" ? null : h.role ?? (h.side ? roleFor(st, seat, h.target, h.side) : null), side: h.side, ...(h.kind === "stone" ? { has: h.has } : {}), heard: true } });
     r.state = st;
     return r;
   });
@@ -556,7 +565,7 @@ export async function chat(code: string, token: string | null, text: unknown) {
 
 /** A claim out loud — "I read X's Kundli: Lootera", "X is a thief", "X is with the village". A public event the
  *  whole table (and every bot) reads; it changes nothing in the game itself, and a claim may be a lie. */
-export type ClaimKind = "kundli" | "accuse" | "trust" | "stone";
+export type ClaimKind = "kundli" | "stone";
 /** (2026-10-09) "stone": after a Talashi (or any time — a claim may be a lie) — "X has a Stone" / "X has no Stone".
  *  It says nothing about sides, so `side` is null; the seat shows it as 💎✓ / 💎✗. */
 export async function claim(code: string, token: string | null, body: { kind?: unknown; target?: unknown; role?: unknown; has?: unknown }) {
@@ -567,7 +576,8 @@ export async function claim(code: string, token: string | null, body: { kind?: u
     // (designer 2026-10-12) a player who is out watches in silence — they see everything, so no marks
     if (!s.players[seat].alive) throw new HttpError(403, "You're out — you watch in silence");
     const kind = String(body.kind) as ClaimKind;
-    if (!["kundli", "accuse", "trust", "stone"].includes(kind)) throw new HttpError(400, "Unknown claim");
+    // (designer 2026-10-13) no bare "thief" / "villager": name a ROLE (a thief role accuses, a village role clears) or a Stone
+    if (!["kundli", "stone"].includes(kind)) throw new HttpError(400, "Name a role or a Stone");
     const target = Number(body.target);
     // (designer 2026-10-12) out players can be marked too — "Vj was a villager" — but they hold no Stone
     if (!s.players[target] || target === seat) throw new HttpError(400, "Pick another player");
@@ -579,24 +589,22 @@ export async function claim(code: string, token: string | null, body: { kind?: u
     }
     const me = s.players[seat].name, them = s.players[target].name;
     // the same claim again from the same player adds nothing (playtest WJ9J9: one tap ×3) — quietly ignored
-    const sideOf = kind === "accuse" ? "T" : kind === "trust" ? "V" : null;
     // the same claim again from the same player adds nothing — but a CHANGED word is news (it replaces the old one)
     const last = [...s.events].reverse().find((e) => e.type === "claim" && e.data?.seat === seat && e.data?.target === target && (kind === "stone") === (e.data?.kind === "stone"));
     const same = (e: GameState["events"][number]) => e === last
-      && (kind === "stone" ? e.data?.has === Boolean(body.has) : kind === "kundli" ? e.data?.role === body.role : e.data?.side === sideOf && !e.data?.role);
+      && (kind === "stone" ? e.data?.has === Boolean(body.has) : e.data?.role === body.role);
     if (s.events.some(same)) return row;
     if (kind === "stone") {
       pushStoneClaim(s, seat, target, Boolean(body.has));
       row.state = s;
       return row;
     }
-    const side = kind === "accuse" ? "T" : kind === "trust" ? "V" : THIEF_ROLES.includes(role!) ? "T" : "V";
+    const side = THIEF_ROLES.includes(role!) ? "T" : "V";
     // (designer 2026-10-12) an OUT player can be cleared or accused too — "Vj was a villager" — evidence for everyone
     // (bots judge the voters who put them out by it). Say something new later and it replaces what you said before.
     const out = !s.players[target].alive;
     const is = out ? "was" : "is";
-    const msg = kind === "kundli" ? `${me}: "${them} ${is} ${role} — ${side === "T" ? "a thief" : "a villager"}."`
-      : `${me}: "${them} ${is} ${side === "T" ? "a thief" : "a villager"}."`;
+    const msg = `${me}: "${them} ${is} ${role}."`;
     s.events.push({ n: s.events.length, type: "claim", to: "all", msg, data: { seat, kind: out ? "was" : kind, target, role: role ?? null, side } });
     row.state = s;
     return row;
@@ -631,6 +639,12 @@ function botsSayWhatTheyFound(row: GameRow, from: number) {
   for (const e of s.events.slice(from)) {
     // DID IT COME BACK? (designer 2026-10-12) a villager bot whose Stone a Bhukamp handed on, and which didn't come back
     // down the pile, knows its neighbour kept it — and marks it for the table. (A thief bot keeps that to itself.)
+    // (2026-10-13) a HUMAN learns it too — privately: "Your Stone didn't come back — Raju kept it"
+    if (e.type === "pickup_private" && Array.isArray(e.to) && !row.lobby[e.to[0]]?.bot) {
+      const kept = keptMyStone(s, e.to[0], e.n);
+      if (kept !== null) s.events.push({ n: s.events.length, type: "kept_private", to: [e.to[0]], msg: `Your Stone didn't come back — ${s.players[kept].name} kept it.`, data: { seat: kept, target: e.to[0] } });
+      continue;
+    }
     if (e.type === "pickup_private" && Array.isArray(e.to) && row.lobby[e.to[0]]?.bot && s.players[e.to[0]]?.side === "V") {
       const kept = keptMyStone(s, e.to[0], e.n);
       if (kept !== null && !s.events.some((c) => c.type === "claim" && c.data?.seat === e.to[0] && c.data?.target === kept && c.data?.kind === "stone" && c.n > e.n - 40)) pushStoneClaim(s, e.to[0] as number, kept, true);

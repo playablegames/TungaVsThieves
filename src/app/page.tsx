@@ -93,7 +93,7 @@ function Entry() {
           <div className="stage-in -mb-2 rounded-2xl border-2 border-[#f0a32e]/80 bg-[#2a1a08] p-3 text-center">
             <p className="text-[15px] text-stock">New here? Learn in a short guided game against bots.</p>
             <div className="mt-2 flex items-center justify-center gap-5">
-              <button type="button" onClick={() => choose("learn")} className="min-h-11 rounded-full bg-[#f0a32e] px-5 text-[14px] font-bold uppercase tracking-wide text-card-ink">Learn by playing</button>
+              <button type="button" onClick={() => choose("learn")} className="nudge min-h-11 rounded-full bg-[#f0a32e] px-5 text-[14px] font-bold uppercase tracking-wide text-card-ink">Learn by playing</button>
               <button type="button" onClick={skipLearn} className="min-h-11 text-[14px] text-stock/70 underline underline-offset-2">Skip</button>
             </div>
           </div>

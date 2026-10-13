@@ -17,7 +17,7 @@ describe("bots hear captions at a mixed table", () => {
     const after = (await memoryStore.get(host.code))!;
     const heard = after.state!.events.filter((e) => e.type === "claim" && e.data?.heard);
     expect(heard).toHaveLength(1);
-    expect(heard[0].data).toMatchObject({ seat: vikSeat, kind: "accuse", target: meeraSeat, side: "T" });
+    expect(heard[0].data).toMatchObject({ seat: vikSeat, kind: "kundli", target: meeraSeat, side: "T" }); // (2026-10-13) a heard accusation names a thief role
     const bots = after.lobby.flatMap((p, i) => (p.bot ? [i] : []));
     expect(heard[0].to).toEqual(bots);
     // the humans read the caption itself; the claim is not on their screens twice

@@ -11,6 +11,7 @@
     "fuzz": "vitest run src/engine/__tests__/fuzz.test.ts"
   },
   "dependencies": {
+    "@remotion/player": "4.0.535",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.117.2",
     "livekit-client": "^2.22.3",
@@ -18,6 +19,7 @@
     "next": "16.3.8",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "remotion": "4.0.535",
     "web-push": "^3.6.7",
     "zod": "^4.6.5"
   },

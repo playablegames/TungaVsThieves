@@ -12,6 +12,7 @@ export interface Beat {
   title: string;          // the line the whole table reads
   detail?: string;        // a second line (the result, the hand, the private truth)
   card?: ActionCard;      // the pair that was played, face up
+  role?: string;          // (2026-10-13) an accusation: the role card it names, shown big
   actor?: number;         // seat that acted (arrow from)
   target?: number;        // seat it hit (arrow to)
   result?: "hit" | "miss" | "out" | "saved" | "none";
@@ -134,8 +135,18 @@ function rawBeat(e: GameEvent, names: string[]): Beat | null {
     case "whisper_private":
       return { ...base, title: e.msg, tone: "relic", big: false, hold: 900 };
     case "claim":
-      if (d?.fromLine) return null; // a bot's spoken line already says it (the claim is for the seat counts and the bots)
-      return { ...base, title: e.msg, tone: d?.kind === "stone" ? "gold" : d?.side === "T" ? "lethal" : "vote", big: false, hold: 2200 };
+      {
+        // (designer 2026-10-13) ACCUSATIONS ARE LOUD — a thief role named, or "has a Stone": the whole table stops for it,
+        // the named role card big in the middle. CLEARS ARE QUIET — a village role, "no Stone": one line.
+        const loud = d?.side === "T" || (d?.kind === "stone" && d?.has === true);
+        const who = nm(actor), them = nm(target);
+        if (!loud) return { ...base, actor, target, title: e.msg.replace(/\s*🤖/g, ""), tone: d?.kind === "stone" ? "gold" : "vote", big: false, hold: 1800 };
+        return d?.kind === "stone"
+          ? { ...base, actor, target, title: `${who}: ${them} has a Stone!`, detail: "True — or a lie?", tone: "gold", big: true, hold: Math.round(2600 * PACE) }
+          : { ...base, actor, target, role: String(d?.role ?? ""), title: `${who}: ${them} ${d?.kind === "was" ? "was" : "is"} ${String(d?.role ?? "a thief")}!`, detail: "An accusation — true or a lie?", tone: "lethal", big: true, hold: Math.round(2600 * PACE) };
+      }
+    case "kept_private":
+      return { ...base, target: actor, title: "Your Stone didn't come back", detail: e.msg, tone: "gold", big: true, hold: BIG, private: true };
     case "timeout":
       return { ...base, title: "Time ran out", detail: "The default was played for anyone still deciding.", tone: "neutral", big: false, hold: SMALL };
     case "surrender_open":

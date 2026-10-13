@@ -14,18 +14,19 @@ export const ROLE_TABLE: Record<number, [number, number, number]> = {
 export const MIN_PLAYERS = 5;
 export const MAX_PLAYERS = 30;
 
-/** First 5 / 4 are the box; the rest are the role packs (proposed names — designer to edit). */
+/** (designer 2026-10-12) the PRINTED role cards come first, in the box's order — 8 villagers and 4 thieves, enough for
+ *  12 players. The names after them are only for bigger online tables (no printed card yet). */
 export const VILLAGER_ROLES = [
-  "Kisaan", "Sarpanch", "Baba", "Teacher", "Police",
-  "Vaidya", "Pehelwan",
-  "NRI", "Dafliwala", "Deewani", "Lohar", "Sonar", "Mali", "Kumhar", "Pujari", "Guruji",
-  "Darzi", "Nai", "Halwai", "Dhobi", "Chaiwala", "Mochi", "Bunkar", "Gwala",
+  "Kisaan", "Sarpanch", "Baba", "Teacher", "Police", "Doctor", "NRI", "Deewani",
+  "Dafliwala", "Lohar", "Sonar", "Mali", "Kumhar", "Pujari", "Guruji",
+  "Darzi", "Nai", "Halwai", "Dhobi", "Chaiwala", "Mochi", "Bunkar", "Gwala", "Pehelwan",
 ];
 export const THIEF_ROLES = [
-  "Chor", "Lootera", "Mastikhor",
-  "Daku", "Gunda",
-  "Taskar", "Uchakka", "Jebkatra", "Thug", "Dakait", "Lafanga", "Chhota Chor",
+  "Chor", "Lootera", "Gunda", "Daku",
+  "Taskar", "Uchakka", "Mastikhor", "Jebkatra", "Thug", "Dakait", "Lafanga", "Chhota Chor",
 ];
+/** the role cards that exist in print (their art is in public/art/roles) */
+export const PRINTED_ROLES = ["Kisaan", "Sarpanch", "Baba", "Teacher", "Police", "Doctor", "NRI", "Deewani", "Chor", "Lootera", "Gunda", "Daku"];
 
 /** (designer 2026-10-12) Teer Kaman names ONE role at a table that starts with 2 thieves, TWO roles with 3 or more.
  *  Counted from the roles dealt at the start (rolesInPlay never changes, Dal Badal included). */

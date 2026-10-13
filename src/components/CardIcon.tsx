@@ -38,15 +38,47 @@ function Glyph({ c }: { c: Card }) {
   }
 }
 
+/** (designer 2026-10-12) the PRINTED card art, cut from the print files — the online game looks like the box */
+export const CARD_ART: Record<Card, string> = {
+  FAISLA: "/art/v2/faisla-art.webp", TALASHI: "/art/v2/talashi-art.webp", KUNDLI: "/art/v2/kundli-art.webp",
+  HERA_PHERI: "/art/v2/hera_pheri-art.webp", BATWARA: "/art/v2/bhukamp-art.webp", TEER_KAMAN: "/art/v2/teer_kaman-art.webp",
+  DAL_BADAL: "/art/v2/dal_badal-art.webp", STONE_1: "/art/v2/stone_bhadra-art.webp", STONE_2: "/art/v2/stone_tunga-art.webp",
+};
 export function CardIcon({ c, className = "" }: { c: Card; className?: string }) {
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={CARD_ART[c]} alt="" aria-hidden draggable={false} className={`aspect-square object-contain ${className}`} />;
+}
+/** the old drawn glyph (kept for anything that still wants a flat icon) */
+export function CardGlyph({ c, className = "" }: { c: Card; className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden>
       <circle cx="12" cy="12" r="12" fill={DISC[c]} />
-      <circle cx="12" cy="12" r="11" fill="none" stroke="rgba(255,255,255,.25)" strokeWidth=".6" />
       <g transform="translate(3.6 3.6) scale(.7)"><Glyph c={c} /></g>
     </svg>
   );
 }
+
+/** (designer 2026-10-12) the NEW card faces as the designer's files arrive: in the hand a card shows only its ART and
+ *  TITLE (the designer's own frame); tapping it opens the full rules. A card listed here uses the real face. */
+export const CARD_FACE: Partial<Record<Card, string>> = {
+  FAISLA: "/art/v2/faisla-face.webp", TALASHI: "/art/v2/talashi-face.webp", KUNDLI: "/art/v2/kundli-face.webp",
+  HERA_PHERI: "/art/v2/hera_pheri-face.webp", BATWARA: "/art/v2/bhukamp-face.webp", TEER_KAMAN: "/art/v2/teer_kaman-face.webp",
+  DAL_BADAL: "/art/v2/dal_badal-face.webp", STONE_1: "/art/v2/stone_bhadra-face.webp", STONE_2: "/art/v2/stone_tunga-face.webp",
+};
+/** the title sits in the frame's space above its divider (designer 2026-10-13: the card shows only its title and art) */
+export function CardTitle({ c, name, className = "" }: { c: Card; name: string; className?: string }) {
+  void c;
+  return (
+    <span className={`absolute inset-x-[6%] top-[64%] grid h-[15%] place-items-center text-center font-display font-black uppercase leading-none tracking-wide text-[#ef7a14] [text-shadow:0_1px_0_#7a2e0c,0_0_1px_#7a2e0c] ${className}`}>
+      {name}
+    </span>
+  );
+}
+
+/** the role cards that exist in print */
+const ROLE_ART = new Set(["kisaan", "sarpanch", "baba", "teacher", "police", "doctor", "nri", "deewani", "chor", "lootera", "gunda", "daku"]);
+export const roleArt = (role: string | null | undefined) => (role && ROLE_ART.has(role.toLowerCase()) ? `/art/roles/${role.toLowerCase()}.webp` : null);
+export const CARD_BACK = "/art/cards/back.webp";
 
 /** the gold flourish in each corner of a card (reference: filigree corners) */
 export function Corners() {

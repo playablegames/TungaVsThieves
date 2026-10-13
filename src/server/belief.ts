@@ -166,7 +166,9 @@ export function beliefOf(s: GameState, seat: number, seed: number, skill: Skill 
       case "claim": if (actor !== null && target !== null && actor !== seat && d?.kind !== "stone") {
         const old = claims.findIndex((c) => c.actor === actor && c.target === target);
         if (old >= 0) claims.splice(old, 1);
-        claims.push({ actor, target, side: d?.side as Side, kind: String(d?.kind), pending: d?.side === "T" && unanswered(s.events, e.n, target) }); }
+        // (2026-10-13) every claim names a role now; one with nothing behind it weighs like the old bare accusation
+        const kind = d?.kind === "accuse" || d?.kind === "trust" || !backedClaim(s.events, actor, target, e.n) ? "accuse" : String(d?.kind);
+        claims.push({ actor, target, side: d?.side as Side, kind, pending: d?.side === "T" && unanswered(s.events, e.n, target) }); }
         break;
       // a word whispered to this bot alone (playtest 2026-10-07) weighs like a claim out loud
       case "whisper_private":
@@ -268,7 +270,8 @@ export function beliefOf(s: GameState, seat: number, seed: number, skill: Skill 
  *  it (no Kundli read, no exit seen) is dropped. (designer 2026-10-12, today's games: a first accusation with no
  *  evidence — often a thief's lie — and the bots piled on: villagers out 10–1, 8–1, 9–1.) */
 export function withoutHearsay(s: GameState, seat: number): GameState {
-  const bare = (e: GameState["events"][number]) => e.type === "claim" && e.data?.seat !== seat && (e.data?.kind === "accuse" || e.data?.kind === "trust");
+  const bare = (e: GameState["events"][number]) => e.type === "claim" && e.data?.seat !== seat && e.data?.kind !== "stone"
+    && (e.data?.kind === "accuse" || e.data?.kind === "trust" || !backedClaim(s.events, e.data?.seat as number, e.data?.target as number, e.n));
   return { ...s, events: s.events.filter((e) => !bare(e)) };
 }
 
@@ -462,6 +465,29 @@ export function keptMyStone(s: GameState, seat: number, at: number): number | nu
   return passer === gave.to ? gave.to : null;
 }
 
+// ------------------------------------------------------------------ every word names a role (designer 2026-10-13)
+/** "X is a thief" is no longer something anyone can say: an accusation names a THIEF ROLE, a clear names a VILLAGE
+ *  ROLE. When a bot means only a side, it names the likeliest role for it — never its own, preferring one nobody has
+ *  claimed yet (a role already claimed for someone else is probably not this player's). */
+export function roleFor(s: GameState, seat: number, target: number, side: Side, r: () => number = Math.random): string | null {
+  const pool = s.rolesInPlay.filter((x) => THIEF_ROLES.includes(x) === (side === "T") && x !== s.players[seat]?.role);
+  if (!pool.length) return null;
+  const said = new Map<string, number>();
+  for (const e of s.events) if (e.type === "claim" && typeof e.data?.role === "string" && e.data.target !== target) said.set(e.data.role, (said.get(e.data.role) ?? 0) + 1);
+  const free = pool.filter((x) => !said.has(x));
+  const from = free.length ? free : pool;
+  return from[Math.floor(r() * from.length)] ?? null;
+}
+
+/** is a claim BACKED by something the table saw this speaker do to that player — their Kundli on them (either way:
+ *  Kundli is mutual), putting them out (Faisla caller / Teer Kaman hit)? A role named without that is only a word. */
+export function backedClaim(events: GameState["events"], actor: number, target: number, before = Infinity): boolean {
+  return events.some((e) => e.n < before && (
+    (e.type === "kundli" && ((e.data?.seat === actor && e.data?.target === target) || (e.data?.seat === target && e.data?.target === actor)))
+    || (e.type === "eliminated" && e.data?.seat === target && e.data?.killer === actor)
+    || (e.type === "teer_kaman" && e.data?.seat === actor && e.data?.target === target && e.data?.hit === true)));
+}
+
 // ------------------------------------------------------------------ claims
 export type ClaimData = { kind: "kundli" | "accuse" | "was"; target: number; role: string | null; side: Side };
 
@@ -521,11 +547,13 @@ export function pushBotClaim(s: GameState, seat: number, seed: number, r: R, ski
   if (!c) return false;
   // one mark per player and side: "X is Lootera" already says "X is a thief" (screen check 2026-10-12)
   if (s.events.some((e) => e.type === "claim" && e.data?.seat === seat && e.data?.target === c.target && e.data?.side === c.side)) return false;
+  // (designer 2026-10-13) every word names a role: an accusation a thief role, a clear a village role
+  const role = c.role ?? roleFor(s, seat, c.target, c.side, r);
+  if (!role) return false;
   const me = s.players[seat].name, them = s.players[c.target].name;
-  // designer 2026-10-09: Villager / Thief / Role / Stone — a Kundli reader may name the exact role (true or a lie)
-  const what = c.side === "T" ? "a thief" : "a villager";
-  const msg = c.role ? `${me}: "${them} ${c.kind === "was" ? "was" : "is"} ${c.role}."` : `${me}: "${them} is ${what}."`;
-  s.events.push({ n: s.events.length, type: "claim", to: "all", msg, data: { seat, ...c } });
+  const was = c.kind === "was" || !s.players[c.target].alive;
+  s.events.push({ n: s.events.length, type: "claim", to: "all", msg: `${me}: "${them} ${was ? "was" : "is"} ${role}."`,
+    data: { seat, ...c, kind: was ? "was" : c.kind === "accuse" ? "kundli" : c.kind, role } });
   return true;
 }
 

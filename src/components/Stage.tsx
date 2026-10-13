@@ -4,6 +4,7 @@
 import type { Beat, Tone } from "@/lib/beats";
 import type { StageSnapshot } from "@/lib/stage";
 import { CARD } from "@/lib/cards";
+import { roleArt } from "./CardIcon";
 import { CardIcon } from "./CardIcon";
 import { PlayedPair } from "./Hand";
 
@@ -37,6 +38,10 @@ export function Stage({ stage, skip, names, inline = false, small = false }: { s
             </svg>
             {b.private && <p className="mb-2 font-[family-name:var(--font-engraved)] text-[11px] font-semibold uppercase tracking-[0.2em] text-jade-soft">Only you see this</p>}
             {b.card && !small && <div className="mb-2"><PlayedPair c={b.card} /></div>}
+            {b.role && roleArt(b.role) && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={roleArt(b.role)!} alt="" className={`stage-card mx-auto mb-2 rounded-lg shadow-[0_12px_28px_-8px_rgba(0,0,0,.9)] ${inline ? "w-16" : "w-28"}`} />
+            )}
             <p className={`font-display font-bold leading-tight ${inline ? "text-[18px]" : "text-[26px]"} ${TITLE[b.tone]}`}>{b.title}</p>
             {b.detail && <p className={`mt-1 font-display leading-snug text-stock/80 ${inline ? "text-[13px]" : "text-[15px]"}`}>{b.detail}</p>}
             {tally.length > 0 && (
