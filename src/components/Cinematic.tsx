@@ -1,26 +1,24 @@
 "use client";
-// CINEMATICS (designer 2026-10-13: "do the video animations"): short, skippable films for the big moments, made with
-// Remotion's animation maths and played live in the browser (no video files — they're React, drawn from the box's own card art):
-//   every one   letterbox bars slide in · the card's art pushes in from the dark with a glow · light rays turn behind
-//               it · its name writes itself in · it fades back to the table (1.8 s; tap to skip; 2× halves it)
-//   TEER KAMAN  an arrow streak tears across — HIT: a white flash and a jolt · MISS: the art drains to grey
-//   KUNDLI      a mandala turns round the art in violet light       BHUKAMP   the art quakes, cracks draw across
-//   HERA PHERI  the art is snatched sideways                         TALASHI   a searching spotlight sweeps it
-//   FAISLA      the gavel: a zoom punch and a flash on the thud       DAL BADAL the card spins round twice
-//   NIGHTFALL   each new round: the shrine at sunset sinks into night and the stars come out
-//   FINALE      behind the end screen: the Stones drop onto the shrine steps and glow (village) — or flicker and
-//               vanish in smoke (thieves)
+// FILMS (Remotion's animation maths — interpolate, spring — played live in the browser; no video files, drawn from the
+// box's own art). Where they play (designer 2026-10-14, after the research study: Balatro and Marvel Snap never cut away
+// mid-play — a played card now acts ON the table, TableMoment.tsx — so the films live at the natural pauses):
+//   ROUND INTRO     each new round: the shrine sinks into night, ROUND n OF 3 — round 3 adds THE LAST ROUND
+//   MANDATORY VOTE  after round 3: a thief voted out → their Stone to the village; a villager → to the thieves
+//   FINALE          behind the end screen: the Stones land on the shrine steps (village) or vanish in smoke (thieves)
+//   CARD FILMS      How to play: the card's art pushes in, then it acts on a little table (Scenes.tsx), on a loop
 // Reduced motion: no films at all — the table and its words say what happened.
 // Plain <img>, not Remotion's <Img>: these play live, and <Img> holds the film on frame 0 until the image "decodes" —
 // which some browsers refuse (screen check 2026-10-13: a black screen until tapped).
 /* eslint-disable @next/next/no-img-element */
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { AbsoluteFill, interpolate, spring } from "remotion";
-import type { Beat } from "@/lib/beats";
 import { TapOn } from "./ui";
+import { Scene, SCENE_LEN } from "./Scenes";
 
 /** (designer 2026-10-13 evening, "animations must slow down") the films play at 3/4 speed */
 const SLOW = 0.75;
+/** the story films: the intro + the scene, a touch quicker than the rest so a turn never drags */
+const STORY = 0.85;
 const TapBar = ({ ms }: { ms: number }) => <span className="pointer-events-none absolute inset-x-0 bottom-[max(2rem,env(safe-area-inset-bottom))] flex justify-center"><TapOn ms={ms} /></span>;
 
 const FPS = 30;
@@ -37,34 +35,42 @@ const ART: Record<CineKind, { src: string; word: string; color: string; glow: st
   faisla: { src: "/art/v2/faisla-art.webp", word: "FAISLA", color: "#f3c66b", glow: "240,163,46" },
   dal_badal: { src: "/art/v2/dal_badal-art.webp", word: "DAL BADAL", color: "#ff6b5b", glow: "255,70,50" },
 };
-/** the beats that get a film */
-export const CINEMATIC = new Set<string>(Object.keys(ART));
 /** THE FILM CLOCK. Remotion's <Player> sat frozen on frame 0 inside the app (screen check 2026-10-13: autoplay never
  *  started, a black screen until tapped), so the films keep Remotion's animation maths (interpolate, spring) but run on
  *  this: one animation-frame timer counting 30 fps frames, on a 400x760 stage scaled to fit the phone. At the last
  *  frame it calls `onEnd` (or, with `hold`, stays on it). */
-function Film({ len, speed = 1, hold = false, onEnd, children }: { len: number; speed?: number; hold?: boolean; onEnd?: () => void; children: (frame: number) => ReactNode }) {
+function Film({ len, speed = 1, hold = false, loop = false, box = false, onEnd, children }: {
+  len: number; speed?: number; hold?: boolean; loop?: boolean; box?: boolean; onEnd?: () => void; children: (frame: number) => ReactNode;
+}) {
   const [frame, setFrame] = useState(0);
   const [k, setK] = useState(1);
   const end = useRef(onEnd);
+  const me = useRef<HTMLDivElement>(null);
   useEffect(() => { end.current = onEnd; }, [onEnd]);
   useEffect(() => {
-    const fit = () => setK(Math.min(window.innerWidth / W, window.innerHeight / H));
+    // `box`: fit the box it sits in (How to play, the card view) — otherwise the whole phone
+    const fit = () => {
+      const r = box ? me.current?.parentElement?.getBoundingClientRect() : null;
+      setK(r ? Math.min(r.width / W, r.height / H) : Math.min(window.innerWidth / W, window.innerHeight / H));
+    };
     fit();
     window.addEventListener("resize", fit);
     let raf = 0;
-    const t0 = performance.now();
+    let t0 = performance.now();
     const tick = (now: number) => {
       const f = Math.floor(((now - t0) / 1000) * FPS * speed);
-      if (f >= len - 1) { setFrame(len - 1); if (!hold) end.current?.(); return; }
-      setFrame(f);
+      if (f >= len - 1) {
+        if (loop) { t0 = now + 600; setFrame(0); raf = requestAnimationFrame(tick); return; }
+        setFrame(len - 1); if (!hold) end.current?.(); return;
+      }
+      setFrame(Math.max(0, f));
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", fit); };
-  }, [len, speed, hold]);
+  }, [len, speed, hold, loop, box]);
   return (
-    <div style={{ position: "absolute", left: "50%", top: "50%", width: W, height: H, transform: `translate(-50%,-50%) scale(${k})`, overflow: "hidden" }}>
+    <div ref={me} style={{ position: "absolute", left: "50%", top: "50%", width: W, height: H, transform: `translate(-50%,-50%) scale(${k})`, overflow: "hidden" }}>
       {children(frame)}
     </div>
   );
@@ -144,9 +150,11 @@ function Moment({ kind, hit, frame }: { kind: CineKind; hit: boolean; frame: num
   );
 }
 
-function Night({ round, frame }: { round: number; frame: number }) {
+const NIGHT_LEN = 84;
+function Night({ round, rounds, frame }: { round: number; rounds: number; frame: number }) {
+  const last = round >= rounds;
   const dark = interpolate(frame, [4, 40], [0, 0.78], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
-  const out = interpolate(frame, [0, 8, 50, 60], [0, 1, 1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+  const out = interpolate(frame, [0, 8, NIGHT_LEN - 10, NIGHT_LEN], [0, 1, 1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   return (
     <AbsoluteFill style={{ opacity: out, background: "#000" }}>
       <img alt="" src="/art/v2/shrine.webp" style={{ width: "100%", height: "100%", objectFit: "cover", transform: `scale(${interpolate(frame, [0, 60], [1.08, 1])})` }} />
@@ -158,9 +166,50 @@ function Night({ round, frame }: { round: number; frame: number }) {
       })}
       <div style={{ position: "absolute", left: 0, right: 0, top: "40%", textAlign: "center" }}>
         <div style={{ ...font, fontSize: 18, color: "#f3c66b", opacity: interpolate(frame, [14, 24], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" }) }}>NIGHT FALLS ON TUNGA</div>
-        <div style={{ ...font, fontSize: 52, color: "#fff1c9", textShadow: "0 0 22px rgba(255,190,90,.7)", opacity: interpolate(frame, [20, 30], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" }) }}>ROUND {round}</div>
+        <div style={{ ...font, fontSize: 52, color: "#fff1c9", textShadow: "0 0 22px rgba(255,190,90,.7)", opacity: interpolate(frame, [20, 30], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" }) }}>ROUND {round}<span style={{ fontSize: 24, opacity: 0.7 }}> OF {rounds}</span></div>
+        {last && (
+          <div style={{ ...font, marginTop: 14, fontSize: 30, color: "#ff8a7a", textShadow: "0 0 18px rgba(255,80,60,.8)",
+            transform: `scale(${interpolate(spring({ frame: frame - 34, fps: FPS, config: { damping: 10, stiffness: 170 } }), [0, 1], [2, 1])})`, opacity: interpolate(frame, [34, 40], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" }) }}>
+            THE LAST ROUND
+            <div style={{ fontSize: 15, marginTop: 8, color: "#f3e2b8", letterSpacing: "0.06em" }}>then the mandatory vote</div>
+          </div>
+        )}
       </div>
-      <Letterbox frame={frame} len={60} />
+      <Letterbox frame={frame} len={NIGHT_LEN} />
+    </AbsoluteFill>
+  );
+}
+
+const FINAL_LEN = 180; // 6 s at 30 fps (8 s at the slow pace) — two rules to read
+function FinalVote({ frame }: { frame: number }) {
+  const cl = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;
+  const out = interpolate(frame, [0, 8, FINAL_LEN - 10, FINAL_LEN], [0, 1, 1, 0], cl);
+  const head = interpolate(frame, [6, 18], [0, 1], cl);
+  // one story: a role card voted out, its Stone flies to the other side
+  const story = (top: number, role: string, start: number, toLeft: boolean, line: string, colour: string, dest: string) => {
+    const t = interpolate(frame, [start, start + 14], [0, 1], cl);
+    const out_ = interpolate(frame, [start + 18, start + 30], [0, 1], cl);
+    const fly = interpolate(frame, [start + 30, start + 54], [0, 1], { ...cl, easing: (x) => 1 - (1 - x) ** 3 });
+    const sx = 96 + (toLeft ? 0 : 0), sy = top + 70;
+    const tx = 292, ty = top + 70;
+    return (<div key={role} style={{ opacity: t }}>
+      <img alt="" src={`/art/roles/${role}.webp`} style={{ position: "absolute", left: 40, top, width: 112, borderRadius: 8, filter: `grayscale(${out_}) brightness(${1 - 0.4 * out_})`, transform: `rotate(${-6 * out_}deg)` }} />
+      {out_ > 0 && <div style={{ position: "absolute", left: 30, top: top + 52, width: 132, textAlign: "center", ...font, fontSize: 22, color: "#ff6b5b", transform: `rotate(-12deg) scale(${interpolate(out_, [0, 1], [1.8, 1])})`, textShadow: "0 2px 0 #000" }}>VOTED OUT</div>}
+      <div style={{ position: "absolute", left: 250, top: top + 22, width: 96, height: 96, borderRadius: 18, display: "grid", placeItems: "center", fontSize: 46,
+        background: dest === "village" ? "#3a240c" : "#5a1410", boxShadow: `0 0 ${10 + 24 * fly}px ${colour}` }}>{dest === "village" ? "🏡" : "🦹"}</div>
+      <img alt="" src="/art/v2/stone_tunga-art.webp" style={{ position: "absolute", left: sx + (tx - sx) * fly - 26, top: sy + (ty - sy) * fly - 26 - Math.sin(Math.PI * fly) * 60, width: 52, filter: "drop-shadow(0 0 14px rgba(255,200,90,.9))" }} />
+      <div style={{ position: "absolute", left: 20, right: 20, top: top + 170, textAlign: "center", fontFamily: "var(--font-jakarta), sans-serif", fontWeight: 800, fontSize: 19, color: colour, opacity: interpolate(frame, [start + 40, start + 50], [0, 1], cl) }}>{line}</div>
+    </div>);
+  };
+  return (
+    <AbsoluteFill style={{ opacity: out, background: "radial-gradient(80% 60% at 50% 40%, #3a200c 0%, #0b0502 80%)" }}>
+      <div style={{ position: "absolute", left: 0, right: 0, top: 30, textAlign: "center", opacity: head }}>
+        <div style={{ ...font, fontSize: 16, color: "#f3c66b" }}>THE LAST ROUND IS OVER</div>
+        <div style={{ ...font, fontSize: 40, color: "#fff1c9", textShadow: "0 0 20px rgba(255,190,90,.7)" }}>MANDATORY VOTE</div>
+        <div style={{ fontFamily: "var(--font-jakarta), sans-serif", fontSize: 15, color: "#f3e2b8", opacity: 0.85 }}>Talk, then everyone votes. Watch the Stones:</div>
+      </div>
+      {story(200, "chor", 24, false, "A THIEF voted out — their Stone goes to the VILLAGE", "#f3c66b", "village")}
+      {story(470, "kisaan", 90, false, "A VILLAGER voted out — their Stone goes to the THIEVES", "#ff8a7a", "thieves")}
     </AbsoluteFill>
   );
 }
@@ -196,26 +245,40 @@ function Finale({ village, frame }: { village: boolean; frame: number }) {
   );
 }
 
-/** a big moment's film, over the table. Tap to skip; it removes itself when it ends. */
-export function CinematicOverlay({ beat, speed = 1 }: { beat: Beat; speed?: number }) {
-  const [done, setDone] = useState(false);
-  if (done || reduced() || !CINEMATIC.has(beat.type)) return null;
+/** A CARD'S FILM (designer 2026-10-14: the films live on as illustrations — How to play, and the card's full view):
+ *  the card's art pushes in, then it acts on a little table (Scenes.tsx). Plays inside its box, on a loop. */
+export function CardFilm({ kind, hit = true }: { kind: CineKind; hit?: boolean }) {
+  if (reduced()) return <img alt="" src={ART[kind].src} className="absolute inset-0 m-auto max-h-full max-w-full object-contain" />;
   return (
-    <button type="button" aria-label="Skip" onClick={() => setDone(true)} className="fixed inset-0 z-[55] block bg-black/70">
-      <Film len={LEN} speed={speed * SLOW} onEnd={() => setDone(true)}>{(f) => <Moment kind={beat.type as CineKind} hit={beat.result === "hit"} frame={f} />}</Film>
-      <TapBar ms={Math.round((LEN / FPS) * 1000 / (speed * SLOW))} />
-    </button>
+    <Film len={SCENE_LEN} speed={STORY} loop box>{(f) => <>
+      {f < LEN && <Moment kind={kind} hit={hit} frame={f} />}
+      <Scene kind={kind} hit={hit} f={f} />
+    </>}</Film>
   );
 }
 
 /** NIGHTFALL: the start of a new round */
-export function NightfallOverlay({ round, speed = 1 }: { round: number; speed?: number }) {
+export function NightfallOverlay({ round, rounds, speed = 1 }: { round: number; rounds: number; speed?: number }) {
   const [done, setDone] = useState(false);
   if (done || reduced()) return null;
   return (
     <button type="button" aria-label="Skip" onClick={() => setDone(true)} className="fixed inset-0 z-[55] block bg-black">
-      <Film len={60} speed={speed * SLOW} onEnd={() => setDone(true)}>{(f) => <Night round={round} frame={f} />}</Film>
-      <TapBar ms={Math.round((60 / FPS) * 1000 / (speed * SLOW))} />
+      <Film len={NIGHT_LEN} speed={speed * SLOW} onEnd={() => setDone(true)}>{(f) => <Night round={round} rounds={rounds} frame={f} />}</Film>
+      <TapBar ms={Math.round((NIGHT_LEN / FPS) * 1000 / (speed * SLOW))} />
+    </button>
+  );
+}
+
+/** THE MANDATORY VOTE (designer 2026-10-14: "a mandatory round intro — say the conditions"): after round 3, before the
+ *  debate. Two little stories side by side: a THIEF voted out with a Stone — the Stone goes to the village; a VILLAGER
+ *  voted out with a Stone — it goes to the thieves. */
+export function FinalVoteOverlay({ speed = 1 }: { speed?: number }) {
+  const [done, setDone] = useState(false);
+  if (done || reduced()) return null;
+  return (
+    <button type="button" aria-label="Skip" onClick={() => setDone(true)} className="fixed inset-0 z-[55] block bg-black">
+      <Film len={FINAL_LEN} speed={speed * SLOW} onEnd={() => setDone(true)}>{(f) => <FinalVote frame={f} />}</Film>
+      <TapBar ms={Math.round((FINAL_LEN / FPS) * 1000 / (speed * SLOW))} />
     </button>
   );
 }

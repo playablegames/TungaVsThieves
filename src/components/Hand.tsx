@@ -49,12 +49,17 @@ export function HandRow({ cards, glow, selected, labels, dim, onTap }: {
   return (
     <>
       {/* (designer 2026-10-13) a FAN, like a hand of real cards: overlapping, turned a little round a point below */}
-      <ul className="flex justify-center px-2 pt-2" aria-label="Your cards">
+      {/* (2026-10-14, Balatro study: "cards never sit still") the fan tilts toward your finger, and each card breathes */}
+      <ul className="hand-tilt flex justify-center px-2 pt-2" aria-label="Your cards"
+        onPointerMove={(e) => { const r = e.currentTarget.getBoundingClientRect(); e.currentTarget.style.setProperty("--tx", `${(((e.clientX - r.left) / r.width) - 0.5) * 10}deg`); e.currentTarget.style.setProperty("--ty", `${(0.5 - (e.clientY - r.top) / r.height) * 8}deg`); }}
+        onPointerLeave={(e) => { e.currentTarget.style.setProperty("--tx", "0deg"); e.currentTarget.style.setProperty("--ty", "0deg"); }}>
         {cards.map((c, i) => (
           <li key={i} className="origin-bottom transition-transform duration-200" style={fan(i, cards.length)}>
+            <span className="idle-float block" style={{ animationDelay: `${-i * 0.55}s` }}>
             <Tile c={c} glow={glow?.includes(i)} selected={selected?.includes(i)} label={labels?.[i] ?? (fresh.includes(i) ? "NEW" : undefined)} dim={dim?.includes(i)}
               fresh={!labels?.[i] && fresh.includes(i)}
               onTap={onTap ? () => { ack(); onTap(i); } : undefined} onDetail={() => { ack(); setDetail(c); }} />
+            </span>
           </li>
         ))}
       </ul>

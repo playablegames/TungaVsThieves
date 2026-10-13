@@ -5,12 +5,11 @@
 import { useEffect, useRef, useState } from "react";
 import type { Side } from "@/engine/types";
 import { DealIntro } from "./DealIntro";
+import { roleArt } from "./CardIcon";
 
 // (designer 2026-10-13 evening: every screen moves on by itself after ~2 s past its animation, or on a tap)
 const ROLE_SECONDS = 4;
 const STONES_SECONDS = 4;
-/** role art cut from the designer's mockups; roles without art get their initial */
-const ART: Record<string, string> = { Kisaan: "/role-kisaan.webp" };
 const seenKey = (code: string) => `tunga:reveal:${code.toUpperCase()}`;
 const BACKDROP = "fixed inset-0 z-40 flex flex-col items-center overflow-y-auto bg-[radial-gradient(90%_55%_at_50%_45%,var(--color-ember-2)_0%,var(--color-ember)_65%,#120903_100%)] px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]";
 const CONTINUE = "nudge min-h-14 w-full max-w-md shrink-0 border-2 border-brass/80 btn-primary font-[family-name:var(--font-engraved)] text-[22px] font-bold uppercase tracking-[0.1em] text-stock shadow-[inset_0_1px_0_rgba(255,220,170,.3)] active:translate-y-px";
@@ -65,17 +64,23 @@ function RoleStep({ role, side, onDone }: { role: string; side: Side; onDone: ()
         This is your secret role.<br />Keep it hidden from the other players.
       </p>
 
-      {/* the role card: cream stock, gold double rule, the art, the name between two ornaments */}
+      {/* (designer 2026-10-14: "fix the role card art for all roles") the PRINTED role card, as in the box (public/art/roles)
+          — a role with no printed card yet (tables over 12) keeps the drawn card below */}
+      {roleArt(role) ? (
+        <div className="flip-in mt-7 flex shrink-0 flex-col items-center" style={{ width: "min(62vw, 280px)" }}>
+          {/* eslint-disable-next-line @next/next/no-img-element -- static art */}
+          <img src={roleArt(role)!} alt={`${role} — ${thief ? "Team Thieves" : "Team Tunga"}`} width={360} height={510}
+            className="w-full rounded-xl shadow-[0_18px_40px_-10px_rgba(0,0,0,.8)]" />
+          <p className={`mt-3 text-[13px] font-extrabold uppercase tracking-[0.18em] ${thief ? "text-crimson-soft" : "text-[#f3c66b]"}`}>{thief ? "Team Thieves" : "Team Tunga"}</p>
+        </div>
+      ) : (
       <div className="flip-in relative mt-7 aspect-[505/713] shrink-0 rounded-xl bg-[radial-gradient(120%_90%_at_50%_40%,#f7e6c4_0%,#ecd3a3_100%)] shadow-[0_18px_40px_-10px_rgba(0,0,0,.8)]" style={{ width: "min(62vw, 280px)" }}>
         <div aria-hidden className="absolute inset-[9px] rounded-md border border-[#c08a3a]" />
         <div aria-hidden className="absolute inset-[13px] rounded-sm border border-[#c08a3a]/50" />
         <Diamond className="absolute left-1/2 top-[6px] -translate-x-1/2" />
         <Diamond className="absolute bottom-[6px] left-1/2 -translate-x-1/2" />
         <div className="absolute inset-x-0 top-[22%] flex justify-center px-[12%]">
-          {ART[role]
-            // eslint-disable-next-line @next/next/no-img-element -- static art
-            ? <img src={ART[role]} alt="" className="w-full" />
-            : <span aria-hidden className="font-display text-[64px] font-black text-card-ink/80">{role.slice(0, 1)}</span>}
+          <span aria-hidden className="font-display text-[64px] font-black text-card-ink/80">{role.slice(0, 1)}</span>
         </div>
         <div className="absolute inset-x-[16%] top-[63%] flex flex-col items-center">
           <Rule />
@@ -84,6 +89,7 @@ function RoleStep({ role, side, onDone }: { role: string; side: Side; onDone: ()
           <p className={`mt-2 text-[11px] font-extrabold uppercase tracking-[0.18em] ${thief ? "text-crimson-deep" : "text-marigold-deep"}`}>{thief ? "Team Thieves" : "Team Tunga"}</p>
         </div>
       </div>
+      )}
 
       <div className="relative mt-7 grid h-[104px] w-[104px] shrink-0 place-items-center" role="timer" aria-label={`${left} seconds`}>
         <svg viewBox="0 0 104 104" className="absolute inset-0 -rotate-90" aria-hidden>

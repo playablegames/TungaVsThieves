@@ -38,16 +38,38 @@ project has actually tripped on. Tick it on the `preview` site, then promote to 
 ## 5. People
 - [ ] A **first game anyone can finish** without help: the tutorial / Learn by playing works start to end.
 - [ ] Every big moment is understood without reading (nudges glow, films and words say what happened).
-- [ ] **Privacy note** in the app: what is stored (game logs, chat, names), for how long, voice is not recorded
+- [ ] **Privacy note** in the app (DRAFT at /privacy, 2026-10-14 — the owner's name and a contact still to add): what is stored (game logs, chat, names), for how long, voice is not recorded
       unless a whisper is sent. India's DPDP Act 2023 applies to personal data.
 - [ ] **No dark patterns** (India's 2023 guidelines): no fake urgency, no nudges on lethal moves, nothing hidden.
-- [ ] A way to report a problem (a link or an email in the menu).
+- [x] A way to report a problem — ☰ → Report a problem (2026-10-14).
 
 ## 6. Licences and art
 - [ ] All art is the designer's own (art-source/) — no placeholder or generated stock left in.
 - [ ] **Remotion licence**: free only for a company of up to 3 people — buy the company licence if that changes.
 - [ ] Fonts licensed for web use; the music is our own (scripts/music/make_music.py) — no samples.
 - [ ] Bot voices (when they come): a licensed TTS service, never an unofficial endpoint.
+
+## 7. Launch week (added 2026-10-14 from indie and Steam launch checklists — adapted for a free web game)
+- [ ] **Load test**: bot clients play whole games at **2× the expected peak** of tables at once, and one long soak run
+      (memory leaks show in soaks, not spikes). Watch Supabase, LiveKit and Vercel limits while it runs.
+- [ ] **Crash reports on**: phones report crashes by themselves (`/api/report`, kept in that game's log as a server-only
+      line); someone reads them every day of launch week. ☰ → Report a problem works.
+- [ ] **Hotfix plan**: a game-breaking bug is fixed and live within **24–48 h**; small ones wait for the week-1 update.
+- [ ] **Rollback drill**: the rollback (§3) tried once **this week**, with a named person who presses it.
+- [ ] **Slow network**: a whole game on a throttled "3G" connection and on a phone that drops out and comes back.
+- [ ] **Someone new plays the opening** with no help — How to play, the role screen, the first turn — the last 48 h.
+- [ ] **No debug in the build**: no `console.log`, dev pages 404 on the live URL (checked 2026-10-14: clean).
+- [ ] **Share preview**: the WhatsApp link preview shows the cover and one clear line (Open Graph image + text).
+- [ ] **Press kit**: 6+ real screenshots, a 60–90 s gameplay trailer that hooks in the first 5 s, short clips for social.
+- [ ] **Launch messages drafted** (WhatsApp, Instagram, the group invite) so the day is only "send".
+- [ ] **Known issues** written down and visible, so players see it's being handled.
+- [ ] **Week 1**: read every report and every real-game log; the most common complaint shapes the first update.
+
+## 8. Voice (added 2026-10-14 — voice-app patterns)
+- [ ] **Push-to-talk is the default**; open mic is a choice in ☰. Nobody's room is broadcast by surprise.
+- [ ] Every seat shows its **mic state** (off / speaking) right on the seat; anyone can be muted for me only.
+- [ ] Your own floor (an answer to an accusation) and last words open the mic by themselves.
+- [ ] Text for everything said by voice that matters (claims are on the table as marks; captions when on).
 
 ---
 

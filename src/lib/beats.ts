@@ -19,6 +19,8 @@ export interface Beat {
   cards?: Card[];         // cards shown face up (Talashi, an eliminated hand)
   /** (designer 2026-10-13 evening: "explanations can be tabular") who → what, one row each */
   rows?: [string, string][];
+  /** Dal Badal: the three seats whose role cards were shuffled (the table moment flies a card to each) */
+  seats?: number[];
   tally?: Record<string, number>;          // vote_result: votes per seat
   ballots?: Record<string, number | null>; // vote_result: who voted whom (null = abstained)
   lastWords?: boolean;    // eliminated: a human gets 10 s of last words before the ejection
@@ -77,7 +79,7 @@ function rawBeat(e: GameEvent, names: string[], history: GameEvent[]): Beat | nu
     case "kundli":
       return { ...base, card: "KUNDLI", title: `${nm(actor)} reads ${nm(target)}'s Kundli`, tone: "relic", big: true, hold: BIG };
     case "kundli_private":
-      return { ...base, card: "KUNDLI", title: `${nm(target)} is ${String(d?.role)}`, detail: `${d?.side === "T" ? "A thief." : "A villager."} They saw yours too.`, tone: "relic", big: true, hold: BIG };
+      return { ...base, card: "KUNDLI", role: String(d?.role ?? ""), title: `${nm(target)} is ${String(d?.role)}`, detail: `${d?.side === "T" ? "A thief." : "A villager."} They saw yours too.`, tone: "relic", big: true, hold: BIG };
     case "talashi":
       return { ...base, card: "TALASHI", title: `${nm(actor)} searches ${nm(target)}`, detail: "Only they see the cards.", tone: "relic", big: true, hold: BIG };
     case "talashi_private":
@@ -103,7 +105,8 @@ function rawBeat(e: GameEvent, names: string[], history: GameEvent[]): Beat | nu
     case "ballots_open":
       return { ...base, title: "The floor closes", detail: "Vote now — every vote shows on the table as it is cast.", tone: "vote", big: true, hold: 1600 };
     case "final_vote":
-      return { ...base, title: "The last round is over", detail: "Mandatory vote — talk, then vote.", tone: "vote", big: true, hold: BIG };
+      // (designer 2026-10-14) its intro film tells the Stone rules (Cinematic.tsx FinalVote: 180 frames at 0.75 = 8 s)
+      return { ...base, title: "The last round is over", detail: "Mandatory vote — talk, then vote.", tone: "vote", big: true, hold: 8400 };
     case "vote_result": {
       const out = num(d, "out");
       return { ...base, target: out, title: out === undefined || d?.out === null ? "Nobody is out" : `${nm(out)} is voted out`, detail: out === undefined || d?.out === null ? "The vote was tied or empty." : undefined, result: d?.out === null ? "none" : "out", tally: (d?.tally as Record<string, number>) ?? {}, ballots: (d?.ballots as Record<string, number | null>) ?? {}, tone: "vote", big: true, hold: BIG };
@@ -115,11 +118,11 @@ function rawBeat(e: GameEvent, names: string[], history: GameEvent[]): Beat | nu
       return { ...base, actor: num(d, "killer") ?? undefined, target: actor, title: `${nm(actor)} was ${String(d?.role)}`, detail: d?.side === "T" ? "A thief." : "A villager.", result: "out", tone: d?.side === "T" ? "relic" : "lethal", big: true, hold: BIG + (d?.lastWords ? LAST_WORDS_MS : 0), lastWords: Boolean(d?.lastWords) };
     case "eliminated_private":
       // only the Teer Kaman shooter or the Faisla caller sees the role
-      return { ...base, target: actor, title: `${nm(actor)} was ${String(d?.role)}`, detail: d?.side === "T" ? "A thief. Only you know." : "A villager. Only you know.", tone: d?.side === "T" ? "relic" : "lethal", big: true, hold: BIG };
+      return { ...base, target: actor, role: String(d?.role ?? ""), title: `${nm(actor)} was ${String(d?.role)}`, detail: d?.side === "T" ? "A thief. Only you know." : "A villager. Only you know.", tone: d?.side === "T" ? "relic" : "lethal", big: true, hold: BIG };
     case "dal_badal": {
       const others = ((d?.seats as number[]) ?? []).filter((x) => x !== actor).map((x) => nm(x));
       const when = d?.when === "voted_out" ? " Voted out — before the reveal." : "";
-      return { ...base, title: `Dal Badal — ${nm(actor)} is ${String(d?.role)}!`, detail: `A thief. Role cards shuffled with ${others.join(" and ")} — each picks one back, face down.${when}`, tone: "lethal", big: true, hold: BIG };
+      return { ...base, seats: (d?.seats as number[]) ?? [], title: `Dal Badal — ${nm(actor)} is ${String(d?.role)}!`, detail: `A thief. Role cards shuffled with ${others.join(" and ")} — each picks one back, face down.${when}`, tone: "lethal", big: true, hold: BIG };
     }
     case "dal_badal_done":
       return { ...base, title: "Dal Badal done", tone: "neutral", big: false, hold: SMALL };
@@ -131,7 +134,8 @@ function rawBeat(e: GameEvent, names: string[], history: GameEvent[]): Beat | nu
     case "handoff_private":
       return { ...base, title: `${nm(actor)}'s cards to ${nm(target)}`, cards: (d?.cards as Card[]) ?? [], tone: "neutral", big: true, hold: BIG - 600, private: true };
     case "to_village":
-      return { ...base, title: `${nm(actor)}'s cards to the village`, detail: "A thief's Stone voted out counts for Tunga.", cards: (d?.cards as Card[]) ?? [], tone: "vote", big: true, hold: BIG };
+      // (2026-10-14) only speak of a Stone when one really went
+      return { ...base, title: `${nm(actor)}'s cards to the village`, detail: ((d?.cards as Card[]) ?? []).some((c) => c.startsWith("STONE")) ? "A thief's Stone voted out counts for Tunga." : "No Stone among them.", cards: (d?.cards as Card[]) ?? [], tone: "vote", big: true, hold: BIG };
     case "to_thieves":
       return { ...base, title: `${nm(actor)}'s Stone to the thieves`, detail: "A villager voted out — their Stone counts for the thieves.", cards: (d?.cards as Card[]) ?? [], tone: "lethal", big: true, hold: BIG };
     case "defend":

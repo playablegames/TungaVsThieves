@@ -1,19 +1,23 @@
 "use client";
+// DEV ONLY — every film back to back, for screen checks (recorded to video for the designer). Production: 404.
 import { useEffect, useState } from "react";
-import type { Beat } from "@/lib/beats";
-import { CinematicOverlay, FinaleBackdrop, NightfallOverlay } from "@/components/Cinematic";
+import { CardFilm, FinaleBackdrop, FinalVoteOverlay, NightfallOverlay, type CineKind } from "@/components/Cinematic";
 
-const beat = (type: string, result?: Beat["result"]): Beat => ({ n: 0, type, title: "", tone: "neutral", big: true, hold: 0, private: false, result });
+function card(kind: CineKind, hit = true) {
+  return function CardReel() { return <div className="fixed inset-0"><CardFilm kind={kind} hit={hit} /></div>; };
+}
 const REEL: { label: string; ms: number; el: () => React.ReactNode }[] = [
-  { label: "Teer Kaman — HIT", ms: 2100, el: () => <CinematicOverlay beat={beat("teer_kaman", "hit")} /> },
-  { label: "Teer Kaman — MISS", ms: 2100, el: () => <CinematicOverlay beat={beat("teer_kaman", "miss")} /> },
-  { label: "Kundli", ms: 2100, el: () => <CinematicOverlay beat={beat("kundli")} /> },
-  { label: "Bhukamp", ms: 2100, el: () => <CinematicOverlay beat={beat("batwara")} /> },
-  { label: "Hera Pheri", ms: 2100, el: () => <CinematicOverlay beat={beat("hera_pheri")} /> },
-  { label: "Talashi", ms: 2100, el: () => <CinematicOverlay beat={beat("talashi")} /> },
-  { label: "Faisla", ms: 2100, el: () => <CinematicOverlay beat={beat("faisla")} /> },
-  { label: "Dal Badal", ms: 2100, el: () => <CinematicOverlay beat={beat("dal_badal")} /> },
-  { label: "Nightfall — round 2", ms: 2400, el: () => <NightfallOverlay round={2} /> },
+  { label: "Round 2 intro", ms: 4000, el: () => <NightfallOverlay round={2} rounds={3} /> },
+  { label: "Round 3 intro — the last round", ms: 4000, el: () => <NightfallOverlay round={3} rounds={3} /> },
+  { label: "Mandatory vote intro — the Stone rules", ms: 8400, el: () => <FinalVoteOverlay /> },
+  { label: "Card film (How to play) — Teer Kaman HIT", ms: 4700, el: card("teer_kaman") },
+  { label: "Card film — Teer Kaman MISS", ms: 4700, el: card("teer_kaman", false) },
+  { label: "Card film — Kundli", ms: 4700, el: card("kundli") },
+  { label: "Card film — Bhukamp", ms: 4700, el: card("batwara") },
+  { label: "Card film — Hera Pheri", ms: 4700, el: card("hera_pheri") },
+  { label: "Card film — Talashi", ms: 4700, el: card("talashi") },
+  { label: "Card film — Faisla", ms: 4700, el: card("faisla") },
+  { label: "Card film — Dal Badal", ms: 4700, el: card("dal_badal") },
   { label: "Game over — village wins", ms: 3600, el: () => <FinaleBackdrop village /> },
   { label: "Game over — thieves win", ms: 3600, el: () => <FinaleBackdrop village={false} /> },
 ];

@@ -8,6 +8,10 @@ import { roleArt } from "./CardIcon";
 import { CardIcon } from "./CardIcon";
 import { PlayedPair } from "./Hand";
 import { TapOn } from "./ui";
+import { useEffect } from "react";
+import { play } from "@/lib/sfx";
+
+const TALLY_STEP = 420;
 
 const TITLE: Record<Tone, string> = {
   vote: "text-[#f3c66b]", lethal: "text-crimson-soft", relic: "text-jade-soft", gold: "text-[#f3c66b]", neutral: "text-stock",
@@ -26,6 +30,13 @@ const STAMP: Record<NonNullable<Beat["result"]>, { text: string; cls: string }> 
 export function Stage({ stage, skip, names, inline = false, small = false }: { stage: StageSnapshot; skip: () => void; names: string[]; inline?: boolean; small?: boolean }) {
   const b = stage.current;
   const tally = b?.tally ? Object.entries(b.tally).filter(([, k]) => k > 0).sort((x, y) => y[1] - x[1]) : [];
+  // each landing ballot chip rings a note higher than the last
+  const landing = b?.n ?? -1, chips = tally.length;
+  useEffect(() => {
+    if (!chips) return;
+    const ts = Array.from({ length: chips }, (_, i) => setTimeout(() => play("vote", i + 1), 300 + i * TALLY_STEP));
+    return () => ts.forEach(clearTimeout);
+  }, [landing, chips]);
   return (
     <>
       {/* screen readers hear every beat; nobody has to watch the screen to follow the table */}
@@ -38,7 +49,7 @@ export function Stage({ stage, skip, names, inline = false, small = false }: { s
               <path d="M11 1l7 7-7 7-7-7z" fill="#1a0e06" stroke="#e0a24a" strokeWidth="1.4" /><path d="M11 5l3 3-3 3-3-3z" fill="#e0a24a" />
             </svg>
             {b.private && <p className="mb-2 font-[family-name:var(--font-engraved)] text-[11px] font-semibold uppercase tracking-[0.2em] text-jade-soft">Only you see this</p>}
-            {b.card && !small && <div className="mb-2"><PlayedPair c={b.card} /></div>}
+            {b.card && !small && !(b.role && roleArt(b.role)) && <div className="mb-2"><PlayedPair c={b.card} /></div>}
             {b.role && roleArt(b.role) && (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={roleArt(b.role)!} alt="" className={`stage-card mx-auto mb-2 rounded-lg shadow-[0_12px_28px_-8px_rgba(0,0,0,.9)] ${inline ? "w-16" : "w-28"}`} />
@@ -53,8 +64,9 @@ export function Stage({ stage, skip, names, inline = false, small = false }: { s
             ) : b.detail && <p className={`mt-1 font-display leading-snug text-stock/80 ${inline ? "text-[13px]" : "text-[15px]"}`}>{b.detail}</p>}
             {tally.length > 0 && (
               <ul className="mt-3 flex flex-wrap justify-center gap-1.5">
-                {tally.map(([x, k]) => (
-                  <li key={x} className="rounded-full border border-brass/50 bg-black/30 px-2.5 py-0.5 text-[13px] text-stock"><b className="text-[#f3c66b]">{k}</b> {names[Number(x)] ?? "?"}</li>
+                {/* (2026-10-14, Balatro study: score lands one piece at a time, each a note higher) fewest first, the winner last */}
+                {[...tally].reverse().map(([x, k], i) => (
+                  <li key={x} className="pop rounded-full border border-brass/50 bg-black/30 px-2.5 py-0.5 text-[13px] text-stock" style={{ animationDelay: `${300 + i * TALLY_STEP}ms` }}><b className="text-[#f3c66b]">{k}</b> {names[Number(x)] ?? "?"}</li>
                 ))}
               </ul>
             )}

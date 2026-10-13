@@ -794,6 +794,26 @@ export async function defend(code: string, token: string | null, body: { kind?: 
   });
 }
 
+/** REPORTS (release checklist 2026-10-14: crash reporting + "a way to report a problem"): a crash a phone caught, or a
+ *  problem a player typed. With a game code it is kept in that game's own log as a server-only line (`to: []` — no phone
+ *  ever sees it; learn-from-games and the logs do); always printed to the server log too. Never the player's token. */
+export async function report(body: { kind?: unknown; code?: unknown; text?: unknown; where?: unknown }) {
+  const kind = body.kind === "player" ? "player" : "crash";
+  const text = String(body.text ?? "").slice(0, 2000).trim();
+  if (!text) throw new HttpError(400, "Say what happened");
+  const where = String(body.where ?? "").slice(0, 300);
+  console.error(JSON.stringify({ report: kind, code: body.code ?? null, where, text: text.slice(0, 500) }));
+  const code = typeof body.code === "string" ? body.code.toUpperCase().slice(0, 8) : "";
+  if (!code) return;
+  await mutate(code, (row) => {
+    if (!row.state) return row;
+    const n = row.state.events.filter((e) => e.type === "report").length;
+    if (n >= 50) return row; // a broken phone in a loop never floods the log
+    row.state.events.push({ n: row.state.events.length, type: "report", to: [], msg: text, data: { kind, where } });
+    return row;
+  }).catch(() => {});
+}
+
 /** SPEED (designer 2026-10-12): the host sets 1× or 2× for everyone; anyone else asks, and the host says yes or no. */
 export async function setSpeed(code: string, token: string | null, body: unknown) {
   const b = (body ?? {}) as { speed?: unknown; answer?: unknown };

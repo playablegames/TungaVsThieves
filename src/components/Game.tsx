@@ -12,6 +12,7 @@ import type { Action, Card, GameEvent, Side } from "@/engine/types";
 import type { StoneStep } from "@/engine/stonepath";
 import { MIN_PLAYERS, THIEF_ROLES, VILLAGER_ROLES } from "@/engine/setup";
 import { openAccusation, type Accusation, type DefendKind } from "@/lib/defend";
+import { report as reportIssue } from "@/lib/report";
 import type { PlayerView, PublicPlayer } from "@/engine/view";
 import type { ClientState } from "@/server/game";
 import { useStage } from "@/lib/stage";
@@ -36,7 +37,9 @@ import { useCaptions } from "@/lib/captions";
 import { cut, say, setQuiet, useReading } from "@/lib/speech";
 import { alertSupport, disableAlerts, enableAlerts, useAlertPresence } from "@/lib/alerts";
 import { fx, juiceFor } from "@/lib/fx";
-import { CINEMATIC, CinematicOverlay, FinaleBackdrop, NightfallOverlay } from "./Cinematic";
+import { TableMoment, TABLE_MOMENTS, IMPACT_MS } from "./TableMoment";
+import { FinaleBackdrop, FinalVoteOverlay, NightfallOverlay } from "./Cinematic";
+import type { Beat } from "@/lib/beats";
 
 type VoiceCtl = ReturnType<typeof useVoice>;
 
@@ -75,7 +78,9 @@ export default function Game({ code }: { code: string }) {
   // an update (the Sutradhar) has priority over voice chat: mic held, the table ducked under it — even mid push-to-talk
   // (designer 2026-10-12) a player who is out watches in silence — their mic stays shut, except for their last words
   const outSilent = st?.status === "playing" && st.view && !st.view.me.alive && !(lw && lw.seat === me);
-  const held = Boolean(outSilent || (fl && fl.seat !== me) || (lw && lw.seat !== me) || (ptt.on && !ptt.down) || reading === "update" || (reading === "talk" && !ptt.down));
+  // your own floor (an accusation answered, a debate turn) or your last words open the mic by themselves — no button to hold
+  const ownFloor = Boolean((fl && fl.seat === me) || (lw && lw.seat === me));
+  const held = Boolean(outSilent || (fl && fl.seat !== me) || (lw && lw.seat !== me) || (ptt.on && !ptt.down && !ownFloor) || reading === "update" || (reading === "talk" && !ptt.down && !ownFloor));
   const duckTable = voice.duck;
   useEffect(() => { duckTable(reading === "update"); }, [reading, duckTable]);
   const setHeld = voice.setHeld;
@@ -455,6 +460,7 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
   useEffect(() => () => stopMusic(), []);
   // every big moment gets its sound, the narrator's line, a shake and a buzz (research 2026-10-07)
   const beat = stage.current;
+  const speedNow = s.timers.speed ?? 1;
   // nightfall plays only for a round that starts while this phone watches (not on a reload mid-round)
   const [startRound] = useState(v.round);
   useEffect(() => {
@@ -468,10 +474,16 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
     else if (SOUND[beat.type]) play(SOUND[beat.type]!);
     narrate(beat);
     // THE JUICE (lib/fx.ts): particles, a stamped word, the shake, the hit flash, the burn — the same beat on every phone
-    juiceFor(beat, CINEMATIC.has(beat.type));
+    // (designer 2026-10-14: "couldn't see any text effects") they used to fire UNDER a full-screen film — invisible.
+    // (2026-10-14, after the research study) no cutaway any more: the moment plays ON the table (TableMoment.tsx) and
+    // the word, the shake and the sparks land at its moment of impact
+    const strike = IMPACT_MS[beat.type];
+    const land = strike ? setTimeout(() => juiceFor(beat), Math.round(strike / speedNow)) : undefined;
+    if (!strike) juiceFor(beat);
     const hard = beat.type === "eliminated" || beat.type === "batwara" || (beat.type === "teer_kaman" && beat.result === "hit");
     if (hard) buzz(beat.type === "eliminated" ? [90, 60, 220] : [60, 40, 60]);
-  }, [beat, names]);
+    return () => { if (land) clearTimeout(land); };
+  }, [beat, names]); // eslint-disable-line react-hooks/exhaustive-deps
   // talking? the effects step back so voices stay on top
   const talkingNow = voice.speaking || Object.values(voice.peers).some((p) => p.speaking && !p.hushed);
   useEffect(() => { duck(talkingNow); musicDuck(talkingNow); }, [talkingNow]);
@@ -520,8 +532,9 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
   return (
     <div ref={root} data-juice-root className="flex min-h-0 flex-1 flex-col">
       {/* the films (Cinematic.tsx): a big moment, and nightfall when a new round begins */}
-      {beat && CINEMATIC.has(beat.type) && <CinematicOverlay key={beat.n} beat={beat} speed={s.timers.speed ?? 1} />}
-      {v.round > startRound && <NightfallOverlay key={`night-${v.round}`} round={v.round} speed={s.timers.speed ?? 1} />}
+      {/* a new round's intro (round 3 = THE LAST ROUND) — and after it, the mandatory vote's intro with its Stone rules */}
+      {v.round > startRound && v.round <= v.rounds && <NightfallOverlay key={`night-${v.round}`} round={v.round} rounds={v.rounds} speed={s.timers.speed ?? 1} />}
+      {beat?.type === "final_vote" && <FinalVoteOverlay key={`final-${beat.n}`} speed={s.timers.speed ?? 1} />}
       {ejected && beat && (
         <Eject key={beat.n} name={ejected.name.replace(/\s*🤖$/, "")} initials={initialsOf(names)[ejected.seat]} colour={SEAT_COLOURS[ejected.seat % SEAT_COLOURS.length]}
           thief={beat.tone === "relic"} role={ejected.revealedRole} onDone={stage.skip} speed={s.timers.speed ?? 1} lastWords={Boolean(beat.lastWords)} mine={ejected.seat === v.me.seat}
@@ -551,7 +564,7 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
         <SpeedAsk code={code} token={token} name={v.players[s.timers.speedAsk]?.name.replace(/\s*🤖$/, "") ?? "A player"} />
       )}
 
-      <Ring v={v} voice={voice} onHistory={setHistory} hint={!v.tutorial && v.me.alive && !tipsSeen.includes("seats")} talking={bots.current?.seat ?? null} floorSeat={s.floor && s.floor.until > now() ? s.floor.seat : null} actor={headline?.actor} target={headline?.target} pick={v.decision?.kind === "vote" ? v.decision.mine ?? null : null} tally={live ?? voteShown?.tally}
+      <Ring v={v} voice={voice} moment={beat && TABLE_MOMENTS.has(beat.type) ? beat : null} speed={s.timers.speed ?? 1} onHistory={setHistory} hint={!v.tutorial && v.me.alive && !tipsSeen.includes("seats")} talking={bots.current?.seat ?? null} floorSeat={s.floor && s.floor.until > now() ? s.floor.seat : null} actor={headline?.actor} target={headline?.target} pick={v.decision?.kind === "vote" ? v.decision.mine ?? null : null} tally={live ?? voteShown?.tally}
         flying={flying} onThrow={s.status === "playing" && v.me.alive ? throwAt : undefined}
         away={s.away} marks={marks} onMark={setMark}
         onClaim={s.status === "playing" && v.me.alive ? claimAt : undefined}>
@@ -601,7 +614,11 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
           )}
             </div>
           </details>
-          <Link href="/" className="text-center text-[13px] text-stock/60 underline">Leave this table</Link>
+          <ReportProblem />
+          <div className="flex justify-center gap-5 text-[13px] text-stock/60">
+            <Link href="/privacy" className="underline">Privacy</Link>
+            <Link href="/" className="underline">Leave this table</Link>
+          </div>
         </Sheet>
       )}
     </div>
@@ -638,7 +655,7 @@ function TalkButton({ up = false }: { up?: boolean }) {
     <button type="button" aria-label="Hold to talk" onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); setTalking(true); }}
       onPointerUp={() => setTalking(false)} onPointerCancel={() => setTalking(false)} onContextMenu={(e) => e.preventDefault()}
       className={`fixed ${up ? "top-16" : "bottom-[34%]"} right-3 z-30 grid h-16 w-16 select-none place-items-center rounded-full border-2 text-[26px] shadow-[0_8px_20px_rgba(0,0,0,.7)] [-webkit-touch-callout:none] ${p.down ? "speaking border-jade bg-jade-deep" : "border-brass/70 bg-ember"}`}>
-      🎙️
+      <span className="flex flex-col items-center leading-none">🎙️<span className="mt-0.5 text-[9px] font-extrabold uppercase tracking-wide text-stock/85">{p.down ? "Live" : "Hold"}</span></span>
     </button>
   );
 }
@@ -656,8 +673,8 @@ function RolePeek({ v }: { v: PlayerView }) {
 }
 
 /** Seats on an oval in turn order, you at the bottom, a thin brass line joining them. */
-function Ring({ v, voice, talking, floorSeat = null, actor, target, pick, tally, flying = [], away = [], marks = {}, onMark, onThrow, onPick, onClaim, onHistory, hint = false, children }: {
-  v: PlayerView; voice: VoiceCtl; talking: number | null; floorSeat?: number | null; actor?: number; target?: number; pick: number | null; tally?: Record<string, number>;
+function Ring({ v, voice, moment = null, speed = 1, talking, floorSeat = null, actor, target, pick, tally, flying = [], away = [], marks = {}, onMark, onThrow, onPick, onClaim, onHistory, hint = false, children }: {
+  v: PlayerView; voice: VoiceCtl; moment?: Beat | null; speed?: number; talking: number | null; floorSeat?: number | null; actor?: number; target?: number; pick: number | null; tally?: Record<string, number>;
   flying?: Throw[]; away?: number[]; marks?: Record<number, Mark>; onMark?: (seat: number, m: Mark | null) => void; onThrow?: (seat: number, emoji: string) => void; onPick?: (seat: number) => void;
   onClaim?: (kind: "kundli" | "stone", seat: number, role?: string, has?: boolean) => void; onHistory?: (seat: number) => void; hint?: boolean; children: React.ReactNode;
 }) {
@@ -737,6 +754,7 @@ function Ring({ v, voice, talking, floorSeat = null, actor, target, pick, tally,
           onHistory={onHistory ? () => { onHistory(picker); setPicker(null); } : undefined} />
       )}
       <CardFlights v={v} pos={pos} />
+      {moment && <TableMoment key={moment.n} beat={moment} pos={pos} speed={speed} />}
       {flying.map((t) => {
         const f = pos(t.from), to = pos(t.to);
         return <span key={t.id} aria-hidden className="throw z-40 text-[34px]"
@@ -1560,6 +1578,23 @@ function AccuseSheet({ v, seat, said, seen, mark, onClose, onClaim, onMark, onTh
         </div>
       </div>
     </div>
+  );
+}
+
+/** REPORT A PROBLEM (release checklist 2026-10-14): a few words, sent with this table's code — kept in the game's own log */
+function ReportProblem() {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [state, setState] = useState<"idle" | "busy" | "sent">("idle");
+  if (state === "sent") return <p className="text-center text-[14px] text-jade-soft">Thanks — we&rsquo;ve got it.</p>;
+  if (!open) return <button type="button" onClick={() => setOpen(true)} className="min-h-11 rounded-2xl border border-brass/40 px-4 text-left text-[14px] text-stock">🐞 Report a problem</button>;
+  return (
+    <form className="flex flex-col gap-2" onSubmit={(e) => { e.preventDefault(); if (!text.trim()) return; setState("busy"); void reportIssue("player", text.trim()).then(() => setState("sent")); }}>
+      <label htmlFor="report-text" className="text-[13px] text-stock/70">What went wrong? (no need for names)</label>
+      <textarea id="report-text" value={text} onChange={(e) => setText(e.target.value)} rows={3} maxLength={2000}
+        className="rounded-xl border border-brass/50 bg-black/40 p-3 text-[15px] text-stock outline-none focus:border-jade" />
+      <button type="submit" disabled={!text.trim() || state === "busy"} className="nudge min-h-11 rounded-full text-[14px] font-extrabold uppercase tracking-wide disabled:opacity-50">{state === "busy" ? "Sending…" : "Send"}</button>
+    </form>
   );
 }
 

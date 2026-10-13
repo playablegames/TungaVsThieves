@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Cinzel, Playfair_Display, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
+import { CrashWatch } from "@/components/CrashWatch";
 
 // DESIGN.md: Playfair Display for roles, banners and reveals (roman only); Plus Jakarta Sans for everything you tap or read fast
 const playfair = Playfair_Display({ variable: "--font-playfair", subsets: ["latin"], weight: ["400", "700", "900"], style: ["normal"] });
@@ -19,7 +20,7 @@ export const viewport: Viewport = { width: "device-width", initialScale: 1, view
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${playfair.variable} ${cinzel.variable} ${jakarta.variable} h-full antialiased`}>
-      <body className="min-h-dvh">{children}</body>
+      <body className="min-h-dvh"><CrashWatch />{children}</body>
     </html>
   );
 }

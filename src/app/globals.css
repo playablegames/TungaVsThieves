@@ -74,6 +74,12 @@ body {
 @keyframes nudge-ring { 0% { box-shadow: 0 0 0 0 rgba(46,204,113,.65); } 70% { box-shadow: 0 0 0 12px rgba(46,204,113,0); } 100% { box-shadow: 0 0 0 0 rgba(46,204,113,0); } }
 .nudge { background: linear-gradient(180deg, #34d27a 0%, #1f9d55 100%) !important; color: #06210f !important; border-color: #8ff0b6 !important; animation: nudge-ring 1.8s ease-out infinite; }
 .nudge-ring { animation: nudge-ring 1.8s ease-out infinite; border-radius: 6px; }
+/* IDLE LIFE (2026-10-14, the Balatro study: cards never sit still) — each hand card breathes; the fan leans toward
+   your finger. Small on purpose: 3 px and half a degree. */
+@keyframes idle-float { 0%, 100% { transform: translateY(0) rotate(-.5deg); } 50% { transform: translateY(-3px) rotate(.5deg); } }
+.idle-float { animation: idle-float 3.4s ease-in-out infinite; }
+.hand-tilt { transform: perspective(900px) rotateX(var(--ty, 0deg)) rotateY(var(--tx, 0deg)); transition: transform .25s ease-out; }
+@media (prefers-reduced-motion: reduce) { .idle-float { animation: none; } .hand-tilt { transform: none; } }
 /* TAP ON (designer 2026-10-13 evening): every screen says "tap to continue" in green and drains its own clock */
 @keyframes drain { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 .drain { transform-origin: left; animation: drain var(--ms, 2000ms) linear both; }

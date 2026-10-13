@@ -7,9 +7,7 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { startHomeMusicOnFirstTap, stopHomeMusic } from "@/lib/music";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api, saveToken, useHydrated } from "@/lib/client";
-import { CARD } from "@/lib/cards";
-import { CardIcon } from "@/components/CardIcon";
-import type { Card } from "@/engine/types";
+import { HowToPlay } from "@/components/HowToPlay";
 
 const NAME_KEY = "tunga:name";
 const LEARNED = "tunga:learned";
@@ -155,7 +153,10 @@ function Entry() {
         )}
 
         {error && !ask && <p role="alert" className="rounded-xl bg-crimson-deep p-3 text-center text-[14px]">{error}</p>}
-        <button type="button" onClick={() => setRules(true)} className="mx-auto min-h-11 px-4 text-[15px] font-semibold text-brass underline underline-offset-4">How to play</button>
+        <div className="flex items-center justify-center gap-2">
+          <button type="button" onClick={() => setRules(true)} className="min-h-11 px-4 text-[15px] font-semibold text-brass underline underline-offset-4">How to play</button>
+          <a href="/privacy" className="min-h-11 px-4 py-2.5 text-[13px] text-stock/60 underline underline-offset-4">Privacy</a>
+        </div>
       </div>
       {rules && <HowToPlay onClose={() => setRules(false)} onLearn={() => { setRules(false); choose("learn"); }} />}
 
@@ -194,59 +195,3 @@ function Entry() {
   );
 }
 
-/** HOW TO PLAY (2026-10-09 — research: Court of Shadows and Wingspan teach before the first game). Everything here is the
- *  game's own text: the win lines from the Stones screen, the turn as the engine plays it, the printed card texts. */
-function HowToPlay({ onClose, onLearn }: { onClose: () => void; onLearn: () => void }) {
-  const cards: Card[] = ["FAISLA", "KUNDLI", "TALASHI", "HERA_PHERI", "BATWARA", "TEER_KAMAN", "DAL_BADAL"];
-  const h = "font-[family-name:var(--font-engraved)] text-[13px] font-bold uppercase tracking-[0.2em] text-brass";
-  return (
-    <div className="fixed inset-0 z-30 flex items-end justify-center bg-black/60" onClick={onClose}>
-      <div role="dialog" aria-labelledby="htp" onClick={(e) => e.stopPropagation()}
-        className="stage-in flex max-h-[88dvh] w-full max-w-md flex-col gap-4 overflow-y-auto rounded-t-3xl border-t-2 border-brass/70 bg-ember px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-5 text-[15px] leading-snug text-stock">
-        <h2 id="htp" className="text-center font-display text-[26px] font-bold">How to play</h2>
-        <button type="button" onClick={onLearn} className="min-h-12 rounded-full bg-[#f0a32e] font-[family-name:var(--font-engraved)] text-[15px] font-bold uppercase tracking-[0.1em] text-card-ink">🧑‍🏫 Learn by playing</button>
-        <section>
-          <p className={h}>The two Stones</p>
-          <p className="mt-1">Everyone is secretly a <b>villager</b> or a <b>thief</b>. Two Stones are hidden in the cards.</p>
-          <p className="mt-1"><b className="text-[#f3c66b]">Both Stones with the villagers — Tunga wins.</b><br /><b className="text-crimson-soft">Any Stone with a thief — Thieves win.</b></p>
-        </section>
-        <section>
-          <p className={h}>Your turn</p>
-          <p className="mt-1">Pick up the cards passed to you. Play a <b>matching pair</b> to use its power — or play nothing. Then pass 3 cards to the next player.</p>
-          <p className="mt-1">Put out by a <b>Faisla</b> or a <b>Teer Kaman</b>? Your 2 cards go to the player who called it or shot — they take them instead of drawing. Everyone holds 2.</p>
-        </section>
-        <section>
-          <p className={h}>The cards</p>
-          <ul className="mt-2 flex flex-col gap-2">
-            {cards.map((c) => (
-              <li key={c} className="flex gap-3"><CardIcon c={c} className="w-7 shrink-0" />
-                <span><b>{CARD[c].name}</b> — {CARD[c].text}</span></li>
-            ))}
-            <li className="flex gap-3"><CardIcon c="STONE_1" className="w-7 shrink-0" /><span><b>Stones</b> — {CARD.STONE_1.text}</span></li>
-          </ul>
-        </section>
-        <section>
-          <p className={h}>Talk</p>
-          <p className="mt-1">Talk out loud. Tap any player to tell the table <b>🌾 Villager, 🫵 Thief, 🔮 their role or 💎 Stone</b> — true or a lie.</p>
-        </section>
-        <section>
-          <p className={h}>The screen</p>
-          <ul className="mt-1 flex flex-col gap-1.5">
-            <li><b>The middle</b> — the table&rsquo;s diary: every move, claim and vote. Tap it to see everything.</li>
-            <li><b>Tap a player</b> — 🌾 Villager · 🫵 Thief · 🔮 Role · 💎 Stone (true or a lie), or throw 🍅 😂 🔥.</li>
-            <li><b>Mark ✓ ! ?</b> — your private note on a player. Only you see it.</li>
-            <li><b>Under a name</b> — 🫵 / 🌾 how often called a thief / a villager; 💎✓/✗ said to hold a Stone.</li>
-            <li><b>On a player</b> — the number is cards held, dots are extra votes, 💤 is away.</li>
-            <li><b>Tap yourself</b> — quick lines like &ldquo;Not me!&rdquo;</li>
-            <li><b>Top</b> — ☰ menu (peek at your role, sound, alerts), 🎙 your mic, the history, the clock.</li>
-          </ul>
-        </section>
-        <section>
-          <p className={h}>The end</p>
-          <p className="mt-1">After 3 rounds, a last vote. Vote out a thief holding a Stone and the village gets it — vote out a villager holding one and <b>it goes to the thieves</b>. Then every role and hand is shown — <b>Thieves win if a Stone is theirs.</b></p>
-        </section>
-        <button type="button" onClick={onClose} className="min-h-12 rounded-full border-2 border-brass/80 font-[family-name:var(--font-engraved)] text-[15px] font-bold uppercase tracking-[0.12em]">Got it</button>
-      </div>
-    </div>
-  );
-}
