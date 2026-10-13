@@ -34,6 +34,7 @@ import { useFeed, CAPTION_PREFIX, QUICK_PREFIX, type FeedItem } from "@/lib/feed
 import { useCaptions } from "@/lib/captions";
 import { cut, say, setQuiet, useReading } from "@/lib/speech";
 import { alertSupport, disableAlerts, enableAlerts, useAlertPresence } from "@/lib/alerts";
+import { fx, juiceFor } from "@/lib/fx";
 
 type VoiceCtl = ReturnType<typeof useVoice>;
 
@@ -447,13 +448,10 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
     if (beat.type === "teer_kaman") play("arrow", beat.result === "hit");
     else if (SOUND[beat.type]) play(SOUND[beat.type]!);
     narrate(beat);
+    // THE JUICE (lib/fx.ts): particles, a stamped word, the shake, the hit flash, the burn — the same beat on every phone
+    juiceFor(beat);
     const hard = beat.type === "eliminated" || beat.type === "batwara" || (beat.type === "teer_kaman" && beat.result === "hit");
-    if (hard && root.current) {
-      root.current.classList.remove("shake");
-      void root.current.offsetWidth; // restart the animation
-      root.current.classList.add("shake");
-      buzz(beat.type === "eliminated" ? [90, 60, 220] : [60, 40, 60]);
-    }
+    if (hard) buzz(beat.type === "eliminated" ? [90, 60, 220] : [60, 40, 60]);
   }, [beat, names]);
   // talking? the effects step back so voices stay on top
   const talkingNow = voice.speaking || Object.values(voice.peers).some((p) => p.speaking && !p.hushed);
@@ -501,7 +499,7 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
   const living = v.players.filter((p) => p.alive);
   const ejected = beat?.type === "eliminated" && beat.target !== undefined ? v.players[beat.target] : null;
   return (
-    <div ref={root} className="flex min-h-0 flex-1 flex-col">
+    <div ref={root} data-juice-root className="flex min-h-0 flex-1 flex-col">
       {ejected && beat && (
         <Eject key={beat.n} name={ejected.name.replace(/\s*🤖$/, "")} initials={initialsOf(names)[ejected.seat]} colour={SEAT_COLOURS[ejected.seat % SEAT_COLOURS.length]}
           thief={beat.tone === "relic"} role={ejected.revealedRole} onDone={stage.skip} speed={s.timers.speed ?? 1} lastWords={Boolean(beat.lastWords)} mine={ejected.seat === v.me.seat}
@@ -669,7 +667,10 @@ function Ring({ v, voice, talking, floorSeat = null, actor, target, pick, tally,
   const faces = useMemo(() => seatFaces(v, said), [v, said]);
   return (
     <section className="relative mx-2 mt-5 min-h-[440px] flex-1" aria-label="The table">
-      <div className="absolute inset-x-[9%] inset-y-[8%] rounded-[50%] border border-brass/35" aria-hidden />
+      {/* depth: the felt sits sunk in its frame; light: the table darker toward its edges, a lantern on whoever acts */}
+      <div className="table-depth absolute inset-x-[9%] inset-y-[8%] rounded-[50%] border border-brass/35" aria-hidden />
+      <div className="vignette absolute inset-0" aria-hidden />
+      {lit !== null && <div className="lantern" style={{ left: `${pos(lit).x}%`, top: `${pos(lit).y}%` }} aria-hidden />}
       {beam && lit !== null && (
         <svg aria-hidden viewBox="0 0 100 100" preserveAspectRatio="none" className="pointer-events-none absolute inset-0 h-full w-full">
           <defs>
@@ -686,7 +687,7 @@ function Ring({ v, voice, talking, floorSeat = null, actor, target, pick, tally,
         const me = p.seat === v.me.seat;
         const peer = voice.peers[p.seat];
         return (
-          <div key={p.seat} className="absolute z-10 -translate-x-1/2 -translate-y-1/2"
+          <div key={p.seat} data-seat={p.seat} {...(me ? { "data-me-seat": "" } : {})} className="absolute z-10 -translate-x-1/2 -translate-y-1/2"
             style={{ left: `${50 + 41 * Math.cos(angle)}%`, top: `${50 + 42 * Math.sin(angle)}%` }}>
             <Seat p={p} me={me} size={size} face={faces[p.seat]} got={tally?.[p.seat]} tag={p.seat === actor ? "played" : p.seat === target ? "target" : undefined}
               spot={!voteOpen && v.waitingOn.includes(p.seat)}
@@ -883,7 +884,7 @@ function Seat({ p, me, size, face, got, tag, spot, voted, picked, speaking, micO
     </span>
   ) : null;
   return (
-    <div className={`relative flex flex-col items-center text-center ${z.w} ${p.alive ? "" : "opacity-45 grayscale"}`}>
+    <div className={`relative flex flex-col items-center text-center ${z.w} ${p.alive ? "" : "opacity-45 grayscale"} ${spot ? "turn-bounce" : ""}`}>
       {/* the play in the centre panel, on the ring: who played it, and at whom (12-player playtest: "who did what to whom") */}
       {tag && <span className={`absolute -top-3.5 z-20 rounded-full px-1.5 text-[9px] font-black uppercase tracking-wide ${tag === "played" ? "bg-[#f0a32e] text-card-ink" : "bg-crimson text-ink"}`}>{tag}</span>}
       {me && saidChip}
@@ -898,7 +899,7 @@ function Seat({ p, me, size, face, got, tag, spot, voted, picked, speaking, micO
         <img key={face.art} src={face.art} alt="" draggable={false}
           // (designer 2026-10-13: "the card back is too jarring") a face-down card sits quiet in the shadows — dimmed and
           // warmed — and lights up only on that player's turn, so "whose turn" reads at a glance
-          className={`flip-in h-full w-full rounded-[6px] object-cover transition-[filter] duration-300 ${face.kind === "rumour" ? "opacity-70 sepia" : ""}
+          className={`flip-in h-full w-full rounded-[6px] object-cover transition-[filter] duration-300 ${face.kind === "rumour" ? "opacity-70 sepia" : ""} ${spot && p.alive ? "sprite-outline" : tag === "target" ? "sprite-outline-red" : ""}
             ${!p.alive ? "grayscale brightness-[.45]" : (face.kind === "back" || face.kind === "rumour") && !spot ? "brightness-[.55] saturate-[.6] sepia-[.35]" : ""}`} />
         {face.kind === "rumour" && <span className="absolute left-1/2 top-1/2 grid h-5 w-5 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-black/70 text-[12px] font-black text-[#f3c66b]" aria-hidden>?</span>}
         {!p.alive && <span className="absolute inset-0 grid place-items-center rounded-[6px] bg-black/70 text-[22px] font-black text-stock/90" aria-hidden>✕</span>}
@@ -1134,6 +1135,8 @@ function Final({ v, clips = [], host = false, hostName = "the host", onRematch }
   const name = (seat: number) => v.players[seat]?.name ?? "?";
   // the end lands with a fanfare (or a wah-wah) once
   useEffect(() => { play(won ? "fanfare" : "sting"); void playSting(won); buzz(won ? [60, 40, 60, 40, 160] : 200); }, [won]);
+  // the end (juice): marigold petals fall on a village win; smoke rises when the thieves take a Stone
+  useEffect(() => { const t = setTimeout(() => (v.winner === "V" ? fx.petals() : fx.smoke()), 900); return () => clearTimeout(t); }, [v.winner]);
   // where each Stone ended: in a living player's hand, or with the village (the cards left on the table at the end,
   // and the cards of anyone the mandatory vote put out)
   const stoneAt = (c: Card) => {
@@ -1185,6 +1188,8 @@ function Final({ v, clips = [], host = false, hostName = "the host", onRematch }
             <div key={r.seat} role="listitem" className={`flip-in absolute z-10 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center text-center ${z.w}`}
               style={{ left: `${50 + 41 * Math.cos(angle)}%`, top: `${50 + 42 * Math.sin(angle)}%`, animationDelay: `${300 + k * 160}ms` }}
               aria-label={`${p.name}${me ? " (you)" : ""}: ${r.role}, ${thief ? "thief" : "Tunga"}${p.alive ? "" : ", out"}`}>
+              {/* wind sway (juice): every card on the ring swings gently, each in its own time */}
+              <div className="sway flex flex-col items-center" style={{ ["--sway-t" as string]: `${3 + (k % 4) * 0.35}s`, ["--sway-d" as string]: `${-(k * 0.7)}s` }}>
               {Boolean(finalTally[r.seat]) && <span className="absolute left-0 top-0 z-20 grid h-6 min-w-6 place-items-center rounded-full bg-crimson px-1 text-[12px] font-black text-ink ring-2 ring-ember" aria-label={`${finalTally[r.seat]} votes`}>{finalTally[r.seat]}</span>}
               <span className={`relative grid place-items-center rounded-full font-medium text-card-ink ${z.disc} ${me ? "outline-[3px] outline-offset-2 outline-jade" : ""} ${p.alive ? "" : "opacity-50 grayscale"}`}
                 style={{ background: SEAT_COLOURS[r.seat % SEAT_COLOURS.length], boxShadow: `0 0 0 3px ${thief ? "#c0392b" : "#e0a24a"}` }}>
@@ -1192,6 +1197,7 @@ function Final({ v, clips = [], host = false, hostName = "the host", onRematch }
               </span>
               <span className={`relative z-10 -mt-1 truncate rounded-full border bg-ember font-medium ${z.tag} ${me ? "border-2 border-jade text-jade-soft" : "border-brass/60 text-stock"}`}>{p.name}</span>
               <span className={`mt-0.5 truncate rounded px-1.5 font-[family-name:var(--font-engraved)] text-[10px] font-bold uppercase tracking-wide ${thief ? "bg-crimson-deep text-ink" : "bg-[#3a240c] text-[#f3c66b]"}`}>{r.role}</span>
+              </div>
             </div>
           );
         })}

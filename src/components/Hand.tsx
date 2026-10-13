@@ -78,7 +78,7 @@ function Tile({ c, glow, selected, label, dim, fresh, onTap, onDetail }: {
       onContextMenu={(e) => e.preventDefault()}
       onClick={() => { if (long.current) return; if (onTap) onTap(); else onDetail(); }}
       aria-label={`${k.name}: ${SHORT[c]}${label ? `, ${label}` : ""}. Hold for the full card.`} aria-pressed={onTap ? Boolean(selected) : undefined}
-      className={`relative flex aspect-[1060/906] w-full select-none ${fresh ? "card-in" : ""} flex-col items-center rounded-lg border text-center ${face ? "overflow-hidden p-0" : "justify-center px-1 py-1.5"} transition-transform duration-150 [-webkit-touch-callout:none]
+      className={`lift relative flex aspect-[1060/906] w-full select-none ${fresh ? "card-in" : ""} flex-col items-center rounded-lg border text-center ${face ? "overflow-hidden p-0" : "justify-center px-1 py-1.5"} transition-transform duration-150 [-webkit-touch-callout:none]
         bg-[#fbf3e1] text-card-ink shadow-[0_8px_18px_-8px_rgba(0,0,0,.8)] outline-1 outline-offset-[-4px] outline-dotted outline-[#b4461c]/60
         ${selected ? "-translate-y-2 border-[#f08a1c] ring-[3px] ring-[#f08a1c]" : glow ? "-translate-y-1 border-[#f0a32e] ring-2 ring-[#f0a32e] shadow-[0_0_16px_2px_rgba(240,163,46,.35)]" : "border-[#b4461c]"}
         ${dim ? "opacity-45" : ""}`}>
