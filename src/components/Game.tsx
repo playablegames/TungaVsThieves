@@ -851,9 +851,13 @@ function seatFaces(v: PlayerView, said: Record<number, SaidAbout>): Record<numbe
   for (const r of v.spectate ?? []) known.set(r.seat, r.role);
   const out: Record<number, SeatFace> = {};
   for (const p of v.players) {
+    const saw = seen.get(p.seat)?.role;
+    // (designer 2026-10-13: "the player voted out is still visible although you covered it") an out seat is the plain
+    // card back under its cover — no role you saw, no "I was …" rumour showing through. Tap still says what you saw.
+    // A player who is out and watching sees every card (spectate).
+    if (!p.alive && p.seat !== v.me.seat && !v.spectate) { out[p.seat] = { kind: "back", art: CARD_BACK, seen: saw }; continue; }
     const role = p.seat === v.me.seat ? v.me.role : known.get(p.seat);
     const art = roleArt(role);
-    const saw = seen.get(p.seat)?.role;
     if (p.seat === v.me.seat && art) out[p.seat] = { kind: "mine", art, role };
     else if (role && art) out[p.seat] = { kind: "known", art, role, seen: saw };
     else {
@@ -897,7 +901,7 @@ function Seat({ p, me, size, face, got, tag, spot, voted, picked, speaking, micO
           className={`flip-in h-full w-full rounded-[6px] object-cover transition-[filter] duration-300 ${face.kind === "rumour" ? "opacity-70 sepia" : ""}
             ${!p.alive ? "grayscale brightness-[.45]" : (face.kind === "back" || face.kind === "rumour") && !spot ? "brightness-[.55] saturate-[.6] sepia-[.35]" : ""}`} />
         {face.kind === "rumour" && <span className="absolute left-1/2 top-1/2 grid h-5 w-5 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-black/70 text-[12px] font-black text-[#f3c66b]" aria-hidden>?</span>}
-        {!p.alive && <span className="absolute inset-0 grid place-items-center rounded-[6px] bg-black/45 text-[22px] font-black text-stock/90" aria-hidden>✕</span>}
+        {!p.alive && <span className="absolute inset-0 grid place-items-center rounded-[6px] bg-black/70 text-[22px] font-black text-stock/90" aria-hidden>✕</span>}
         <span className="absolute -bottom-1 -right-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-ember px-1 text-[10px] font-bold tabular-nums text-stock ring-1 ring-brass/60" aria-hidden>{p.handSize}</span>
         {(micOff || hushed) && <span className="absolute -left-1 -top-1 grid h-4 w-4 place-items-center rounded-full bg-ember ring-1 ring-brass/50"><MicOff small crossed={hushed} /></span>}
         {Boolean(got) && <span key={got} className="pop absolute -left-2 -top-2 z-10 grid h-6 min-w-6 place-items-center rounded-full bg-crimson px-1 text-[12px] font-black text-ink ring-2 ring-ember" aria-hidden>{got}</span>}

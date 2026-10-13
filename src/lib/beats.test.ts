@@ -54,7 +54,8 @@ describe("Table Stage beats", () => {
         for (const b of beatsFor(v.events, names)) {
           const e = s.events[b.n];
           expect(e.to === "all" || (e.to as number[]).includes(seat)).toBe(true);
-          expect(b.private).toBe(e.to !== "all");
+          // the Bhukamp summary is built from your own private passes, shown at the public "done"
+          expect(b.private).toBe(e.to !== "all" || b.type === "batwara_done");
         }
       }
     }

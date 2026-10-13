@@ -41,7 +41,7 @@ export class BeatQueue {
     }
     const fresh = events.filter((e) => e.n > this.seen);
     this.seen = top;
-    this.queue.push(...beatsFor(fresh, names));
+    this.queue.push(...beatsFor(fresh, names, events));
     if (!this.current) this.next();
     else this.emit();
   }
@@ -57,7 +57,10 @@ export class BeatQueue {
       if (!this.current.private) this.last = this.current;
       // a phone that fell behind (or came back from the background) catches up — but only when far behind, and never
       // so fast the table can't read it (2026-10-09: "too fast" — bursts of 3 used to flash by at half a second each)
-      const hold = Math.round((this.queue.length > 5 ? Math.round(1000 * PACE) : this.current.hold) / this.speed);
+      // (playtest 2026-10-13, 2× speed: accusations flashed past in 0.75 s) only the small ticker lines are hurried —
+      // a big beat, an accusation or anything private keeps its full time
+      const hurry = this.queue.length > 5 && !this.current.big && !this.current.private;
+      const hold = Math.round((hurry ? Math.round(1000 * PACE) : this.current.hold) / this.speed);
       this.timer = setTimeout(() => this.next(), reducedMotion() ? Math.min(hold, 1800) : hold);
     }
     this.emit();

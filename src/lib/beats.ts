@@ -28,7 +28,8 @@ export interface Beat {
 
 /** THE PACE DIAL (designer 2026-10-09, "game is too fast, need to be slow"): every beat, the catch-up and the bots'
  *  turns scale with it. 1 = the 2026-10-07 pace. */
-export const PACE = 1.5;
+// 2026-10-13 (designer, "slow it down a little more so every bit of info is processed — it's unplayable"): 1.5 → 2
+export const PACE = 2;
 // playtest 2026-10-07 ("the game is running too fast"): every beat held ~50% longer — and again 2026-10-09 (PACE)
 const BIG = Math.round(3800 * PACE);
 const SMALL = Math.round(1800 * PACE);
@@ -38,8 +39,10 @@ export const HOLD_CAP = Math.round(18000 * PACE);
 export const LAST_WORDS_MS = 10_000;
 
 /** events the stage never shows: bookkeeping, analytics, and things the end screen tells better */
-const SKIP = new Set(["dal_badal_kept", "setup", "role", "pickup", "pickup_private", "conduit", "reshuffle", "batwara_done",
+const SKIP = new Set(["dal_badal_kept", "setup", "role", "pickup", "pickup_private", "conduit", "reshuffle",
   "reveal", "play", "analytics_deal", "analytics_turn", "batwara_private", "batwara_pile"]);
+const cardName = (c: string) => ({ FAISLA: "Faisla", TALASHI: "Talashi", KUNDLI: "Kundli", HERA_PHERI: "Hera Pheri", BATWARA: "Bhukamp",
+  TEER_KAMAN: "Teer Kaman", DAL_BADAL: "Dal Badal", MAYA_JAAL: "Maya Jaal" } as Record<string, string>)[c] ?? c;
 
 type D = Record<string, unknown>;
 const num = (d: D | undefined, k: string) => (typeof d?.[k] === "number" ? (d[k] as number) : undefined);
@@ -50,13 +53,13 @@ const num = (d: D | undefined, k: string) => (typeof d?.[k] === "number" ? (d[k]
 const STAGE = new Set(["surrender_open", "surrender", "surrender_result", "faisla", "talashi", "ballots_open", "final_vote", "vote_result", "eliminated", "dal_badal", "to_village", "over"]);
 
 /** One event → one beat, or null when the table needn't stop for it. `names[seat]` = player name. */
-export function beatFor(e: GameEvent, names: string[]): Beat | null {
-  const b = rawBeat(e, names);
+export function beatFor(e: GameEvent, names: string[], history: GameEvent[] = []): Beat | null {
+  const b = rawBeat(e, names, history);
   if (b) b.big = STAGE.has(b.type) || b.private;
   return b;
 }
 
-function rawBeat(e: GameEvent, names: string[]): Beat | null {
+function rawBeat(e: GameEvent, names: string[], history: GameEvent[]): Beat | null {
   if (Array.isArray(e.to) && e.to.length === 0) return null; // analytics: server only
   if (SKIP.has(e.type)) return null;
   const d = e.data;
@@ -140,11 +143,26 @@ function rawBeat(e: GameEvent, names: string[]): Beat | null {
         // the named role card big in the middle. CLEARS ARE QUIET — a village role, "no Stone": one line.
         const loud = d?.side === "T" || (d?.kind === "stone" && d?.has === true);
         const who = nm(actor), them = nm(target);
-        if (!loud) return { ...base, actor, target, title: e.msg.replace(/\s*🤖/g, ""), tone: d?.kind === "stone" ? "gold" : "vote", big: false, hold: 1800 };
+        const why = backing(e, history, nm);
+        if (!loud) return { ...base, actor, target, title: e.msg.replace(/\s*🤖/g, ""), detail: why, tone: d?.kind === "stone" ? "gold" : "vote", big: false, hold: 1800 };
         return d?.kind === "stone"
-          ? { ...base, actor, target, title: `${who}: ${them} has a Stone!`, detail: "True — or a lie?", tone: "gold", big: true, hold: Math.round(2600 * PACE) }
-          : { ...base, actor, target, role: String(d?.role ?? ""), title: `${who}: ${them} ${d?.kind === "was" ? "was" : "is"} ${String(d?.role ?? "a thief")}!`, detail: "An accusation — true or a lie?", tone: "lethal", big: true, hold: Math.round(2600 * PACE) };
+          ? { ...base, actor, target, title: `${who}: ${them} has a Stone!`, detail: why, tone: "gold", big: true, hold: Math.round(2600 * PACE) }
+          : { ...base, actor, target, role: String(d?.role ?? ""), title: `${who}: ${them} ${d?.kind === "was" ? "was" : "is"} ${String(d?.role ?? "a thief")}!`, detail: why, tone: "lethal", big: true, hold: Math.round(2600 * PACE) };
       }
+    case "batwara_done": {
+      // (playtest 5EQL5, 2026-10-13: "I hardly receive any intel") what YOUR neighbours passed you in the Bhukamp —
+      // and what you sent — was never on the centre. One private beat: the seat in every pass this phone saw is you.
+      const start = history.findLastIndex((x) => x.type === "batwara" && x.n < e.n);
+      const mine = history.filter((x) => x.type === "batwara_private" && x.n < e.n && (start < 0 || x.n > history[start].n));
+      const me = mine.length ? [0, 1].map((k) => (mine[0].to as number[])[k]).find((s) => mine.every((x) => Array.isArray(x.to) && x.to.includes(s))) : undefined;
+      if (me === undefined) return null;
+      const got = mine.filter((x) => x.data?.to === me), gave = mine.filter((x) => x.data?.from === me);
+      const label = (c: unknown) => (c === "STONE_1" ? "the Bhadra Stone" : c === "STONE_2" ? "the Tunga Stone" : cardName(String(c)));
+      const stoneIn = got.some((x) => String(x.data?.card).startsWith("STONE")), stoneOut = gave.some((x) => String(x.data?.card).startsWith("STONE"));
+      return { ...base, private: true, title: stoneIn ? "A Stone came to you" : stoneOut ? "Your Stone moved on" : "Your Bhukamp cards",
+        detail: [...got.map((x) => `${nm(num(x.data, "from"))} gave you ${label(x.data?.card)}`), ...gave.map((x) => `you gave ${nm(num(x.data, "to"))} ${label(x.data?.card)}`)].join(" · "),
+        cards: got.map((x) => x.data?.card as Card), tone: "gold", big: true, hold: BIG };
+    }
     case "kept_private":
       return { ...base, target: actor, title: "Your Stone didn't come back", detail: e.msg, tone: "gold", big: true, hold: BIG, private: true };
     case "timeout":
@@ -165,10 +183,32 @@ function rawBeat(e: GameEvent, names: string[]): Beat | null {
   }
 }
 
-/** Beats for a run of events, in order. */
-export function beatsFor(events: GameEvent[], names: string[]): Beat[] {
+/** (playtest 2026-10-13: "I hardly receive any intel") what the TABLE can see behind a claim: did the speaker ever
+ *  read that Kundli, search that hand, take those cards, or put that player out? Public facts only — a claim with
+ *  nothing behind it is hearsay or a bluff, and the table should see that at a glance. */
+function backing(e: GameEvent, history: GameEvent[], nm: (s: number | undefined) => string): string {
+  const d = e.data, a = num(d, "seat"), t = num(d, "target");
+  if (a === undefined || t === undefined) return "";
+  const before = history.filter((x) => x.n < e.n && x.to === "all");
+  const pair = (x: GameEvent) => { const s = num(x.data, "seat"), u = num(x.data, "target"); return (s === a && u === t) || (s === t && u === a); };
+  if (d?.kind === "stone") {
+    if (before.some((x) => x.type === "talashi" && num(x.data, "seat") === a && num(x.data, "target") === t)) return `${nm(a)} searched ${nm(t)} — true or a lie?`;
+    if (before.some((x) => x.type === "hera_pheri" && num(x.data, "seat") === t && num(x.data, "target") === a)) return `${nm(t)} stole from ${nm(a)} — true or a lie?`;
+    return `${nm(a)} never searched ${nm(t)}.`;
+  }
+  if (d?.kind === "was") {
+    if (a === t) return "Their own last word.";
+    if (before.some((x) => x.type === "eliminated" && num(x.data, "seat") === t && num(x.data, "killer") === a)) return `${nm(a)} put ${nm(t)} out and saw the card — true or a lie?`;
+  }
+  if (before.some((x) => x.type === "kundli" && pair(x))) return `${nm(a)} and ${nm(t)} read each other's Kundli — true or a lie?`;
+  return `No Kundli between ${nm(a)} and ${nm(t)} on the table.`;
+}
+
+/** Beats for a run of events, in order. `history` = every event this phone has seen (for what a beat needs to look
+ *  back at: the Bhukamp passes, what is behind a claim). */
+export function beatsFor(events: GameEvent[], names: string[], history: GameEvent[] = events): Beat[] {
   const out: Beat[] = [];
-  for (const e of events) { const b = beatFor(e, names); if (b) out.push(b); }
+  for (const e of events) { const b = beatFor(e, names, history); if (b) out.push(b); }
   return out;
 }
 
