@@ -696,7 +696,9 @@ export function turnMove(s: GameState, seat: number, seed: number, r: R, skill: 
     const bel = beliefOf(skill.followAnyAccusation ? s : withoutHearsay(s, seat), seat, seed, skill);
     const alive = s.players.filter((p) => p.alive && p.seat !== seat).map((p) => p.seat);
     const target = [...alive].sort((x, y) => (bel.p.get(y) ?? 0) - (bel.p.get(x) ?? 0))[0];
-    if (target !== undefined && (bel.p.get(target) ?? 0) >= (skill.tkConfidence ?? 0.7)) {
+    // at a table of two thieves one arrow is half the gang (6p measured 67% village with the plain bar): be surer
+    const pair = s.rolesInPlay.filter((x) => THIEF_ROLES.includes(x)).length <= 2 ? 0.1 : 0;
+    if (target !== undefined && (bel.p.get(target) ?? 0) >= Math.min(0.97, (skill.tkConfidence ?? 0.7) + pair)) {
       const thiefRoles = s.rolesInPlay.filter((x) => THIEF_ROLES.includes(x));
       const said = s.events.filter((e) => e.type === "claim" && e.data?.target === target && e.data?.side === "T" && typeof e.data?.role === "string")
         .map((e) => String(e.data!.role)).filter((x) => thiefRoles.includes(x)).at(-1);
