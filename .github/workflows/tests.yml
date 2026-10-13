@@ -14,7 +14,7 @@ jobs:
         with: { node-version: 22, cache: npm }
       - run: npm ci
       - run: npx tsc --noEmit -p .
-      - run: npm run lint
+      - run: npx eslint src scripts/sim-balance.mts scripts/sim-oldnew.mts scripts/tells-learn.mts scripts/scorecard.mts scripts/learn-from-games.mts
       - run: npm run test:fast
   slow:
     runs-on: ubuntu-latest
