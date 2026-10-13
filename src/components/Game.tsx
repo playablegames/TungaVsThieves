@@ -35,6 +35,7 @@ import { useCaptions } from "@/lib/captions";
 import { cut, say, setQuiet, useReading } from "@/lib/speech";
 import { alertSupport, disableAlerts, enableAlerts, useAlertPresence } from "@/lib/alerts";
 import { fx, juiceFor } from "@/lib/fx";
+import { CINEMATIC, CinematicOverlay, FinaleBackdrop, NightfallOverlay } from "./Cinematic";
 
 type VoiceCtl = ReturnType<typeof useVoice>;
 
@@ -438,6 +439,8 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
   useEffect(() => () => stopMusic(), []);
   // every big moment gets its sound, the narrator's line, a shake and a buzz (research 2026-10-07)
   const beat = stage.current;
+  // nightfall plays only for a round that starts while this phone watches (not on a reload mid-round)
+  const [startRound] = useState(v.round);
   useEffect(() => {
     if (!beat) return;
     const SOUND: Partial<Record<string, Sound>> = {
@@ -449,7 +452,7 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
     else if (SOUND[beat.type]) play(SOUND[beat.type]!);
     narrate(beat);
     // THE JUICE (lib/fx.ts): particles, a stamped word, the shake, the hit flash, the burn — the same beat on every phone
-    juiceFor(beat);
+    juiceFor(beat, CINEMATIC.has(beat.type));
     const hard = beat.type === "eliminated" || beat.type === "batwara" || (beat.type === "teer_kaman" && beat.result === "hit");
     if (hard) buzz(beat.type === "eliminated" ? [90, 60, 220] : [60, 40, 60]);
   }, [beat, names]);
@@ -500,6 +503,9 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
   const ejected = beat?.type === "eliminated" && beat.target !== undefined ? v.players[beat.target] : null;
   return (
     <div ref={root} data-juice-root className="flex min-h-0 flex-1 flex-col">
+      {/* the films (Cinematic.tsx): a big moment, and nightfall when a new round begins */}
+      {beat && CINEMATIC.has(beat.type) && <CinematicOverlay key={beat.n} beat={beat} speed={s.timers.speed ?? 1} />}
+      {v.round > startRound && <NightfallOverlay key={`night-${v.round}`} round={v.round} speed={s.timers.speed ?? 1} />}
       {ejected && beat && (
         <Eject key={beat.n} name={ejected.name.replace(/\s*🤖$/, "")} initials={initialsOf(names)[ejected.seat]} colour={SEAT_COLOURS[ejected.seat % SEAT_COLOURS.length]}
           thief={beat.tone === "relic"} role={ejected.revealedRole} onDone={stage.skip} speed={s.timers.speed ?? 1} lastWords={Boolean(beat.lastWords)} mine={ejected.seat === v.me.seat}
@@ -1162,7 +1168,8 @@ function Final({ v, clips = [], host = false, hostName = "the host", onRematch }
 
   return (
     <section className="flex min-h-dvh flex-col px-3 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-4">
-      <div aria-hidden className="fixed inset-0 -z-10 bg-[radial-gradient(80%_45%_at_50%_30%,var(--color-ember-2)_0%,var(--color-ember)_60%,#120903_100%)]" />
+      {/* the shrine at sunset behind it all; the Stones land on its steps — or vanish (Cinematic.tsx) */}
+      <FinaleBackdrop village={village} />
 
       <header className="stage-in text-center">
         <Divider />

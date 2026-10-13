@@ -60,7 +60,7 @@ function redaction(s: GameState, bad: Map<string, number>) {
 
 const GAMES_PER_COUNT = Number(process.env.FUZZ_GAMES ?? 400);
 describe("fuzz: random legal games, every count 5-30", () => {
-  it.each(Array.from({ length: 26 }, (_, i) => i + 5))("%i players: every invariant holds, no secret leaks", (n) => {
+  it.each(Array.from({ length: 26 }, (_, i) => i + 5))("%i players: every invariant holds, no secret leaks", async (n) => {
     const bad = new Map<string, number>();
     const ends = new Map<string, number>();
     let games = 0, actions = 0;
@@ -85,6 +85,9 @@ describe("fuzz: random legal games, every count 5-30", () => {
         if (s.phase.kind !== "over") bad.set("game did not finish", (bad.get("game did not finish") ?? 0) + 1);
         else ends.set(s.phase.reason, (ends.get(s.phase.reason) ?? 0) + 1);
         games++;
+        // let the test worker breathe: a long synchronous run starved Vitest's own heartbeat ("Timeout calling
+        // onTaskUpdate", 2026-10-13, locally and on GitHub) and failed a run whose games were all fine
+        if (g % 20 === 19) await new Promise((res) => setTimeout(res, 0));
       }
     }
     console.log(`fuzz ${n}p: ${games} games, ${actions} actions — endings:`, Object.fromEntries(ends));

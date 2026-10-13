@@ -94,7 +94,7 @@ export function seatXY(seat: number | undefined): { x: number; y: number } | nul
 const centre = () => ({ x: window.innerWidth / 2, y: window.innerHeight * 0.42 });
 
 // ---------------------------------------------------------------- the effects
-export const fx = {
+const FX = {
   dust(at: { x: number; y: number }, n = 26) {
     emit(n, () => ({ x: at.x + rnd(-18, 18), y: at.y + rnd(-10, 14), vx: rnd(-70, 70), vy: rnd(-90, -20), g: 60, drag: 1.6, max: rnd(0.8, 1.6), size: rnd(1.5, 4), color: pickOf(["#8a6a45", "#a8875e", "#6e5236", "#c2a378"]), shape: "puff" }));
   },
@@ -167,7 +167,7 @@ export const fx = {
       const nw = Math.max(8, Math.round(r.width)), nh = Math.max(8, Math.round(r.height));
       const buf = document.createElement("canvas"); buf.width = nw; buf.height = nh;
       burns.push({ img, x: r.left, y: r.top, w: r.width, h: r.height, t0: performance.now(), dur: 1500, noise: noiseField(nw, nh), nw, nh, buf });
-      fx.embers({ x: r.left + r.width / 2, y: r.top + r.height / 2 }, 30);
+      FX.embers({ x: r.left + r.width / 2, y: r.top + r.height / 2 }, 30);
       run();
     };
   },
@@ -221,7 +221,9 @@ function drawBurn(c: CanvasRenderingContext2D, b: Burn, now: number) {
 }
 
 /** THE MOMENTS — what each beat does to the table */
-export function juiceFor(b: Beat) {
+/** `filmed`: a cinematic plays this moment (Cinematic.tsx) — it carries the moment's word, so no stamp on top */
+export function juiceFor(b: Beat, filmed = false) {
+  const fx = filmed ? { ...FX, word: () => {} } : FX;
   const at = seatXY(b.target), from = seatXY(b.actor), mid = typeof window !== "undefined" ? centre() : { x: 0, y: 0 };
   switch (b.type) {
     case "batwara":
@@ -261,6 +263,8 @@ export function juiceFor(b: Beat) {
       break;
   }
 }
+
+export const fx = FX;
 
 // screen checks only (next dev): fire any effect from a recorder — never in a production build
 if (typeof window !== "undefined" && process.env.NODE_ENV === "development") (window as unknown as { __fx: unknown }).__fx = { fx, juiceFor };

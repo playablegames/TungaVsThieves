@@ -13,6 +13,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm }
       - run: npm ci
+      - run: npx next typegen   # Next 16 writes the route types (RouteContext, PageProps) that tsc checks against
       - run: npx tsc --noEmit -p .
       - run: npx eslint src scripts/sim-balance.mts scripts/sim-oldnew.mts scripts/tells-learn.mts scripts/scorecard.mts scripts/learn-from-games.mts
       - run: npm run test:fast
