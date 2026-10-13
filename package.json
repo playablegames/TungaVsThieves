@@ -8,6 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
+    "test:fast": "vitest run --exclude src/engine/__tests__/fuzz.test.ts",
+    "test:slow": "vitest run src/engine/__tests__/fuzz.test.ts",
     "fuzz": "vitest run src/engine/__tests__/fuzz.test.ts"
   },
   "dependencies": {

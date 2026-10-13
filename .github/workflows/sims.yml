@@ -1,0 +1,29 @@
+# BOT SIMULATIONS IN THE CLOUD (2026-10-13: the PC ran out of memory twice). Each table size runs on its own machine,
+# in parallel; the results land in the run's summary. Start it from GitHub (Actions → sims → Run workflow) or:
+#   gh workflow run sims.yml -f games=1000 -f counts="[5,6,7,8,9,10,11,12]"
+#   gh workflow run sims.yml -f script=scripts/sim-oldnew.mts -f games=300 -f counts="[6,9,12]"
+name: sims
+on:
+  workflow_dispatch:
+    inputs:
+      script: { description: "simulation script", default: "scripts/sim-balance.mts" }
+      games: { description: "games per table size", default: "1000" }
+      counts: { description: "table sizes, as a JSON list", default: "[5,6,7,8,9,10,11,12]" }
+jobs:
+  sim:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        count: ${{ fromJSON(inputs.counts) }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }   # sim-oldnew reads an older commit
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - name: simulate
+        run: |
+          echo "### ${{ inputs.script }} — ${{ matrix.count }} players, ${{ inputs.games }} games" >> "$GITHUB_STEP_SUMMARY"
+          npx tsx "${{ inputs.script }}" "${{ inputs.games }}" "${{ matrix.count }}" | tee -a "$GITHUB_STEP_SUMMARY"

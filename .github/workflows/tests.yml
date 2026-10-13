@@ -1,0 +1,27 @@
+# Every push: the FAST checks gate it (types, lint, quick tests — about a minute); the SLOW suite (the fuzz: thousands of
+# random games at every table size) runs alongside, and a red X on GitHub means look before the next push.
+name: tests
+on:
+  push: { branches: [main, preview] }
+  workflow_dispatch:
+jobs:
+  fast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npx tsc --noEmit -p .
+      - run: npm run lint
+      - run: npm run test:fast
+  slow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run test:slow
