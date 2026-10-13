@@ -13,7 +13,8 @@ import { sendPush, type Alert } from "./push";
 import { MIN_PLAYERS, ROLE_TABLE, THIEF_ROLES } from "@/engine/setup";
 import { RuleError, type Action, type Card, type GameState } from "@/engine/types";
 import { viewFor, type PlayerView } from "@/engine/view";
-import { LAST_WORDS_MS, PACE, holdFor } from "@/lib/beats";
+import { LAST_WORDS_MS, holdFor } from "@/lib/beats";
+import { openAccusation, type DefendKind } from "@/lib/defend";
 import { CAPTION_PREFIX, isCaption, WHISPER_MAX_AUDIO, encodeWhisper, isWhisper, redactWhisper, decodeWhisper, type WhisperBody } from "@/lib/whisper";
 import { ping, store, type ChatMessage, type GameRow, type Timers } from "./store";
 
@@ -21,20 +22,23 @@ export class HttpError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
 
-const DEFAULT_TIMERS: Timers = { turn: 60, vote: 45, elim: 45, debate: 90 };
+// (designer 2026-10-13 evening, "decision is fast, reverse it") the vote and the debate get the time; turns run quick
+const DEFAULT_TIMERS: Timers = { turn: 60, vote: 90, elim: 45, debate: 120 };
 const EXTEND_SECONDS = 30;
 /** the open floor scales with who is still talking: 45s for a small table, up to the debate cap (90s) at 15+ */
 export const debateSeconds = (living: number, cap: number) => Math.min(cap, Math.max(45, 5 * living + 15));
 /** a bot's turn waits this long AFTER the table has watched the last beat */
 // playtest 2026-10-07: 1.2s made a table of bots a blur; 2026-10-09 slower still (PACE)
-export const BOT_DELAY_MS = Math.round(3000 * PACE);
+// (designer 2026-10-13 evening: "2 sec for passing, 4 sec for decisions") a bot moves in 1.5 s; the beat holds the rest
+export const BOT_DELAY_MS = 1500;
 /** open voting: everyone has voted and nobody has changed their mind for this long — the vote closes (designer: 5s) */
 export const VOTE_SETTLE_MS = 5_000;
 /** online tables seat at most this many (designer 2026-10-07): the seat ring and phone-to-phone voice are only proven
  *  this far. The engine plays 5-30; raise this once big tables have their own layout and a voice relay. */
 export const ONLINE_MAX_PLAYERS = 12;
 /** the intro every phone shows when the game starts (RoleReveal.tsx): role 15s, the Stones 10s, the deal 8.4s (DealIntro.tsx) */
-export const INTRO_MS = 34_000;
+// your role 4 s + the Stones 4 s + the deal 8.4 s (RoleReveal.tsx, DealIntro.tsx), with a little slack
+export const INTRO_MS = 18_000;
 const BOT_SKILLS = ["average", "casual", "sharp"] as const;
 const BOT_NAMES = ["Raju", "Shyam", "Babu Rao", "Pappu", "Munna", "Circuit", "Chintu", "Bunty", "Golu", "Tinku",
   "Gabbar", "Basanti", "Mogambo", "Jhumru", "Lallan", "Kallu", "Bholu", "Chhotu", "Guddu", "Sonu",
@@ -599,7 +603,7 @@ export { pushStoneClaim };
 
 /** DEVELOPMENT ONLY — screen checks: give the caller a chosen hand and, if a turn is on, the turn. Refuses to run
  *  anywhere but `next dev` (NODE_ENV is "production" on Vercel), so it can never touch a real game. */
-export async function debugRig(code: string, token: string | null, body: { hand?: unknown; out?: unknown; jump?: unknown; thief?: unknown; skills?: unknown }) {
+export async function debugRig(code: string, token: string | null, body: { hand?: unknown; out?: unknown; jump?: unknown; thief?: unknown; skills?: unknown; accuse?: unknown }) {
   if (process.env.NODE_ENV !== "development") throw new HttpError(404, "Not found");
   await play(code, (row) => {
     const seat = seatOf(row, token);
@@ -633,6 +637,12 @@ export async function debugRig(code: string, token: string | null, body: { hand?
         if (back >= 0) from.push(...s.deck.splice(back, 1));
         s.players[seat].hand.push(c);
       }
+    }
+    // (screen checks) the next player accuses the caller out loud: a thief role named
+    if (body.accuse === true) {
+      const by = s.players.find((p) => p.alive && p.seat !== seat)!;
+      const role = s.rolesInPlay.find((r) => THIEF_ROLES.includes(r))!;
+      s.events.push({ n: s.events.length, type: "claim", to: "all", msg: `${by.name}: "${s.players[seat].name} is ${role}."`, data: { seat: by.seat, kind: "kundli", target: seat, role, side: "T" } });
     }
     // every bot at one skill (screen checks)
     if (body.skills === "casual" || body.skills === "average" || body.skills === "sharp") for (const p of row.lobby) if (p.bot) p.skill = body.skills;
@@ -744,6 +754,42 @@ export async function takeFloor(code: string, token: string | null) {
     row.state = s;
     // the debate never closes on someone mid-sentence
     if (row.deadline !== null && row.deadline < until + 2000) row.deadline = until + 2000;
+    return row;
+  });
+}
+
+/** DEFEND (designer 2026-10-13 evening): the accused answers — the floor for 15 s (any time, once per accusation, every
+ *  other mic held), or a quick line the whole table sees. Only while an accusation against you is open (lib/defend.ts). */
+export async function defend(code: string, token: string | null, body: { kind?: unknown; role?: unknown }) {
+  await play(code, (row) => {
+    const s = row.state;
+    if (!s || s.phase.kind === "over") throw new HttpError(409, "No game in progress");
+    const seat = seatOf(row, token);
+    if (!s.players[seat].alive) throw new HttpError(403, "You're out — you watch in silence");
+    const acc = openAccusation(s.events, seat);
+    if (!acc) throw new HttpError(409, "Nobody is accusing you right now");
+    const kind = String(body.kind) as DefendKind;
+    const me = s.players[seat].name, them = s.players[acc.accuser]?.name ?? "?";
+    if (kind === "floor") {
+      if (s.floor && s.floor.until > Date.now()) throw new HttpError(409, `${s.players[s.floor.seat].name} has the floor`);
+      const until = Date.now() + FLOOR_MS;
+      // the accusation's own number keys the floor: a debate's once-each list is kept apart from it
+      s.floor = { seat, until, used: s.floor?.used ?? [], debate: s.floor?.debate ?? -1 };
+      s.events.push({ n: s.events.length, type: "floor", to: "all", msg: `${me} answers ${them} — 15 seconds.`, data: { seat, defend: acc.n } });
+      // no clock closes on someone mid-answer
+      if (row.deadline !== null && row.deadline < until + 2000) row.deadline = until + 2000;
+    } else {
+      let msg: string, role: string | null = null;
+      if (kind === "role") {
+        role = String(body.role ?? "");
+        if (!s.rolesInPlay.includes(role) || THIEF_ROLES.includes(role)) throw new HttpError(400, "Name a village role in this game");
+        msg = `${me}: "I am ${role}."`;
+      } else if (kind === "nostone") msg = `${me}: "I have no Stone."`;
+      else if (kind === "liar") msg = `${me}: "${them} is lying."`;
+      else throw new HttpError(400, "Pick an answer");
+      s.events.push({ n: s.events.length, type: "defend", to: "all", msg, data: { seat, target: acc.accuser, kind, role, accusation: acc.n } });
+    }
+    row.state = s;
     return row;
   });
 }

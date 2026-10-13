@@ -7,6 +7,7 @@ import { CARD } from "@/lib/cards";
 import { roleArt } from "./CardIcon";
 import { CardIcon } from "./CardIcon";
 import { PlayedPair } from "./Hand";
+import { TapOn } from "./ui";
 
 const TITLE: Record<Tone, string> = {
   vote: "text-[#f3c66b]", lethal: "text-crimson-soft", relic: "text-jade-soft", gold: "text-[#f3c66b]", neutral: "text-stock",
@@ -43,7 +44,13 @@ export function Stage({ stage, skip, names, inline = false, small = false }: { s
               <img src={roleArt(b.role)!} alt="" className={`stage-card mx-auto mb-2 rounded-lg shadow-[0_12px_28px_-8px_rgba(0,0,0,.9)] ${inline ? "w-16" : "w-28"}`} />
             )}
             <p className={`font-display font-bold leading-tight ${inline ? "text-[18px]" : "text-[26px]"} ${TITLE[b.tone]}`}>{b.title}</p>
-            {b.detail && <p className={`mt-1 font-display leading-snug text-stock/80 ${inline ? "text-[13px]" : "text-[15px]"}`}>{b.detail}</p>}
+            {b.rows && b.rows.length > 0 ? (
+              <table className={`mx-auto mt-2 w-full max-w-[260px] text-left ${inline ? "text-[12px]" : "text-[14px]"}`}>
+                <tbody>{b.rows.map(([k, x], i) => (
+                  <tr key={i} className="border-b border-brass/20 last:border-0"><th scope="row" className="py-1 pr-2 font-semibold text-stock/70">{k}</th><td className="py-1 font-bold text-stock">{x}</td></tr>
+                ))}</tbody>
+              </table>
+            ) : b.detail && <p className={`mt-1 font-display leading-snug text-stock/80 ${inline ? "text-[13px]" : "text-[15px]"}`}>{b.detail}</p>}
             {tally.length > 0 && (
               <ul className="mt-3 flex flex-wrap justify-center gap-1.5">
                 {tally.map(([x, k]) => (
@@ -72,7 +79,7 @@ export function Stage({ stage, skip, names, inline = false, small = false }: { s
               </ul>
             )}
             {b.result && <p className={`stage-stamp inline-block ${inline ? "mt-2" : "mt-4"} rounded border-2 border-current px-3 py-1 font-[family-name:var(--font-engraved)] text-lg font-bold tracking-[0.2em] ${STAMP[b.result].cls}`}>{STAMP[b.result].text}</p>}
-            <p className={`text-[11px] text-stock/40 ${inline ? "mt-2" : "mt-4"}`}>{stage.pending > 0 ? `${stage.pending} more · ` : ""}tap to continue</p>
+            <div className={inline ? "mt-2" : "mt-4"}><TapOn key={b.n} ms={stage.ms} label={stage.pending > 0 ? `Tap · ${stage.pending} more` : "Tap to continue"} /></div>
           </div>
         </button>
       )}

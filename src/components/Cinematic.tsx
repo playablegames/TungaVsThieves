@@ -17,6 +17,11 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { AbsoluteFill, interpolate, spring } from "remotion";
 import type { Beat } from "@/lib/beats";
+import { TapOn } from "./ui";
+
+/** (designer 2026-10-13 evening, "animations must slow down") the films play at 3/4 speed */
+const SLOW = 0.75;
+const TapBar = ({ ms }: { ms: number }) => <span className="pointer-events-none absolute inset-x-0 bottom-[max(2rem,env(safe-area-inset-bottom))] flex justify-center"><TapOn ms={ms} /></span>;
 
 const FPS = 30;
 const LEN = 54; // 1.8 s
@@ -173,7 +178,9 @@ function Finale({ village, frame }: { village: boolean; frame: number }) {
           const drop = spring({ frame: frame - at, fps, config: { damping: 10, stiffness: 120 } });
           const glow = 0.5 + 0.5 * Math.sin((frame - at) / 6);
           return <img alt="" key={src} src={src} style={{ position: "absolute", width: "26%", left: i ? "52%" : "22%", top: `${interpolate(drop, [0, 1], [-30, 77])}%`,
-            filter: `drop-shadow(0 0 ${12 + 14 * glow}px rgba(255,200,90,.9))`, opacity: frame < at ? 0 : 1 }} />;
+            filter: `drop-shadow(0 0 ${12 + 14 * glow}px rgba(255,200,90,.9))`,
+            // (designer 2026-10-13, "end screen stones are overlaid") they land, glow, then sink into the backdrop behind the ring
+            opacity: frame < at ? 0 : interpolate(frame, [at + 30, at + 50], [1, 0.12], { extrapolateLeft: "clamp", extrapolateRight: "clamp" }) }} />;
         }
         const flick = frame < at ? 1 : frame < at + 24 ? (Math.sin(frame * 1.7) > 0 ? 1 : 0.25) * interpolate(frame, [at, at + 24], [1, 0.5]) : interpolate(frame, [at + 24, at + 34], [0.5, 0], { extrapolateRight: "clamp" });
         return <div key={src}>
@@ -195,7 +202,8 @@ export function CinematicOverlay({ beat, speed = 1 }: { beat: Beat; speed?: numb
   if (done || reduced() || !CINEMATIC.has(beat.type)) return null;
   return (
     <button type="button" aria-label="Skip" onClick={() => setDone(true)} className="fixed inset-0 z-[55] block bg-black/70">
-      <Film len={LEN} speed={speed} onEnd={() => setDone(true)}>{(f) => <Moment kind={beat.type as CineKind} hit={beat.result === "hit"} frame={f} />}</Film>
+      <Film len={LEN} speed={speed * SLOW} onEnd={() => setDone(true)}>{(f) => <Moment kind={beat.type as CineKind} hit={beat.result === "hit"} frame={f} />}</Film>
+      <TapBar ms={Math.round((LEN / FPS) * 1000 / (speed * SLOW))} />
     </button>
   );
 }
@@ -206,7 +214,8 @@ export function NightfallOverlay({ round, speed = 1 }: { round: number; speed?: 
   if (done || reduced()) return null;
   return (
     <button type="button" aria-label="Skip" onClick={() => setDone(true)} className="fixed inset-0 z-[55] block bg-black">
-      <Film len={60} speed={speed} onEnd={() => setDone(true)}>{(f) => <Night round={round} frame={f} />}</Film>
+      <Film len={60} speed={speed * SLOW} onEnd={() => setDone(true)}>{(f) => <Night round={round} frame={f} />}</Film>
+      <TapBar ms={Math.round((60 / FPS) * 1000 / (speed * SLOW))} />
     </button>
   );
 }

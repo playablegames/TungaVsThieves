@@ -9,6 +9,7 @@ export interface StageSnapshot {
   current: Beat | null;   // on stage right now
   last: Beat | null;      // the most recent public beat — the "last declaration" line
   pending: number;        // beats still waiting
+  ms: number;             // how long the current beat stays before it moves on by itself
 }
 
 const reducedMotion = () =>
@@ -24,7 +25,8 @@ export class BeatQueue {
   /** 2× (designer 2026-10-12): every hold halves */
   private speed = 1;
   setSpeed = (x: number) => { this.speed = x > 0 ? x : 1; };
-  private snap: StageSnapshot = { current: null, last: null, pending: 0 };
+  private ms = 0;
+  private snap: StageSnapshot = { current: null, last: null, pending: 0, ms: 0 };
 
   subscribe = (fn: () => void) => { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; };
   getSnapshot = () => this.snap;
@@ -61,13 +63,14 @@ export class BeatQueue {
       // a big beat, an accusation or anything private keeps its full time
       const hurry = this.queue.length > 5 && !this.current.big && !this.current.private;
       const hold = Math.round((hurry ? Math.round(1000 * PACE) : this.current.hold) / this.speed);
-      this.timer = setTimeout(() => this.next(), reducedMotion() ? Math.min(hold, 1800) : hold);
+      this.ms = reducedMotion() ? Math.min(hold, 1800) : hold;
+      this.timer = setTimeout(() => this.next(), this.ms);
     }
     this.emit();
   }
 
   private emit() {
-    this.snap = { current: this.current, last: this.last, pending: this.queue.length };
+    this.snap = { current: this.current, last: this.last, pending: this.queue.length, ms: this.ms };
     this.listeners.forEach((fn) => fn());
   }
 }

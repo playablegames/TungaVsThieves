@@ -6,13 +6,14 @@ import { useEffect, useRef, useState } from "react";
 import type { Side } from "@/engine/types";
 import { DealIntro } from "./DealIntro";
 
-const ROLE_SECONDS = 15;
-const STONES_SECONDS = 10;
+// (designer 2026-10-13 evening: every screen moves on by itself after ~2 s past its animation, or on a tap)
+const ROLE_SECONDS = 4;
+const STONES_SECONDS = 4;
 /** role art cut from the designer's mockups; roles without art get their initial */
 const ART: Record<string, string> = { Kisaan: "/role-kisaan.webp" };
 const seenKey = (code: string) => `tunga:reveal:${code.toUpperCase()}`;
 const BACKDROP = "fixed inset-0 z-40 flex flex-col items-center overflow-y-auto bg-[radial-gradient(90%_55%_at_50%_45%,var(--color-ember-2)_0%,var(--color-ember)_65%,#120903_100%)] px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]";
-const CONTINUE = "min-h-14 w-full max-w-md shrink-0 border-2 border-brass/80 btn-primary font-[family-name:var(--font-engraved)] text-[22px] font-bold uppercase tracking-[0.1em] text-stock shadow-[inset_0_1px_0_rgba(255,220,170,.3)] active:translate-y-px";
+const CONTINUE = "nudge min-h-14 w-full max-w-md shrink-0 border-2 border-brass/80 btn-primary font-[family-name:var(--font-engraved)] text-[22px] font-bold uppercase tracking-[0.1em] text-stock shadow-[inset_0_1px_0_rgba(255,220,170,.3)] active:translate-y-px";
 const TAG = "polygon(6% 0, 94% 0, 100% 50%, 94% 100%, 6% 100%, 0 50%)";
 const FEATHER: React.CSSProperties = {
   maskImage: "linear-gradient(to right, transparent, #000 8%, #000 92%, transparent), linear-gradient(to bottom, transparent, #000 8%, #000 88%, transparent)",
@@ -58,7 +59,7 @@ function RoleStep({ role, side, onDone }: { role: string; side: Side; onDone: ()
   const r = 46, c = 2 * Math.PI * r;
   const thief = side === "T";
   return (
-    <div role="dialog" aria-modal aria-labelledby="role-title" className={`${BACKDROP} pt-[6dvh]`}>
+    <div role="dialog" aria-modal aria-labelledby="role-title" onClick={onDone} className={`${BACKDROP} pt-[6dvh]`}>
       <h1 id="role-title" className="bg-[linear-gradient(180deg,#f7d58a_0%,#d9a043_100%)] bg-clip-text font-display text-[46px] font-bold leading-tight text-transparent">Your role</h1>
       <p className="mt-2 text-center font-display text-[16px] font-normal leading-snug text-stock/90">
         This is your secret role.<br />Keep it hidden from the other players.
@@ -96,7 +97,7 @@ function RoleStep({ role, side, onDone }: { role: string; side: Side; onDone: ()
         </span>
       </div>
 
-      <button type="button" onClick={onDone} className={`mt-6 rounded-2xl ${CONTINUE}`}>Continue</button>
+      <button type="button" onClick={(e) => { e.stopPropagation(); onDone(); }} className={`mt-6 rounded-2xl ${CONTINUE}`}>Continue</button>
     </div>
   );
 }
@@ -105,7 +106,7 @@ function StonesStep({ onDone }: { onDone: () => void }) {
   const left = useCountdown(STONES_SECONDS, onDone);
   const r = 24, c = 2 * Math.PI * r;
   return (
-    <div role="dialog" aria-modal aria-labelledby="stones-title" className={`${BACKDROP} pt-4`}>
+    <div role="dialog" aria-modal aria-labelledby="stones-title" className={`${BACKDROP} pt-4`} onClick={onDone}>
       <div className="relative grid h-14 w-14 shrink-0 place-items-center self-end" role="timer" aria-label={`${left} seconds`}>
         <svg viewBox="0 0 56 56" className="absolute inset-0 -rotate-90" aria-hidden>
           <circle cx="28" cy="28" r={r} fill="#160b04" stroke="#4a3220" strokeWidth="3" />
@@ -137,7 +138,7 @@ function StonesStep({ onDone }: { onDone: () => void }) {
         <WinRow tone="thief" line="Any Stone with a thief" result="Thieves win" />
       </div>
 
-      <button type="button" onClick={onDone} className={`mt-8 rounded-full ${CONTINUE}`}>Continue</button>
+      <button type="button" onClick={(e) => { e.stopPropagation(); onDone(); }} className={`mt-8 rounded-full ${CONTINUE}`}>Continue</button>
     </div>
   );
 }

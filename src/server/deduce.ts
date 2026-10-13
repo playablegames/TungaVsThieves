@@ -36,7 +36,8 @@ export interface Model {
  *  until they say anything at all, or the floor closes (their silence is an answer too) */
 export const UNANSWERED = 0.3;
 export function unanswered(events: { n: number; type: string; data?: Record<string, unknown> }[], n: number, target: number): boolean {
-  return !events.some((x) => x.n > n && ((x.type === "claim" && x.data?.seat === target) || x.type === "ballots_open"));
+  // (2026-10-13 evening) a DEFENCE — the floor taken, or a quick answer — is an answer too (lib/defend.ts)
+  return !events.some((x) => x.n > n && (((x.type === "claim" || x.type === "defend" || x.type === "floor") && x.data?.seat === target) || x.type === "ballots_open"));
 }
 
 export const MODEL: Model = { honest: 0.9, hunch: 1.6, ballot: 1.4, aim: 0.7, surrender: 0.9, liar: 0.6, liarHunch: 0.9 };

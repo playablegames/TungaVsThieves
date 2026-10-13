@@ -1,7 +1,7 @@
 "use client";
 // The action dock: what YOU can do right now, one step at a time. Irreversible moves go through a 5-second
 // timed confirm instead of undo (BGA: undo is impossible once hidden information is out).
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { THIEF_ROLES, tkGuesses } from "@/engine/setup";
 import { ACTION_CARDS, type Action, type ActionCard, type Card } from "@/engine/types";
 import type { PlayerView, PublicPlayer } from "@/engine/view";
@@ -17,6 +17,7 @@ function Btn({ voice = "pass", className = "", ...p }: React.ButtonHTMLAttribute
 }
 import { HandRow } from "./Hand";
 import { CardIcon } from "./CardIcon";
+import { TapOn } from "./ui";
 
 const TARGETED: ActionCard[] = ["KUNDLI", "TALASHI", "HERA_PHERI", "TEER_KAMAN"];
 
@@ -135,6 +136,10 @@ function Bhukamp({ v, act }: { v: PlayerView; act: (a: Action) => void }) {
       </div>
     );
   }
+  // (designer 2026-10-13 evening: "give decision for one card, the other is automatic; a timer for which card goes to
+  // which") two cards: tap the one for the left — the other goes right; both are labelled for 2 s, then they go.
+  // Tap the other card in those 2 s to swap.
+  if (hand.length === 2) return <BhukampTwo hand={hand} left={left} right={right} act={act} />;
   return (
     <div className="flex flex-col gap-3">
       <Head title={first === null ? `Bhukamp — which card to ${left}?` : `…and which to ${right}?`} />
@@ -146,6 +151,30 @@ function Bhukamp({ v, act }: { v: PlayerView; act: (a: Action) => void }) {
             act({ type: "batwara", card: hand[first], right: hand[k] });
           }} />
       </div>
+    </div>
+  );
+}
+
+const BHUKAMP_LOOK_MS = 2000;
+function BhukampTwo({ hand, left, right, act }: { hand: Card[]; left: string; right: string; act: (a: Action) => void }) {
+  const [pick, setPick] = useState<number | null>(null);
+  // the phone re-polls the hand every few seconds: the clock keys on the cards, not the array
+  const send = useRef({ act, hand });
+  useEffect(() => { send.current = { act, hand }; });
+  const key = hand.join();
+  useEffect(() => {
+    if (pick === null) return;
+    const t = setTimeout(() => { const { act: a, hand: h } = send.current; a({ type: "batwara", card: h[pick], right: h[1 - pick] }); }, BHUKAMP_LOOK_MS);
+    return () => clearTimeout(t);
+  }, [pick, key]);
+  return (
+    <div className="flex flex-col gap-3">
+      <Head title={pick === null ? `Bhukamp — which card to ${left}?` : `◀ ${left} · ${right} ▶`} />
+      <div className="pt-2">
+        <HandRow cards={hand} selected={pick === null ? [] : [pick]} labels={pick === null ? {} : { [pick]: `◀ ${left}`, [1 - pick]: `${right} ▶` }}
+          onTap={(k) => setPick(k)} />
+      </div>
+      {pick !== null && <div className="flex justify-center"><TapOn key={pick} ms={BHUKAMP_LOOK_MS} label="Tap the other card to swap" /></div>}
     </div>
   );
 }

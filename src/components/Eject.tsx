@@ -5,7 +5,8 @@
 // The old reveal ("was a Thief", thieves remaining) still plays when a role is public. Tap to skip.
 import { useEffect, useState } from "react";
 import { THIEF_ROLES } from "@/engine/setup";
-import { LAST_WORDS_MS, PACE } from "@/lib/beats";
+import { LAST_WORDS_MS } from "@/lib/beats";
+import { TapOn } from "./ui";
 
 const STARS = Array.from({ length: 46 }, (_, i) => ({
   x: (i * 37.7) % 100, y: (i * 23.3) % 62, s: 1 + ((i * 7) % 3), t: 1.6 + ((i * 13) % 20) / 10,
@@ -32,7 +33,8 @@ export function Eject({ name, initials, colour, thief, role, remaining, onDone, 
     const start = setTimeout(() => {
       const t = setInterval(() => { i += 1; setTyped(i); if (i >= verdict.length) clearInterval(t); }, 55);
     }, words + 900);
-    const end = setTimeout(onDone, words + Math.round(5600 * PACE / speed));
+    // (designer 2026-10-13 evening) the flight + 2 s, then it moves on by itself
+    const end = setTimeout(onDone, words + Math.round(4000 / speed));
     return () => { clearTimeout(start); clearTimeout(end); clearTimeout(fly); if (tick) clearInterval(tick); };
   }, [verdict, onDone, words, lastWords, speed]);
 
@@ -76,6 +78,7 @@ export function Eject({ name, initials, colour, thief, role, remaining, onDone, 
         {typed >= verdict.length && !role && (
           <p className="rise mt-3 font-display text-[18px] text-stock/75">Their role stays hidden.</p>
         )}
+        <div className="mt-6"><TapOn ms={Math.round(4000 / speed)} /></div>
         {typed >= verdict.length && role && (
           <>
             <p className={`rise mt-2 font-[family-name:var(--font-engraved)] text-[13px] font-bold uppercase tracking-[0.25em] ${thief ? "text-crimson-soft" : "text-[#f3c66b]"}`}>{role}</p>

@@ -94,3 +94,14 @@ export function Sheet({ open, onClose, title, children }: { open: boolean; onClo
     </div>
   );
 }
+
+/** (designer 2026-10-13 evening: "every action, animation and screen nudged to tap to continue, or skips by itself") —
+ *  the green pill on every screen that moves on by itself: a tap moves on now; the bar drains to when it moves on alone. */
+export function TapOn({ ms, label = "Tap to continue", className = "" }: { ms: number; label?: string; className?: string }) {
+  return (
+    <span className={`nudge relative inline-flex min-h-10 items-center overflow-hidden rounded-full px-5 text-[13px] font-extrabold uppercase tracking-[0.12em] ${className}`}>
+      {label}
+      <span aria-hidden className="drain absolute inset-x-0 bottom-0 h-1 bg-[#06210f]/45" style={{ ["--ms" as string]: `${Math.max(0, ms)}ms` }} />
+    </span>
+  );
+}

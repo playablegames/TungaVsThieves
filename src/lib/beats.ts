@@ -17,6 +17,8 @@ export interface Beat {
   target?: number;        // seat it hit (arrow to)
   result?: "hit" | "miss" | "out" | "saved" | "none";
   cards?: Card[];         // cards shown face up (Talashi, an eliminated hand)
+  /** (designer 2026-10-13 evening: "explanations can be tabular") who → what, one row each */
+  rows?: [string, string][];
   tally?: Record<string, number>;          // vote_result: votes per seat
   ballots?: Record<string, number | null>; // vote_result: who voted whom (null = abstained)
   lastWords?: boolean;    // eliminated: a human gets 10 s of last words before the ejection
@@ -29,10 +31,11 @@ export interface Beat {
 /** THE PACE DIAL (designer 2026-10-09, "game is too fast, need to be slow"): every beat, the catch-up and the bots'
  *  turns scale with it. 1 = the 2026-10-07 pace. */
 // 2026-10-13 (designer, "slow it down a little more so every bit of info is processed — it's unplayable"): 1.5 → 2
-export const PACE = 2;
-// playtest 2026-10-07 ("the game is running too fast"): every beat held ~50% longer — and again 2026-10-09 (PACE)
-const BIG = Math.round(3800 * PACE);
-const SMALL = Math.round(1800 * PACE);
+// 2026-10-13 evening (designer, "playing is slow, decision is fast, reverse it" · "2 sec for passing, 4 sec for decisions"
+// · "every screen skips by itself after 2 s"): back to 1; a pass holds 2 s, a played card 4 s (its moment + 2 s)
+export const PACE = 1;
+const BIG = 4000;
+const SMALL = 2000;
 /** the most the server holds a clock for the beats of one move */
 /** last words (10 s) + the ejection fit inside one hold */
 export const HOLD_CAP = Math.round(18000 * PACE);
@@ -78,7 +81,7 @@ function rawBeat(e: GameEvent, names: string[], history: GameEvent[]): Beat | nu
     case "talashi":
       return { ...base, card: "TALASHI", title: `${nm(actor)} searches ${nm(target)}`, detail: "Only they see the cards.", tone: "relic", big: true, hold: BIG };
     case "talashi_private":
-      return { ...base, card: "TALASHI", title: `${nm(target)} holds`, cards: (d?.hand as Card[]) ?? [], tone: "relic", big: true, hold: BIG + 800 };
+      return { ...base, card: "TALASHI", title: `${nm(target)} holds`, cards: (d?.hand as Card[]) ?? [], tone: "relic", big: true, hold: BIG };
     case "hera_pheri":
       return { ...base, card: "HERA_PHERI", title: `${nm(actor)} steals from ${nm(target)}`, detail: `${num(d, "k") ?? 2} cards, face down. ${nm(target)} draws back up.`, tone: "lethal", big: true, hold: BIG };
     case "hera_pheri_private":
@@ -88,7 +91,7 @@ function rawBeat(e: GameEvent, names: string[], history: GameEvent[]): Beat | nu
     case "teer_kaman": {
       const roles = (d?.roles as string[]) ?? [];
       const hit = d?.hit === true;
-      return { ...base, card: "TEER_KAMAN", title: `${nm(actor)} shoots at ${nm(target)}`, detail: `${roles.join(" or ")} — ${hit ? "HIT" : "miss"}`, result: hit ? "hit" : "miss", tone: "lethal", big: true, hold: BIG + 600 };
+      return { ...base, card: "TEER_KAMAN", title: `${nm(actor)} shoots at ${nm(target)}`, detail: `${roles.join(" or ")} — ${hit ? "HIT" : "miss"}`, result: hit ? "hit" : "miss", tone: "lethal", big: true, hold: BIG };
     }
     case "faisla":
       return { ...base, card: "FAISLA", title: `${nm(actor)} calls a Faisla`, tone: "vote", big: true, hold: BIG };
@@ -103,20 +106,20 @@ function rawBeat(e: GameEvent, names: string[], history: GameEvent[]): Beat | nu
       return { ...base, title: "The last round is over", detail: "Mandatory vote — talk, then vote.", tone: "vote", big: true, hold: BIG };
     case "vote_result": {
       const out = num(d, "out");
-      return { ...base, target: out, title: out === undefined || d?.out === null ? "Nobody is out" : `${nm(out)} is voted out`, detail: out === undefined || d?.out === null ? "The vote was tied or empty." : undefined, result: d?.out === null ? "none" : "out", tally: (d?.tally as Record<string, number>) ?? {}, ballots: (d?.ballots as Record<string, number | null>) ?? {}, tone: "vote", big: true, hold: BIG + 1500 };
+      return { ...base, target: out, title: out === undefined || d?.out === null ? "Nobody is out" : `${nm(out)} is voted out`, detail: out === undefined || d?.out === null ? "The vote was tied or empty." : undefined, result: d?.out === null ? "none" : "out", tally: (d?.tally as Record<string, number>) ?? {}, ballots: (d?.ballots as Record<string, number | null>) ?? {}, tone: "vote", big: true, hold: BIG };
     }
     case "eliminated":
       // (2026-10-09) roles are never shown to the table — only "out", and the hand they held
       if (d?.side === undefined)
-        return { ...base, actor: num(d, "killer") ?? undefined, target: actor, title: `${nm(actor)} is out`, detail: "Their role stays hidden.", result: "out", tone: "lethal", big: true, hold: BIG + 800 + (d?.lastWords ? LAST_WORDS_MS : 0), lastWords: Boolean(d?.lastWords) };
-      return { ...base, actor: num(d, "killer") ?? undefined, target: actor, title: `${nm(actor)} was ${String(d?.role)}`, detail: d?.side === "T" ? "A thief." : "A villager.", result: "out", tone: d?.side === "T" ? "relic" : "lethal", big: true, hold: BIG + 800 + (d?.lastWords ? LAST_WORDS_MS : 0), lastWords: Boolean(d?.lastWords) };
+        return { ...base, actor: num(d, "killer") ?? undefined, target: actor, title: `${nm(actor)} is out`, detail: "Their role stays hidden.", result: "out", tone: "lethal", big: true, hold: BIG + (d?.lastWords ? LAST_WORDS_MS : 0), lastWords: Boolean(d?.lastWords) };
+      return { ...base, actor: num(d, "killer") ?? undefined, target: actor, title: `${nm(actor)} was ${String(d?.role)}`, detail: d?.side === "T" ? "A thief." : "A villager.", result: "out", tone: d?.side === "T" ? "relic" : "lethal", big: true, hold: BIG + (d?.lastWords ? LAST_WORDS_MS : 0), lastWords: Boolean(d?.lastWords) };
     case "eliminated_private":
       // only the Teer Kaman shooter or the Faisla caller sees the role
       return { ...base, target: actor, title: `${nm(actor)} was ${String(d?.role)}`, detail: d?.side === "T" ? "A thief. Only you know." : "A villager. Only you know.", tone: d?.side === "T" ? "relic" : "lethal", big: true, hold: BIG };
     case "dal_badal": {
       const others = ((d?.seats as number[]) ?? []).filter((x) => x !== actor).map((x) => nm(x));
       const when = d?.when === "voted_out" ? " Voted out — before the reveal." : "";
-      return { ...base, title: `Dal Badal — ${nm(actor)} is ${String(d?.role)}!`, detail: `A thief. Role cards shuffled with ${others.join(" and ")} — each picks one back, face down.${when}`, tone: "lethal", big: true, hold: BIG + 800 };
+      return { ...base, title: `Dal Badal — ${nm(actor)} is ${String(d?.role)}!`, detail: `A thief. Role cards shuffled with ${others.join(" and ")} — each picks one back, face down.${when}`, tone: "lethal", big: true, hold: BIG };
     }
     case "dal_badal_done":
       return { ...base, title: "Dal Badal done", tone: "neutral", big: false, hold: SMALL };
@@ -131,6 +134,9 @@ function rawBeat(e: GameEvent, names: string[], history: GameEvent[]): Beat | nu
       return { ...base, title: `${nm(actor)}'s cards to the village`, detail: "A thief's Stone voted out counts for Tunga.", cards: (d?.cards as Card[]) ?? [], tone: "vote", big: true, hold: BIG };
     case "to_thieves":
       return { ...base, title: `${nm(actor)}'s Stone to the thieves`, detail: "A villager voted out — their Stone counts for the thieves.", cards: (d?.cards as Card[]) ?? [], tone: "lethal", big: true, hold: BIG };
+    case "defend":
+      // (2026-10-13 evening) the accused answers — one line the whole table reads
+      return { ...base, actor, target, title: e.msg.replace(/\s*🤖/g, ""), tone: "relic", big: false, hold: SMALL };
     case "floor":
       return { ...base, title: e.msg, tone: "vote", big: false, hold: 600 };
     case "whisper":
@@ -161,7 +167,8 @@ function rawBeat(e: GameEvent, names: string[], history: GameEvent[]): Beat | nu
       const stoneIn = got.some((x) => String(x.data?.card).startsWith("STONE")), stoneOut = gave.some((x) => String(x.data?.card).startsWith("STONE"));
       return { ...base, private: true, title: stoneIn ? "A Stone came to you" : stoneOut ? "Your Stone moved on" : "Your Bhukamp cards",
         detail: [...got.map((x) => `${nm(num(x.data, "from"))} gave you ${label(x.data?.card)}`), ...gave.map((x) => `you gave ${nm(num(x.data, "to"))} ${label(x.data?.card)}`)].join(" · "),
-        cards: got.map((x) => x.data?.card as Card), tone: "gold", big: true, hold: BIG };
+        rows: [...gave.map((x): [string, string] => [`You → ${nm(num(x.data, "to"))}`, label(x.data?.card)]), ...got.map((x): [string, string] => [`${nm(num(x.data, "from"))} → you`, label(x.data?.card)])],
+        tone: "gold", big: true, hold: BIG };
     }
     case "kept_private":
       return { ...base, target: actor, title: "Your Stone didn't come back", detail: e.msg, tone: "gold", big: true, hold: BIG, private: true };

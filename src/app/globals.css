@@ -74,6 +74,9 @@ body {
 @keyframes nudge-ring { 0% { box-shadow: 0 0 0 0 rgba(46,204,113,.65); } 70% { box-shadow: 0 0 0 12px rgba(46,204,113,0); } 100% { box-shadow: 0 0 0 0 rgba(46,204,113,0); } }
 .nudge { background: linear-gradient(180deg, #34d27a 0%, #1f9d55 100%) !important; color: #06210f !important; border-color: #8ff0b6 !important; animation: nudge-ring 1.8s ease-out infinite; }
 .nudge-ring { animation: nudge-ring 1.8s ease-out infinite; border-radius: 6px; }
+/* TAP ON (designer 2026-10-13 evening): every screen says "tap to continue" in green and drains its own clock */
+@keyframes drain { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+.drain { transform-origin: left; animation: drain var(--ms, 2000ms) linear both; }
 .nudge-dot { background: #2ecc71; color: #06210f; box-shadow: 0 0 0 2px #1f1007; animation: nudge-ring 1.8s ease-out infinite; }
 @media (prefers-reduced-motion: reduce) {
   .nudge, .nudge-dot { animation: none; }
@@ -125,9 +128,9 @@ body {
   12% { opacity: 1; } 88% { left: var(--tx); top: var(--ty); transform: translate(-50%, -50%) rotate(var(--r1)) scale(1); opacity: 1; }
   100% { left: var(--tx); top: var(--ty); transform: translate(-50%, -50%) rotate(var(--r1)) scale(.85); opacity: 0; } }
 .card-fly { position: absolute; width: clamp(22px, 7vw, 30px); aspect-ratio: 937 / 1399; border-radius: 3px; background: url(/art/cards/back.webp) center / cover;
-  box-shadow: 0 4px 10px -2px rgba(0,0,0,.8); animation: card-fly 700ms cubic-bezier(.35, .7, .3, 1) both; pointer-events: none; }
+  box-shadow: 0 4px 10px -2px rgba(0,0,0,.8); animation: card-fly 1200ms cubic-bezier(.35, .7, .3, 1) both; pointer-events: none; }
 @keyframes card-in { from { transform: translateY(46px) rotate(-6deg) scale(.85); opacity: 0; } to { transform: none; opacity: 1; } }
-.card-in { animation: card-in 420ms cubic-bezier(.2, .9, .3, 1.15) both; }
+.card-in { animation: card-in 650ms cubic-bezier(.2, .9, .3, 1.15) both; }
 
 /* confetti for the winners */
 @keyframes confetti { 0% { transform: translate(0, -10vh) rotate(0); opacity: 1; } 100% { transform: translate(var(--dx), 110vh) rotate(var(--rot)); opacity: .9; } }

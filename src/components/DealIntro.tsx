@@ -3,6 +3,7 @@
 // Almost done → Cards distributed! Game begins now. Plain CSS (globals.css "deal-*"), lighting kept low on purpose.
 // Runs after the Stones screen; the server's first clock waits for it (INTRO_MS in server/game.ts).
 import { useEffect, useRef, useState } from "react";
+import { TapOn } from "./ui";
 
 export const DEAL_MS = 8400;
 const STAGES = [
@@ -46,7 +47,7 @@ export function DealIntro({ names, mySeat, onDone }: { names: string[]; mySeat: 
   const s = STAGES[stage];
 
   return (
-    <div role="dialog" aria-modal aria-label="Dealing the cards"
+    <div role="dialog" aria-modal aria-label="Dealing the cards" onClick={() => done.current()}
       className="fixed inset-0 z-40 flex items-center justify-center overflow-hidden bg-[radial-gradient(70%_45%_at_50%_50%,#2a1608_0%,var(--color-ember)_60%,#120903_100%)]">
       <div className="relative h-[min(100dvh,820px)] w-full max-w-md landscape:max-w-4xl">
         {/* a low lamp over the table centre */}
@@ -102,6 +103,7 @@ export function DealIntro({ names, mySeat, onDone }: { names: string[]; mySeat: 
             </svg>
           )}
         </div>
+        <div className="absolute inset-x-0 bottom-[max(1.5rem,env(safe-area-inset-bottom))] flex justify-center"><TapOn ms={DEAL_MS} label="Tap to skip" /></div>
       </div>
     </div>
   );

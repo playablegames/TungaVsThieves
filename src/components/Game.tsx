@@ -10,7 +10,8 @@ import { beatsFor } from "@/lib/beats";
 import { CARD } from "@/lib/cards";
 import type { Action, Card, GameEvent, Side } from "@/engine/types";
 import type { StoneStep } from "@/engine/stonepath";
-import { MIN_PLAYERS, THIEF_ROLES } from "@/engine/setup";
+import { MIN_PLAYERS, THIEF_ROLES, VILLAGER_ROLES } from "@/engine/setup";
+import { openAccusation, type Accusation, type DefendKind } from "@/lib/defend";
 import type { PlayerView, PublicPlayer } from "@/engine/view";
 import type { ClientState } from "@/server/game";
 import { useStage } from "@/lib/stage";
@@ -30,7 +31,7 @@ import { TimerRing } from "./ui";
 import { useVoice } from "@/lib/voice";
 import { useBotSpeech } from "@/lib/botspeech";
 import type { ChatMessage } from "@/server/store";
-import { useFeed, CAPTION_PREFIX, QUICK_PREFIX, type FeedItem } from "@/lib/feed";
+import { useFeed, CAPTION_PREFIX, type FeedItem } from "@/lib/feed";
 import { useCaptions } from "@/lib/captions";
 import { cut, say, setQuiet, useReading } from "@/lib/speech";
 import { alertSupport, disableAlerts, enableAlerts, useAlertPresence } from "@/lib/alerts";
@@ -219,9 +220,21 @@ function Lobby({ s, code, token, onError, voice }: { s: ClientState; code: strin
 
       <div className="contents landscape:col-start-1 landscape:row-start-2 landscape:flex landscape:flex-col landscape:justify-end">
       {n >= 13 && <p className="mb-2 text-center text-[13px] font-semibold text-brass landscape:hidden">↻ Turn your phone sideways for a bigger table</p>}
-      <p className="mb-3 text-center text-[13px] text-stock/70">
-        {row ? `${row[0]} villagers · ${row[1]} thie${row[1] === 1 ? "f" : "ves"}` : `You need at least ${MIN_PLAYERS} players`}
-      </p>
+      {/* (designer 2026-10-13) the lobby names the roles in this game — the same cards the deal uses */}
+      {row ? (
+        <table className="mb-3 w-full text-left text-[13px]" aria-label="Roles in this game">
+          <tbody>
+            <tr className="border-b border-brass/25">
+              <th scope="row" className="w-24 py-1.5 pr-2 align-top font-bold text-[#f3c66b]">{row[0]} villagers</th>
+              <td className="py-1.5 text-stock/85">{VILLAGER_ROLES.slice(0, row[0]).join(" · ")}</td>
+            </tr>
+            <tr>
+              <th scope="row" className="w-24 py-1.5 pr-2 align-top font-bold text-crimson-soft">{row[1]} thie{row[1] === 1 ? "f" : "ves"}</th>
+              <td className="py-1.5 text-stock/85">{THIEF_ROLES.slice(0, row[1]).join(" · ")}</td>
+            </tr>
+          </tbody>
+        </table>
+      ) : <p className="mb-3 text-center text-[13px] text-stock/70">You need at least {MIN_PLAYERS} players</p>}
 
       {s.you.host ? (
         <div className="flex flex-col gap-3">
@@ -348,6 +361,9 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
   const newSecrets = secretsOf(v).filter((e) => e.n > news.secret).length;
   const newFeed = v.events.some((e) => e.n > news.feed && e.to === "all" && !["analytics_turn", "pickup", "conduit"].includes(e.type));
   const [history, setHistory] = useState<number | null>(null);
+  // DEFEND (designer 2026-10-13 evening): an open accusation against you — answer it, or close the panel and stay silent
+  const accused = openAccusation(v.events, v.me.seat);
+  const [dropped, setDropped] = useState<number | null>(null);
   const myMove = v.decision?.kind ?? null;
   const shown = stage.current?.n ?? stage.last?.n ?? -1;
   const beats = useMemo(() => beatsFor(v.events, v.players.map((p) => p.name)).filter((b) => !b.private), [v.events, v.players]);
@@ -538,8 +554,7 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
       <Ring v={v} voice={voice} onHistory={setHistory} hint={!v.tutorial && v.me.alive && !tipsSeen.includes("seats")} talking={bots.current?.seat ?? null} floorSeat={s.floor && s.floor.until > now() ? s.floor.seat : null} actor={headline?.actor} target={headline?.target} pick={v.decision?.kind === "vote" ? v.decision.mine ?? null : null} tally={live ?? voteShown?.tally}
         flying={flying} onThrow={s.status === "playing" && v.me.alive ? throwAt : undefined}
         away={s.away} marks={marks} onMark={setMark}
-        onClaim={s.status === "playing" && v.me.alive ? claimAt : undefined}
-        onQuick={s.status === "playing" && v.me.alive ? (l) => { seeTips("seats"); api.chat(code, token, QUICK_PREFIX + l).catch(() => {}); } : undefined}>
+        onClaim={s.status === "playing" && v.me.alive ? claimAt : undefined}>
         {stage.current?.big
           ? <Stage stage={stage} skip={stage.skip} names={v.players.map((p) => p.name)} inline small={v.players.length > 8} />
           : <Centre v={v} feed={feed} onOpen={() => setFeedOpen(true)} compact={Boolean(myMove && myMove !== "vote" && myMove !== "debate")} living={living.length} extend={extend}
@@ -550,7 +565,9 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
       <Tray v={v} act={act} live={live} waitForExit={myExitPending} banner={coach
         ? <Coach key={coach.id} text={coach.text} onNext={() => setCoachSeen((xs) => [...xs, coach.id])} onSkip={() => setCoachOff(true)} />
         // (designer 2026-10-13: "remove this — everything has to be nudges") no text tips: the thing to tap glows green
-        : null} />
+        : accused && v.me.alive && accused.n !== dropped
+          ? <Defend v={v} acc={accused} voice={!solo} onAnswer={(b) => api.defend(code, token, b).catch(() => {})} onClose={() => setDropped(accused.n)} />
+          : null} />
       {history !== null && <Sheet title={`${history === v.me.seat ? "Your" : `${v.players[history]?.name.replace(/\s*🤖$/, "")}'s`} history`} onClose={() => setHistory(null)}><SeatHistory v={v} seat={history} /></Sheet>}
       {feedOpen && <Sheet title="Everything at the table" onClose={() => setFeedOpen(false)}><FeedList items={[...feed].reverse()} names={names} me={v.me.seat} /></Sheet>}
 
@@ -639,19 +656,16 @@ function RolePeek({ v }: { v: PlayerView }) {
 }
 
 /** Seats on an oval in turn order, you at the bottom, a thin brass line joining them. */
-function Ring({ v, voice, talking, floorSeat = null, actor, target, pick, tally, flying = [], away = [], marks = {}, onMark, onThrow, onPick, onClaim, onQuick, onHistory, hint = false, children }: {
+function Ring({ v, voice, talking, floorSeat = null, actor, target, pick, tally, flying = [], away = [], marks = {}, onMark, onThrow, onPick, onClaim, onHistory, hint = false, children }: {
   v: PlayerView; voice: VoiceCtl; talking: number | null; floorSeat?: number | null; actor?: number; target?: number; pick: number | null; tally?: Record<string, number>;
   flying?: Throw[]; away?: number[]; marks?: Record<number, Mark>; onMark?: (seat: number, m: Mark | null) => void; onThrow?: (seat: number, emoji: string) => void; onPick?: (seat: number) => void;
-  onClaim?: (kind: "kundli" | "stone", seat: number, role?: string, has?: boolean) => void; onQuick?: (line: string) => void; onHistory?: (seat: number) => void; hint?: boolean; children: React.ReactNode;
+  onClaim?: (kind: "kundli" | "stone", seat: number, role?: string, has?: boolean) => void; onHistory?: (seat: number) => void; hint?: boolean; children: React.ReactNode;
 }) {
   const n = v.players.length;
   const voteOpen = v.phase.endsWith("_vote");
   const size: SeatSize = n <= 8 ? "lg" : n <= 16 ? "md" : "sm";
   const [picker, setPickerRaw] = useState<number | null>(null);
-  // the claims (designer 2026-10-09): 🌾 Villager · 🫵 Thief · 🔮 Role (name it exactly — true or a lie) · 💎 Stone
-  // (has one / has none). 🔮 and 💎 open their choices in the same strip — no window.
-  const [reading, setReadingRoles] = useState<false | "role" | "stone">(false);
-  const setPicker = (seat: number | null) => { setPickerRaw(seat); setReadingRoles(false); };
+  const setPicker = (seat: number | null) => setPickerRaw(seat);
   // the table moved on (a new turn, a vote): a seat menu left open would cover the centre
   const phaseKey = `${v.phase}:${v.turnSeat}`;
   const [pickerPhase, setPickerPhase] = useState(phaseKey);
@@ -703,82 +717,24 @@ function Ring({ v, voice, talking, floorSeat = null, actor, target, pick, tally,
               micOff={me ? !voice.micOn || voice.micBlocked : Boolean(peer?.muted)}
               hushed={Boolean(peer?.hushed)}
               away={away.includes(p.seat)} mark={marks[p.seat]} said={said[p.seat]} hint={hint && !me && p.alive}
-              onTap={onPick && p.alive ? () => onPick(p.seat) : (me ? onQuick || onHistory : onThrow || onClaim || peer || onHistory || onMark) ? () => setPicker(picker === p.seat ? null : p.seat) : undefined} />
+              onTap={onPick && p.alive ? () => onPick(p.seat)
+                // (designer 2026-10-14) your own seat: straight to your history — the quick lines are gone
+                : me ? (onHistory ? () => onHistory(p.seat) : undefined)
+                : (onThrow || onClaim || peer || onHistory || onMark) ? () => setPicker(picker === p.seat ? null : p.seat) : undefined} />
           </div>
         );
       })}
       {/* tap a seat: throw something at them (everyone sees it fly), or mute them for you */}
-      {picker !== null && (
-        <div className="pop absolute z-30 flex w-[min(92%,340px)] -translate-x-1/2 -translate-y-[115%] flex-col gap-1 rounded-2xl border border-brass/60 bg-ember/95 p-1.5 shadow-[0_8px_20px_rgba(0,0,0,.7)]"
-          style={{ left: "50%", top: `${Math.max(24, pos(picker).y)}%` }} role="menu" aria-label={`${v.players[picker]?.name}`}>
-          {picker !== v.me.seat && faces[picker]?.seen && roleArt(faces[picker].seen) && (
-            <div className="flex items-center gap-2 rounded-xl bg-black/40 p-1.5" aria-label={`You saw: ${faces[picker].seen}`}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={roleArt(faces[picker].seen)!} alt="" className="h-16 rounded-md shadow-[0_6px_14px_-4px_rgba(0,0,0,.8)]" />
-              <p className="text-[13px] leading-tight text-stock">You saw it with your own eyes:<br /><b className="text-[15px] text-[#f3c66b]">{faces[picker].seen}</b><br /><span className="text-stock/60">Only you know.</span></p>
-            </div>
-          )}
-          {/* your own seat: a ready-made line, straight into the centre */}
-          {picker === v.me.seat && onQuick && (
-            <div className="grid grid-cols-2 gap-1">
-              {QUICK_LINES.map((l) => (
-                <button key={l} type="button" role="menuitem" onClick={() => { onQuick(l); setPicker(null); }}
-                  className="min-h-11 rounded-xl bg-black/40 px-2 text-[14px] font-bold text-stock ring-1 ring-brass/50 active:scale-95">{l}</button>
-              ))}
-            </div>
-          )}
-          {/* accuse / vouch / a Kundli read — straight into the centre, one tap */}
-          {/* 💎 Stone: after a Talashi — "has a Stone" / "has no Stone" */}
-          {picker !== v.me.seat && onClaim && v.players[picker]?.alive && reading === "stone" && (
-            <div className="grid grid-cols-2 gap-1" role="group" aria-label={`Does ${v.players[picker]?.name} hold a Stone?`}>
-              <button type="button" role="menuitem" onClick={() => { onClaim("stone", picker, undefined, true); setPicker(null); }}
-                className="min-h-11 rounded-xl bg-[#3a240c] text-[14px] font-bold text-[#f3c66b] ring-1 ring-[#f0a32e]/60 active:scale-95">💎 Has a Stone</button>
-              <button type="button" role="menuitem" onClick={() => { onClaim("stone", picker, undefined, false); setPicker(null); }}
-                className="min-h-11 rounded-xl bg-black/40 text-[14px] font-bold text-stock ring-1 ring-brass/50 active:scale-95">No Stone</button>
-            </div>
-          )}
-          {picker !== v.me.seat && onClaim && v.players[picker] && reading !== "stone" && (reading === "role" ? (
-            <div className="flex flex-wrap justify-center gap-1" role="group" aria-label={`Which role is ${v.players[picker]?.name}?`}>
-              {[...v.rolesInPlay].sort((x, y) => Number(THIEF_ROLES.includes(y)) - Number(THIEF_ROLES.includes(x))).map((r) => (
-                <button key={r} type="button" role="menuitem" onClick={() => { onClaim("kundli", picker, r); setPicker(null); }}
-                  className={`min-h-10 rounded-full px-3 text-[13px] font-bold active:scale-95 ${THIEF_ROLES.includes(r) ? "bg-crimson-deep text-ink ring-1 ring-crimson" : "bg-[#3a240c] text-[#f3c66b] ring-1 ring-[#f0a32e]/60"}`}>{r}</button>
-              ))}
-            </div>
-          ) : (
-            // (designer 2026-10-13) no bare Thief / Villager: name a ROLE (a thief role accuses, a village role clears) or a Stone
-            <div className="grid grid-cols-2 gap-1">
-              <button type="button" role="menuitem" onClick={() => setReadingRoles("role")}
-                className="min-h-11 rounded-xl bg-black/40 text-[14px] font-bold text-stock ring-1 ring-brass/50 active:scale-95">🔮 {v.players[picker]?.alive ? "Name a role" : "They were…"}</button>
-              {v.players[picker]?.alive ? <button type="button" role="menuitem" onClick={() => setReadingRoles("stone")}
-                className="min-h-11 rounded-xl bg-[#3a240c] text-[14px] font-bold text-[#f3c66b] ring-1 ring-[#f0a32e]/60 active:scale-95">💎 Stone</button> : <span />}
-            </div>
-          ))}
-          {!reading && picker !== v.me.seat && onMark && (
-            <div className="flex items-center justify-center gap-1 border-t border-brass/30 pt-1" role="group" aria-label="Your private mark — only you see it">
-              <span className="mr-1 text-[12px] text-stock/70">Mark</span>
-              {(Object.keys(MARK) as Mark[]).map((m) => (
-                <button key={m} type="button" role="menuitemradio" aria-label={`Mark ${MARK[m].label}`} aria-checked={marks[picker] === m}
-                  onClick={() => { onMark(picker, marks[picker] === m ? null : m); setPicker(null); }}
-                  className={`grid h-9 w-9 place-items-center rounded-full text-[13px] font-black ${MARK[m].dot} ${marks[picker] === m ? "ring-2 ring-stock" : ""}`}>{MARK[m].glyph}</button>
-              ))}
-              {marks[picker] && <button type="button" role="menuitem" aria-label="Clear mark" onClick={() => { onMark(picker, null); setPicker(null); }} className="grid h-9 w-9 place-items-center rounded-full text-[14px] text-stock/80 ring-1 ring-brass/50">✕</button>}
-            </div>
-          )}
-          {!reading && picker !== v.me.seat && <div className="flex justify-center gap-1">
-          {onThrow && REACTIONS.map((e) => (
-            <button key={e} type="button" role="menuitem" onClick={() => { onThrow(picker, e); setPicker(null); }} className="grid h-10 w-10 place-items-center rounded-full text-[22px] active:scale-90">{e}</button>
-          ))}
-          {peerOf(picker) && (
-            <button type="button" role="menuitem" aria-label={peerOf(picker)!.hushed ? "Unmute for me" : "Mute for me"} onClick={() => { voice.hush(picker); setPicker(null); }}
-              className="grid h-10 w-10 place-items-center rounded-full text-[20px]">{peerOf(picker)!.hushed ? "🔊" : "🔇"}</button>
-          )}
-          </div>}
-          {/* (2026-10-12) everything about this player, round by round */}
-          {!reading && onHistory && (
-            <button type="button" role="menuitem" onClick={() => { onHistory(picker); setPicker(null); }}
-              className="min-h-10 rounded-xl border-t border-brass/30 text-[13px] font-bold text-stock/85">📜 {picker === v.me.seat ? "Your" : `${v.players[picker]?.name.replace(/\s*🤖$/, "")}'s`} history</button>
-          )}
-        </div>
+      {/* (designer 2026-10-14: "accusing someone for stone and role can be made 100x better") a big sheet from the
+          bottom, ONE tap: the real role cards — a thief card accuses, a village card clears — and the Stone, yes or no */}
+      {picker !== null && picker !== v.me.seat && v.players[picker] && (
+        <AccuseSheet v={v} seat={picker} said={said[picker]} seen={faces[picker]?.seen} mark={marks[picker]}
+          onClose={() => setPicker(null)}
+          onClaim={onClaim ? (kind, role, has) => { onClaim(kind, picker, role, has); setPicker(null); } : undefined}
+          onMark={onMark ? (m) => { onMark(picker, m); setPicker(null); } : undefined}
+          onThrow={onThrow ? (e) => { onThrow(picker, e); setPicker(null); } : undefined}
+          hush={peerOf(picker) ? { hushed: peerOf(picker)!.hushed, toggle: () => { voice.hush(picker); setPicker(null); } } : undefined}
+          onHistory={onHistory ? () => { onHistory(picker); setPicker(null); } : undefined} />
       )}
       <CardFlights v={v} pos={pos} />
       {flying.map((t) => {
@@ -822,14 +778,16 @@ function CardFlights({ v, pos }: { v: PlayerView; pos: (seat: number) => { x: nu
       const seat = typeof d.seat === "number" ? d.seat : null, target = typeof d.target === "number" ? d.target : null;
       if ((e.type === "pass" || e.type === "play") && seat !== null) fly(seat, nextLiving(seat, 1), 3);
       if (e.type === "hera_pheri" && seat !== null && target !== null) fly(target, seat, typeof d.k === "number" ? d.k : 2, 250);
-      // Bhukamp: every living hand sends 1 card LEFT (the next player) and 1 RIGHT (the one before)
-      if (e.type === "batwara") for (const p of v.players) if (p.alive) { fly(p.seat, nextLiving(p.seat, 1), 1, 300); fly(p.seat, nextLiving(p.seat, -1), 1, 360); }
+      // Bhukamp: every living hand sends 1 card LEFT (the next player) and 1 RIGHT (the one before) — when the passes
+      // really happen (batwara_done), not when the pair is played (designer 2026-10-13 evening: "it suddenly vanishes and
+      // new cards appear"). Left first, then right, so the eye can follow each.
+      if (e.type === "batwara_done") for (const p of v.players) if (p.alive) { fly(p.seat, nextLiving(p.seat, 1), 1, 0); fly(p.seat, nextLiving(p.seat, -1), 1, 700); }
       if (e.type === "handoff" && seat !== null && target !== null) fly(seat, target, typeof d.count === "number" ? Math.min(3, d.count) : 2, 200);
     }
     if (!add.length) return;
     const ids = new Set(add.map((x) => x.id));
     const go = setTimeout(() => setFlights((f) => [...f, ...add]), 0);
-    const done = setTimeout(() => setFlights((f) => f.filter((x) => !ids.has(x.id))), 1700);
+    const done = setTimeout(() => setFlights((f) => f.filter((x) => !ids.has(x.id))), 2400);
     return () => { clearTimeout(go); clearTimeout(done); };
   }, [top]); // eslint-disable-line react-hooks/exhaustive-deps
   return <>{flights.map((f) => {
@@ -1157,10 +1115,10 @@ function Final({ v, clips = [], host = false, hostName = "the host", onRematch }
   const held = STONES.map((c) => ({ c, ...stoneAt(c) }));
   const plainName = (w: string) => w.replace(/\s*🤖$/, "");
   const why = !village
-    ? held.filter((h) => h.side === "T").map((h) => `${plainName(h.who)} (${h.role}) kept the ${STONE_NAME[h.c]}`).join(" · ")
+    ? held.filter((h) => h.side === "T").map((h) => `${plainName(h.who)}${h.role ? ` (${h.role})` : ""} kept the ${STONE_NAME[h.c]}`).join(" · ")
     : held.every((h) => h.role === null) ? "Both Stones ended with the village." : "No thief kept a Stone.";
   const n = reveal.length;
-  const size: SeatSize = n <= 8 ? "lg" : n <= 16 ? "md" : "sm";
+  const size: SeatSize = n <= 7 ? "lg" : n <= 9 ? "md" : "sm";
   // the mandatory vote decided the game: everyone sees how many votes each player got
   const finalTally = (v.events.filter((e) => e.type === "vote_result" && e.data?.reason === "final").at(-1)?.data?.tally ?? {}) as Record<string, number>;
   const ini = initialsOf(v.players.map((p) => p.name));
@@ -1182,7 +1140,7 @@ function Final({ v, clips = [], host = false, hostName = "the host", onRematch }
       </header>
 
       {/* everyone turns their role over, round the same ring as the table */}
-      <div className="relative mx-1 mt-3 min-h-[400px] flex-1" role="list" aria-label="Everyone's role">
+      <div className="relative mx-1 mb-12 mt-16 min-h-[420px] flex-1" role="list" aria-label="Everyone's role">
         <div className="absolute inset-x-[9%] inset-y-[8%] rounded-[50%] border border-brass/35" aria-hidden />
         {Array.from({ length: n }, (_, k) => {
           const r = reveal[(v.me.seat + k) % n];
@@ -1193,7 +1151,7 @@ function Final({ v, clips = [], host = false, hostName = "the host", onRematch }
           const thief = r.side === "T";
           return (
             <div key={r.seat} role="listitem" className={`flip-in absolute z-10 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center text-center ${z.w}`}
-              style={{ left: `${50 + 41 * Math.cos(angle)}%`, top: `${50 + 42 * Math.sin(angle)}%`, animationDelay: `${300 + k * 160}ms` }}
+              style={{ left: `${50 + 41 * Math.cos(angle)}%`, top: `${50 + 40 * Math.sin(angle)}%`, animationDelay: `${300 + k * 160}ms` }}
               aria-label={`${p.name}${me ? " (you)" : ""}: ${r.role}, ${thief ? "thief" : "Tunga"}${p.alive ? "" : ", out"}`}>
               {/* wind sway (juice): every card on the ring swings gently, each in its own time */}
               <div className="sway flex flex-col items-center" style={{ ["--sway-t" as string]: `${3 + (k % 4) * 0.35}s`, ["--sway-d" as string]: `${-(k * 0.7)}s` }}>
@@ -1210,7 +1168,7 @@ function Final({ v, clips = [], host = false, hostName = "the host", onRematch }
         })}
 
         {/* the middle: where the two Stones ended */}
-        <div className="absolute left-1/2 top-1/2 w-[54%] max-w-[240px] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-brass/70 bg-[#1a0e06]/90 px-3 pb-3 pt-4 text-center">
+        <div className={`absolute left-1/2 top-1/2 ${n > 9 ? "w-[44%]" : "w-[54%]"} max-w-[240px] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-brass/70 bg-[#1a0e06]/90 px-3 pb-3 pt-4 text-center`}>
           <Ornament className="absolute -top-2 left-1/2 -translate-x-1/2" />
           <p className="font-[family-name:var(--font-engraved)] text-[11px] font-semibold uppercase tracking-[0.2em] text-brass">The Stones</p>
           <ul className="mt-2 flex flex-col gap-2 text-left">
@@ -1379,7 +1337,6 @@ function StonePaths({ v, reveal }: { v: PlayerView; reveal: { seat: number; side
           </ol>
         </div>
       ))}
-      <p className="text-center text-[11px] text-stock/50">gold = villager · red = thief · 👁 saw it with Talashi</p>
     </div>
   );
 }
@@ -1424,7 +1381,6 @@ function VoiceBanner({ voice }: { voice: VoiceCtl }) {
 const TIPS = "tunga:tips";
 const STONE_NAME: Partial<Record<Card, string>> = { STONE_1: "Bhadra Stone", STONE_2: "Tunga Stone" };
 /** tap your own seat: lines anyone says at a real table (designer 2026-10-09) */
-const QUICK_LINES = ["🙋 Not me!", "🌾 I'm with the village", "🪨 I have no Stone", "⏳ Wait"];
 const isBot = (name: string) => /🤖$/.test(name);
 
 
@@ -1527,6 +1483,111 @@ export const TOUR: [string, React.ReactNode][] = [
   ["history", <>The <b>clock-arrow</b> at the top — or a tap on the middle — shows everything that happened so far.</>],
   ["menu", <><b>☰ Menu</b>: hold to peek at your role, sound, turn alerts.</>],
 ];
+
+/** THE ACCUSE SHEET (designer 2026-10-14): what the table has said about them so far, then ONE tap — a role card
+ *  (thief cards first, in red: accuse · village cards in gold: clear) or the Stone. Your own read wears 🔮. Private
+ *  marks, throws, mute and history sit below. An out player: "was…", no Stone. */
+function AccuseSheet({ v, seat, said, seen, mark, onClose, onClaim, onMark, onThrow, hush, onHistory }: {
+  v: PlayerView; seat: number; said?: SaidAbout; seen?: string; mark?: Mark; onClose: () => void;
+  onClaim?: (kind: "kundli" | "stone", role?: string, has?: boolean) => void; onMark?: (m: Mark | null) => void; onThrow?: (e: string) => void;
+  hush?: { hushed: boolean; toggle: () => void }; onHistory?: () => void;
+}) {
+  const p = v.players[seat];
+  const name = p.name.replace(/\s*🤖$/, "");
+  const roles = [...v.rolesInPlay].sort((x, y) => Number(THIEF_ROLES.includes(y)) - Number(THIEF_ROLES.includes(x)));
+  const head = `${ENGRAVED} text-[11px] font-semibold uppercase tracking-[0.2em] text-brass`;
+  const anything = Boolean(said && (said.accuse || said.trust || said.stone !== undefined));
+  return (
+    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/60" onClick={onClose}>
+      <div role="dialog" aria-label={name} onClick={(e) => e.stopPropagation()}
+        className="stage-in flex max-h-[88dvh] w-full max-w-md flex-col gap-3 overflow-y-auto rounded-t-3xl border-t-2 border-brass/70 bg-ember px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4">
+        <div className="flex items-center gap-3">
+          <span className={`grid h-12 w-12 shrink-0 place-items-center rounded-full text-[20px] font-medium text-card-ink ${p.alive ? "" : "opacity-50 grayscale"}`}
+            style={{ background: SEAT_COLOURS[seat % SEAT_COLOURS.length] }}>{name.slice(0, 1).toUpperCase()}</span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-display text-[22px] font-bold leading-tight text-stock">{name}{p.alive ? "" : " · out"}</p>
+            <p className="text-[13px] text-stock/70">
+              {anything && said
+                ? <>Table says: {said.accuse > 0 && <span className="text-crimson-soft">🫵 {said.accuse} </span>}{said.trust > 0 && <span className="text-[#f3c66b]">🌾 {said.trust} </span>}{said.stone !== undefined && <span>💎{said.stone ? "✓" : "✗"}</span>}</>
+                : "Nobody has said anything yet."}
+            </p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close" className="grid h-10 w-10 place-items-center text-[20px] text-stock/60">✕</button>
+        </div>
+
+        {onClaim && <>
+          <p className={head}>{name} {p.alive ? "is" : "was"}… <span className="normal-case tracking-normal text-stock/50">tap a card</span></p>
+          <ul className="grid grid-cols-4 gap-2">
+            {roles.map((r) => {
+              const thief = THIEF_ROLES.includes(r), art = roleArt(r);
+              return (
+                <li key={r}>
+                  <button type="button" onClick={() => onClaim("kundli", r)} aria-label={`${name} ${p.alive ? "is" : "was"} ${r}`}
+                    className={`relative flex w-full flex-col items-center overflow-hidden rounded-lg ring-2 active:scale-95 ${thief ? "bg-crimson-deep ring-crimson" : "bg-[#3a240c] ring-[#f0a32e]/70"}`}>
+                    {art
+                      // eslint-disable-next-line @next/next/no-img-element
+                      ? <img src={art} alt="" className="aspect-[5/7] w-full object-cover object-top" />
+                      : <span className="grid aspect-[5/7] w-full place-items-center font-display text-[28px] text-stock/80">{r.slice(0, 1)}</span>}
+                    {/* the printed card carries its own name */}
+                    {!art && <span className={`mt-0.5 w-full truncate px-0.5 text-center text-[11px] font-extrabold uppercase ${thief ? "text-ink" : "text-[#f3c66b]"}`}>{r}</span>}
+                    {seen === r && <span className="absolute right-0.5 top-0.5 rounded-full bg-black/70 px-1 text-[12px]" title="You saw it">🔮</span>}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          {p.alive && <>
+            <p className={head}>Stone?</p>
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => onClaim("stone", undefined, true)} className="min-h-12 rounded-xl bg-[#3a240c] text-[15px] font-bold text-[#f3c66b] ring-2 ring-[#f0a32e]/70 active:scale-95">💎 Has a Stone</button>
+              <button type="button" onClick={() => onClaim("stone", undefined, false)} className="min-h-12 rounded-xl bg-black/40 text-[15px] font-bold text-stock ring-2 ring-brass/50 active:scale-95">✋ No Stone</button>
+            </div>
+          </>}
+        </>}
+
+        <div className="flex flex-wrap items-center justify-center gap-1 border-t border-brass/30 pt-2">
+          {onMark && <>
+            <span className="mr-1 text-[12px] text-stock/60">🔒 Only you</span>
+            {(Object.keys(MARK) as Mark[]).map((m) => (
+              <button key={m} type="button" aria-label={`Mark ${MARK[m].label}`} aria-pressed={mark === m} onClick={() => onMark(mark === m ? null : m)}
+                className={`grid h-9 w-9 place-items-center rounded-full text-[13px] font-black ${MARK[m].dot} ${mark === m ? "ring-2 ring-stock" : ""}`}>{MARK[m].glyph}</button>
+            ))}
+            <span className="mx-1 h-6 w-px bg-brass/30" aria-hidden />
+          </>}
+          {onThrow && REACTIONS.map((e) => <button key={e} type="button" onClick={() => onThrow(e)} className="grid h-10 w-10 place-items-center rounded-full text-[22px] active:scale-90">{e}</button>)}
+          {hush && <button type="button" aria-label={hush.hushed ? "Unmute for me" : "Mute for me"} onClick={hush.toggle} className="grid h-10 w-10 place-items-center rounded-full text-[20px]">{hush.hushed ? "🔊" : "🔇"}</button>}
+          {onHistory && <button type="button" onClick={onHistory} className="min-h-10 rounded-full px-3 text-[13px] font-bold text-stock/85 ring-1 ring-brass/40">📜 History</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** DEFEND (designer 2026-10-13 evening): the accused gets the floor (a 15 s spotlight, every other mic held) and quick
+ *  answers the whole table reads — for anyone without a mic, and for bots, who wait for the answer. */
+function Defend({ v, acc, voice, onAnswer, onClose }: { v: PlayerView; acc: Accusation; voice: boolean; onAnswer: (b: { kind: DefendKind; role?: string }) => void; onClose: () => void }) {
+  const them = (v.players[acc.accuser]?.name ?? "?").replace(/\s*🤖$/, "");
+  const chip = "min-h-10 rounded-full border border-brass/60 px-3 text-[13px] font-bold text-stock active:translate-y-px";
+  return (
+    <div className="stage-in mx-3 mb-1 rounded-2xl border-2 border-crimson/70 bg-[#2a0f08] px-3 pb-2 pt-2 text-stock shadow-[0_8px_20px_-8px_rgba(0,0,0,.8)]" role="alert">
+      <div className="flex items-start gap-2">
+        <p className="flex-1 font-display text-[16px] font-bold leading-snug">{them} says you {acc.stone ? "have a Stone" : <>are <span className="text-crimson-soft">{acc.role}</span></>}</p>
+        <button type="button" onClick={onClose} aria-label="Stay silent" className="-mr-1 grid h-9 w-9 place-items-center text-stock/60">✕</button>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {voice && <button type="button" onClick={() => onAnswer({ kind: "floor" })} className="nudge min-h-10 rounded-full px-4 text-[13px] font-extrabold uppercase tracking-wide">🎙 Answer · 15 s</button>}
+        {acc.stone && <button type="button" onClick={() => onAnswer({ kind: "nostone" })} className={chip}>I have no Stone</button>}
+        <button type="button" onClick={() => onAnswer({ kind: "liar" })} className={chip}>{them} is lying</button>
+      </div>
+      <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.15em] text-stock/50">I am…</p>
+      <div className="mt-1 flex flex-wrap gap-1.5">
+        {v.rolesInPlay.filter((r) => !THIEF_ROLES.includes(r)).map((r) => (
+          <button key={r} type="button" onClick={() => onAnswer({ kind: "role", role: r })} className={`${chip} bg-[#3a240c] text-[#f3c66b]`}>{r}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function Coach({ text, onNext, onSkip }: { text: React.ReactNode; onNext: () => void; onSkip: () => void }) {
   return (
