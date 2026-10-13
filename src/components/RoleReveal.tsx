@@ -12,7 +12,7 @@ const STONES_SECONDS = 10;
 const ART: Record<string, string> = { Kisaan: "/role-kisaan.webp" };
 const seenKey = (code: string) => `tunga:reveal:${code.toUpperCase()}`;
 const BACKDROP = "fixed inset-0 z-40 flex flex-col items-center overflow-y-auto bg-[radial-gradient(90%_55%_at_50%_45%,var(--color-ember-2)_0%,var(--color-ember)_65%,#120903_100%)] px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]";
-const CONTINUE = "min-h-14 w-full max-w-md shrink-0 border-2 border-brass/80 bg-[linear-gradient(180deg,var(--color-rust)_0%,var(--color-rust-deep)_100%)] font-[family-name:var(--font-engraved)] text-[22px] font-bold uppercase tracking-[0.1em] text-stock shadow-[inset_0_1px_0_rgba(255,220,170,.3)] active:translate-y-px";
+const CONTINUE = "min-h-14 w-full max-w-md shrink-0 border-2 border-brass/80 btn-primary font-[family-name:var(--font-engraved)] text-[22px] font-bold uppercase tracking-[0.1em] text-stock shadow-[inset_0_1px_0_rgba(255,220,170,.3)] active:translate-y-px";
 const TAG = "polygon(6% 0, 94% 0, 100% 50%, 94% 100%, 6% 100%, 0 50%)";
 const FEATHER: React.CSSProperties = {
   maskImage: "linear-gradient(to right, transparent, #000 8%, #000 92%, transparent), linear-gradient(to bottom, transparent, #000 8%, #000 88%, transparent)",

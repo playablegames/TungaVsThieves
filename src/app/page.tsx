@@ -99,7 +99,7 @@ function Entry() {
           </div>
         )}
         <button type="button" disabled={busy || (!!invited && !codeOk)} onClick={() => choose(invited ? "join" : "create")}
-          className="relative flex min-h-16 w-full items-center justify-center rounded-full border-2 border-brass/80 bg-[linear-gradient(180deg,var(--color-rust)_0%,var(--color-rust-deep)_100%)] px-12 font-[family-name:var(--font-engraved)] text-[21px] font-bold uppercase tracking-[0.12em] text-stock shadow-[inset_0_1px_0_rgba(255,220,170,.35),0_10px_30px_-8px_rgba(0,0,0,.7)] transition-transform active:translate-y-px disabled:opacity-50">
+          className="relative flex min-h-16 w-full items-center justify-center rounded-full border-2 border-brass/80 btn-primary px-12 font-[family-name:var(--font-engraved)] text-[21px] font-bold uppercase tracking-[0.12em] text-stock shadow-[inset_0_1px_0_rgba(255,220,170,.35),0_10px_30px_-8px_rgba(0,0,0,.7)] transition-transform active:translate-y-px disabled:opacity-50">
           {invited ? `Join table ${invited}` : "Play with friends"}
           <svg aria-hidden viewBox="0 0 24 24" className="absolute right-6 size-6 fill-none stroke-stock stroke-2"><path d="M9 5l7 7-7 7" /></svg>
         </button>
@@ -166,7 +166,7 @@ function Entry() {
             )}
             {error && <p role="alert" className="rounded-xl bg-crimson-deep p-3 text-center text-[14px]">{error}</p>}
             <button type="submit" disabled={busy || !name.trim()}
-              className="min-h-14 rounded-full border-2 border-brass/80 bg-[linear-gradient(180deg,var(--color-rust)_0%,var(--color-rust-deep)_100%)] font-[family-name:var(--font-engraved)] text-[17px] font-bold uppercase tracking-[0.12em] text-stock active:translate-y-px disabled:opacity-50">
+              className="min-h-14 rounded-full border-2 border-brass/80 btn-primary font-[family-name:var(--font-engraved)] text-[17px] font-bold uppercase tracking-[0.12em] text-stock active:translate-y-px disabled:opacity-50">
               {busy ? "…" : ask === "create" ? "Open the table" : ask === "bots" || ask === "learn" ? "Start the game" : "Take a seat"}
             </button>
           </form>

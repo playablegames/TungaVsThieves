@@ -63,7 +63,7 @@ function deadlineFor(state: GameState, timers: Timers): number | null {
   if (k === "over") return null;
   const secs = k === "vote" && state.phase.debate
     ? Math.round(debateSeconds(state.players.filter((p) => p.alive).length, timers.debate ?? DEFAULT_TIMERS.debate!) / (timers.speed ?? 1))
-    : k === "vote" || k === "surrender" ? timers.vote : k === "elim" ? timers.elim : timers.turn;
+    : k === "vote" || k === "batwara" || k === "surrender" ? timers.vote : k === "elim" ? timers.elim : timers.turn;
   return Date.now() + secs * 1000;
 }
 
@@ -332,11 +332,11 @@ const autoAction = (row: GameRow, s: GameState, seat: number): Action => {
 };
 const AWAY_AFTER = 2; // consecutive timeouts before a stand-in takes the seat
 
-/** Bots answer votes at once; their turns and eliminations wait BOT_DELAY_MS for a tick. */
+/** Bots answer votes and Batwara at once; their turns and eliminations wait BOT_DELAY_MS for a tick. */
 function runBots(row: GameRow, s: GameState): GameState {
   for (let guard = 0; guard < 100; guard++) {
     const k = s.phase.kind;
-    if (k !== "vote" && k !== "surrender") break;
+    if (k !== "vote" && k !== "batwara" && k !== "surrender") break;
     const bots = waitingOn(s).filter((seat) => isAuto(row, seat));
     if (!bots.length) break;
     for (const seat of bots) if (waitingOn(s).includes(seat)) {

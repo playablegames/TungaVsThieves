@@ -4,7 +4,7 @@ import { shuffle } from "./rng";
 
 /** players -> [villagers, thieves, rounds]. RETUNED 2026-10-12 (designer locked it) with bots that play the final rules
  *  the way the designer's table does — Dal Badal once exposed (shuffling with the accusers), in round 3 with no Stone
- *  seen, or when voted out; Teer Kaman at a role-named accusation; Bhukamp (since 2026-10-12: every hand one seat anticlockwise). Tunga wins casual/average/sharp
+ *  seen, or when voted out; Teer Kaman at a role-named accusation; Bhukamp both ways. Tunga wins casual/average/sharp
  *  (scripts/sdlab.mts timing-BAL, 150 games a cell, ±4): 5p 2T 39/41/42 (1T was 65/73/75) · 6p 2T 56/56/58 ·
  *  7p 2T 54/59/61 · 8p 3T 41/43/50 · 9p 3T 51/54/55 · 10p 3T 55/54/50 · 11p 4T 43/47/53 · 12p 4T 45/63/53.
  *  About one thief in three; 13-30 follow that ratio (not measured). Rounds fixed at 3. */

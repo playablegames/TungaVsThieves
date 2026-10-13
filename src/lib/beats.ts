@@ -81,7 +81,7 @@ function rawBeat(e: GameEvent, names: string[]): Beat | null {
     case "hera_pheri_private":
       return { ...base, card: "HERA_PHERI", title: "What moved", detail: e.msg, tone: "lethal", big: false, hold: SMALL };
     case "batwara":
-      return { ...base, card: "BATWARA", title: `${nm(actor)} plays Bhukamp`, detail: "↺ Every hand moves one seat back — to the player before you. Watch whether yours comes back.", tone: "gold", big: true, hold: BIG };
+      return { ...base, card: "BATWARA", title: `${nm(actor)} plays Bhukamp`, detail: "Everyone passes one card left and one right.", tone: "gold", big: true, hold: BIG };
     case "teer_kaman": {
       const roles = (d?.roles as string[]) ?? [];
       const hit = d?.hit === true;

@@ -63,6 +63,11 @@ body {
 .spotlight { animation: spot 1.8s ease-in-out infinite; }
 /* voice: a seat lights up while that player talks (Discord's green ring) */
 .speaking { box-shadow: 0 0 0 3px var(--color-jade), 0 0 14px 2px color-mix(in srgb, var(--color-jade) 55%, transparent); transition: box-shadow 120ms; }
+/* BUTTONS (designer 2026-10-13: one finish everywhere — the printed card's colours). PRIMARY = saffron to rust with a
+   cream label, the one main action on a screen; it turns green (.nudge) when it's the next step to take. */
+.btn-primary { background: linear-gradient(180deg, #e8771a 0%, #b4461c 100%); color: #fbf3e1; border-color: #f3c66b;
+  box-shadow: inset 0 1px 0 rgba(255,236,200,.45), 0 6px 14px -6px rgba(0,0,0,.85); text-shadow: 0 1px 0 rgba(90,30,8,.6); }
+.btn-primary:active { transform: translateY(1px); box-shadow: inset 0 1px 0 rgba(255,236,200,.3), 0 3px 8px -4px rgba(0,0,0,.85); }
 /* NUDGE (designer 2026-10-13; research: one primary action per screen stands out by contrast — the isolation effect).
    GREEN = "this is your next step" or "you have something new". Never on a lethal or irreversible move, never a fake
    countdown (CCPA dark-pattern guidelines 2023: no false urgency, no nagging). It stops the moment it's used. */

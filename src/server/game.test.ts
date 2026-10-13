@@ -137,7 +137,7 @@ describe("room service (memory store)", () => {
           const s = row.state!;
           const waiting = waitingOn(s);
           // bots never hold up a vote: they have voted the moment ballots open (open voting: the human may already have, too)
-          if (s.phase.kind === "vote" || s.phase.kind === "surrender") expect(waiting.filter((x) => x !== me)).toEqual([]);
+          if (s.phase.kind === "vote" || s.phase.kind === "batwara" || s.phase.kind === "surrender") expect(waiting.filter((x) => x !== me)).toEqual([]);
           if (waiting.includes(me)) await act(host.code, host.token, randomAction(s, me, rnd));
           else {
             const openVote = s.phase.kind === "vote" && !s.phase.debate;

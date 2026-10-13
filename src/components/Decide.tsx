@@ -12,7 +12,7 @@ import type { Voice } from "@/lib/cards";
 function Btn({ voice = "pass", className = "", ...p }: React.ButtonHTMLAttributes<HTMLButtonElement> & { voice?: Voice | "pass" | "ghost" }) {
   const look = voice === "ghost" || voice === "pass"
     ? "border-2 border-brass/60 bg-black/30 text-stock"
-    : "border-2 border-brass/80 bg-[linear-gradient(180deg,var(--color-rust)_0%,var(--color-rust-deep)_100%)] text-stock";
+    : "border-2 border-brass/80 btn-primary text-stock";
   return <button type="button" {...p} className={`inline-flex min-h-12 items-center justify-center gap-2 whitespace-nowrap rounded-full px-5 font-[family-name:var(--font-engraved)] text-[14px] font-bold uppercase tracking-[0.08em] active:translate-y-px disabled:opacity-40 ${look} ${className}`} />;
 }
 import { HandRow } from "./Hand";
@@ -66,6 +66,7 @@ export function Decide({ v, act }: { v: PlayerView; act: (a: Action) => void }) 
     case "debate": return d.dalBadal ? <DebateDalBadal v={v} act={act} /> : null;
     case "vote": return null;
     case "dal_badal_out": return <DalBadalOut v={v} act={act} />;
+    case "batwara": return <Bhukamp v={v} act={act} />;
     case "surrender": return <Surrender stones={d.stones as Card[]} act={act} />;
     case "dal_pick": return <DalPick count={d.count} act={act} />;
     case "gift": return <OneOf title="Give your vote" hint="They vote with one more from now on." options={others}
@@ -112,6 +113,38 @@ function Surrender({ stones, act }: { stones: Card[]; act: (a: Action) => void }
       <div className="grid grid-cols-2 gap-2">
         <Btn voice="ghost" onClick={() => act({ type: "surrender", give: false })}>Keep it</Btn>
         <Btn voice="vote" onClick={() => act({ type: "surrender", give: true })}>Surrender</Btn>
+      </div>
+    </div>
+  );
+}
+
+/** BHUKAMP (2026-10-12): 1 card to your left (the next player), 1 to your right — tap the left one, then the right one */
+function Bhukamp({ v, act }: { v: PlayerView; act: (a: Action) => void }) {
+  const [first, setFirst] = useState<number | null>(null);
+  const living = v.players.filter((p) => p.alive).map((p) => p.seat);
+  const i = living.indexOf(v.me.seat);
+  const bare = (s: string) => s.replace(/\s*🤖$/, "");
+  const left = bare(v.players[living[(i + 1) % living.length]].name);
+  const right = bare(v.players[living[(i - 1 + living.length) % living.length]].name);
+  const hand = v.me.hand;
+  if (hand.length < 2) {
+    return (
+      <div className="flex flex-col gap-3">
+        <Head title={`Bhukamp — 1 card to ${left}`} />
+        <div className="pt-2"><HandRow cards={hand} onTap={(k) => act({ type: "batwara", card: hand[k] })} /></div>
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-3">
+      <Head title={first === null ? `Bhukamp — which card to ${left}?` : `…and which to ${right}?`} />
+      <div className="pt-2">
+        <HandRow cards={hand} selected={first === null ? [] : [first]} labels={first === null ? {} : { [first]: left }}
+          onTap={(k) => {
+            if (first === null) return setFirst(k);
+            if (k === first) return setFirst(null);
+            act({ type: "batwara", card: hand[first], right: hand[k] });
+          }} />
       </div>
     </div>
   );
@@ -255,7 +288,7 @@ function Turn({ v, playable, passSize, dalBadal, act, ask }: { v: PlayerView; pl
         <div className="flex flex-col gap-2">
           {playable.map((c, i) => (
             <button key={c} type="button" onClick={() => declare(c)}
-              className={`${i === 0 ? "nudge" : ""} min-h-12 rounded-full border-2 border-brass/80 bg-[linear-gradient(180deg,var(--color-rust)_0%,var(--color-rust-deep)_100%)] font-[family-name:var(--font-engraved)] text-[16px] font-bold uppercase tracking-[0.08em] text-stock active:translate-y-px`}>
+              className={`${i === 0 ? "nudge" : ""} min-h-12 rounded-full border-2 border-brass/80 btn-primary font-[family-name:var(--font-engraved)] text-[16px] font-bold uppercase tracking-[0.08em] text-stock active:translate-y-px`}>
               Play {CARD[c].name} pair
             </button>
           ))}
@@ -341,7 +374,7 @@ function Turn({ v, playable, passSize, dalBadal, act, ask }: { v: PlayerView; pl
       {complete(pass, target, roles) && (
         <button type="button" onClick={send}
           // the next step glows green — never a lethal one (Teer Kaman)
-          className={`${card === "TEER_KAMAN" ? "" : "nudge"} min-h-12 rounded-full border-2 border-brass/80 bg-[linear-gradient(180deg,var(--color-rust)_0%,var(--color-rust-deep)_100%)] font-[family-name:var(--font-engraved)] text-[16px] font-bold uppercase tracking-[0.08em] text-stock active:translate-y-px`}>
+          className={`${card === "TEER_KAMAN" ? "" : "nudge"} min-h-12 rounded-full border-2 border-brass/80 btn-primary font-[family-name:var(--font-engraved)] text-[16px] font-bold uppercase tracking-[0.08em] text-stock active:translate-y-px`}>
           {card === "NONE" ? `Pass these ${passSize}` : card === "TEER_KAMAN" ? "Shoot" : `Play ${CARD[card as ActionCard].name}`}
         </button>
       )}

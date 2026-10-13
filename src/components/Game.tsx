@@ -97,7 +97,7 @@ export default function Game({ code }: { code: string }) {
     return (
       <Centered>
         <p>You aren&rsquo;t at table <b>{code}</b> on this phone.</p>
-        <Link href={`/?code=${code}`} className="mt-5 inline-flex min-h-12 items-center rounded-full border-2 border-brass/80 bg-[linear-gradient(180deg,var(--color-rust)_0%,var(--color-rust-deep)_100%)] px-6 font-[family-name:var(--font-engraved)] font-bold uppercase tracking-[0.1em] text-stock">Join this table</Link>
+        <Link href={`/?code=${code}`} className="mt-5 inline-flex min-h-12 items-center rounded-full border-2 border-brass/80 btn-primary px-6 font-[family-name:var(--font-engraved)] font-bold uppercase tracking-[0.1em] text-stock">Join this table</Link>
       </Centered>
     );
   if (!g.state) return <Centered>{g.error ?? "Connecting…"}</Centered>;
@@ -301,6 +301,7 @@ function status(v: PlayerView): string {
   if (p.endsWith("_debate")) return `${p.startsWith("final") ? "Last debate" : "Faisla"} — the floor is open`;
   if (p.endsWith("_vote")) return mine ? "Your vote" : `Voting — waiting for ${list}`;
   if (p === "surrender") return mine ? "Surrender your Stone?" : "The Stone holders are deciding…";
+  if (p === "batwara") return mine ? "Bhukamp — one card left, one right" : `Bhukamp — waiting for ${list}`;
   if (p.startsWith("dal_badal")) return mine ? "Dal Badal — pick a role card" : `Dal Badal — ${list} picking a role card`;
   if (p.startsWith("elim")) {
     const seat = Number(p.split(":")[2]);
@@ -658,7 +659,7 @@ function Ring({ v, voice, talking, floorSeat = null, actor, target, pick, tally,
   };
   // the spotlight beam: from the middle of the table to whoever must act
   // the beam follows whoever holds the floor; otherwise whoever must act
-  const lit = floorSeat !== null ? floorSeat : v.phase.startsWith("turn") ? v.turnSeat : v.waitingOn.length === 1 ? v.waitingOn[0] : null;
+  const lit = floorSeat !== null ? floorSeat : v.phase.startsWith("turn") ? v.turnSeat : v.phase === "batwara" ? null : v.waitingOn.length === 1 ? v.waitingOn[0] : null;
   const beam = lit !== null ? (() => {
     const t = pos(lit), dx = t.x - 50, dy = t.y - 50, len = Math.hypot(dx, dy) || 1, w = 7;
     return `50,50 ${t.x + (-dy / len) * w},${t.y + (dx / len) * w} ${t.x - (-dy / len) * w},${t.y - (dx / len) * w}`;
@@ -814,7 +815,8 @@ function CardFlights({ v, pos }: { v: PlayerView; pos: (seat: number) => { x: nu
       const seat = typeof d.seat === "number" ? d.seat : null, target = typeof d.target === "number" ? d.target : null;
       if ((e.type === "pass" || e.type === "play") && seat !== null) fly(seat, nextLiving(seat, 1), 3);
       if (e.type === "hera_pheri" && seat !== null && target !== null) fly(target, seat, typeof d.k === "number" ? d.k : 2, 250);
-      if (e.type === "batwara") for (const p of v.players) if (p.alive) fly(p.seat, nextLiving(p.seat, -1), 2, 300);
+      // Bhukamp: every living hand sends 1 card LEFT (the next player) and 1 RIGHT (the one before)
+      if (e.type === "batwara") for (const p of v.players) if (p.alive) { fly(p.seat, nextLiving(p.seat, 1), 1, 300); fly(p.seat, nextLiving(p.seat, -1), 1, 360); }
       if (e.type === "handoff" && seat !== null && target !== null) fly(seat, target, typeof d.count === "number" ? Math.min(3, d.count) : 2, 200);
     }
     if (!add.length) return;
@@ -893,7 +895,7 @@ function Seat({ p, me, size, face, got, tag, spot, voted, picked, speaking, micO
           // (designer 2026-10-13: "the card back is too jarring") a face-down card sits quiet in the shadows — dimmed and
           // warmed — and lights up only on that player's turn, so "whose turn" reads at a glance
           className={`flip-in h-full w-full rounded-[6px] object-cover transition-[filter] duration-300 ${face.kind === "rumour" ? "opacity-70 sepia" : ""}
-            ${!p.alive ? "grayscale brightness-[.45]" : face.kind === "back" && !spot ? "brightness-[.5] saturate-[.6] sepia-[.35]" : ""}`} />
+            ${!p.alive ? "grayscale brightness-[.45]" : (face.kind === "back" || face.kind === "rumour") && !spot ? "brightness-[.55] saturate-[.6] sepia-[.35]" : ""}`} />
         {face.kind === "rumour" && <span className="absolute left-1/2 top-1/2 grid h-5 w-5 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-black/70 text-[12px] font-black text-[#f3c66b]" aria-hidden>?</span>}
         {!p.alive && <span className="absolute inset-0 grid place-items-center rounded-[6px] bg-black/45 text-[22px] font-black text-stock/90" aria-hidden>✕</span>}
         <span className="absolute -bottom-1 -right-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-ember px-1 text-[10px] font-bold tabular-nums text-stock ring-1 ring-brass/60" aria-hidden>{p.handSize}</span>
@@ -1005,7 +1007,7 @@ function Centre({ v, feed, onOpen, living, extend, ready }: {
       {debate && d?.kind === "debate" && (
         <div className="mt-2 flex flex-col items-center gap-1.5">
           <p className="text-[12px] text-stock/60">{d.ready.length} of {living} ready</p>
-          <button type="button" onClick={ready} className={`${btn} nudge w-full bg-[linear-gradient(180deg,var(--color-rust)_0%,var(--color-rust-deep)_100%)] text-stock`}>Ready to vote</button>
+          <button type="button" onClick={ready} className={`${btn} nudge w-full btn-primary text-stock`}>Ready to vote</button>
           {extend && <button type="button" onClick={extend} className="min-h-8 text-[11px] text-stock/60 underline">+30s (host, once)</button>}
         </div>
       )}
@@ -1233,7 +1235,7 @@ function Final({ v, clips = [], host = false, hostName = "the host", onRematch }
         {host && onRematch ? (
           // PLAY AGAIN keeps the table: same group, back to the lobby (everyone's phone follows)
           <button type="button" disabled={again === "busy"} onClick={() => { setAgain("busy"); onRematch().catch(() => setAgain("error")); }}
-            className={`nudge ${btn} bg-[linear-gradient(180deg,var(--color-rust)_0%,var(--color-rust-deep)_100%)] text-stock disabled:opacity-60`}>
+            className={`nudge ${btn} btn-primary text-stock disabled:opacity-60`}>
             {again === "busy" ? "…" : again === "error" ? "Try again" : "Play again"}
           </button>
         ) : (
