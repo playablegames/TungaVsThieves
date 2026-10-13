@@ -13,11 +13,20 @@ pipe — the Serpent's voice), a SHRUTI drone, temple BELLS and the KOMBU horn. 
   win.mp3      — the village wins: kombu, a dollu roll, the nadaswaram climbing Mohanam, temple bells
   lose.mp3     — the thieves win: the pungi falling through Punnagavarali, the dollu, one bell
 
-  python scripts/music/make_music.py          (needs numpy, scipy, soundfile)
+A VOICE GAME'S SCORE (research 2026-10-13, designer: "it's too loud for a voice talking game"): talk is the game, so the
+music is a BED, not a feature —
+  · LOUDNESS: loops mastered to -26 LUFS (the first cut was -10.7, louder than a pop record); the app plays them lower
+    still and ducks them ~18 dB the moment anyone talks (music.ts)
+  · THE SPEECH BAND: consonants live at 1-4 kHz (intelligibility peaks near 2 kHz) — carved out of the music by ~10 dB,
+    and the cymbals' hiss tamed above it, so a voice always sits in a clear hole
+  · SPARSE: drone + a soft groove most of the time; the melody comes in for a phrase and leaves; the kombu and the
+    chande rolls are kept for the stings
+  python scripts/music/make_music.py          (needs numpy, scipy, soundfile, pyloudnorm)
 """
 import os
 import numpy as np
 import soundfile as sf
+import pyloudnorm as pyln
 from scipy.signal import butter, sosfilt
 
 SR = 44100
@@ -198,15 +207,22 @@ class Track:
         return self.buf[: self.n + int(tail * SR)]
 
 
-def master(x, peak=0.89):
-    # a courtyard: short early reflections, gentle saturation, normalise
+def master(x, lufs=-26.0):
+    # a courtyard: short early reflections
     room = np.zeros_like(x)
     for d, g in ((0.023, 0.18), (0.041, 0.12), (0.067, 0.08)):
         k = int(d * SR)
         room[k:] += x[:-k] * g
     x = x + room[:, ::-1]
-    x = np.tanh(x / np.max(np.abs(x)) * 1.4)
-    return x / np.max(np.abs(x)) * peak
+    # the speech band carved out (~ -10 dB at 1-4 kHz), the hiss above it softened
+    for ch in range(2):
+        x[:, ch] = x[:, ch] - 0.68 * bp(x[:, ch], 1000, 4000, 2)
+        x[:, ch] = x[:, ch] - 0.5 * hp(x[:, ch], 6000, 2)
+    x = np.tanh(x / np.max(np.abs(x)) * 1.2)
+    # loudness: a bed, not a feature
+    meter = pyln.Meter(SR)
+    x = pyln.normalize.loudness(x, meter.integrated_loudness(x), lufs)
+    return np.clip(x, -0.98, 0.98)
 
 
 def play_line(tr, voice, notes, t0, beat, gain, pan):
@@ -235,7 +251,7 @@ VALAM = "V.vV.v..V.v..vV."
 THOPPI = "T.....T...T.T..."
 
 
-def groove(tr, t, beat, gain=1.0):
+def groove(tr, t, beat, gain=0.6):
     step = beat / 4
     for i in range(16):
         at = t + i * step + (0.008 if i % 2 else 0)
@@ -244,7 +260,8 @@ def groove(tr, t, beat, gain=1.0):
         if THOPPI[i] == "T":
             tr.add(thavil_thoppi(1.0), at, 0.55 * gain, -0.15)
     for b in range(4):
-        tr.add(taala(1.0, open_=b % 2 == 0), t + b * beat, 0.5, -0.45)
+        if b % 2 == 0:
+            tr.add(taala(0.6, open_=True), t + b * beat, 0.3, -0.45)
 
 
 def village():
@@ -253,24 +270,16 @@ def village():
     tr = Track(bars * 4 * beat)
     for b in range(bars):
         t = b * 4 * beat
-        tr.add(shruti(4 * beat + 0.3), t, 0.14, 0)
+        tr.add(shruti(4 * beat + 0.3), t, 0.2, 0)
         groove(tr, t, beat)
         if b % 2 == 0:
             tr.add(dollu(1.0), t, 0.55, 0)
+        # SPARSE: the nadaswaram says its phrase once, the pungi answers once — the other 8 bars are drone and groove
         section, k = divmod(b, 4)
-        if section in (0, 2):
-            play_line(tr, nadaswaram, HOOK[k], t, beat, 0.3, 0.12)
-        elif section == 1:
-            play_line(tr, pungi, SNAKE[k], t, beat, 0.22, -0.2)
-        else:
-            # the last phrase is the whole procession: nadaswaram and pungi together, chande rolls, the kombu calls
-            play_line(tr, nadaswaram, SNAKE[k], t, beat, 0.26, 0.12)
-            play_line(tr, pungi, [(s - 12, a, d) for s, a, d in SNAKE[k]], t, beat, 0.1, -0.3)
-            for i in range(8):
-                tr.add(chande(0.6 + 0.05 * i), t + (3 + i / 8) * beat, 0.4, 0.35)
-            if k == 0:
-                tr.add(kombu(), t, 0.3, -0.1)
-            tr.add(dollu(0.8), t + 2 * beat, 0.5, 0)
+        if section == 0:
+            play_line(tr, nadaswaram, [(s_ - 12, a, d) for s_, a, d in HOOK[k]], t, beat, 0.24, 0.12)
+        elif section == 2:
+            play_line(tr, pungi, [(s_ - 12, a, d) for s_, a, d in SNAKE[k]], t, beat, 0.16, -0.2)
     return master(tr.loop())
 
 
@@ -297,12 +306,9 @@ def faisla():
         for at in (1, 3):
             tr.add(thavil_valam(0.4), t + at * beat, 0.3, 0.3)
             tr.add(taala(0.5, open_=False), t + (at + 0.5) * beat, 0.4, -0.4)
-        if b >= 2:
-            play_line(tr, pungi, SERPENT[(b - 2) % 4], t, beat, 0.24, 0.1)
-        if b % 4 == 3:  # a chande roll into the next phrase
-            for i in range(8):
-                tr.add(chande(0.3 + i * 0.08), t + (3 + i / 8) * beat, 0.4, -0.2)
-    return master(tr.loop(), 0.8)
+        if b in (2, 3, 6, 7):
+            play_line(tr, pungi, [(s_ - 12, a, d) for s_, a, d in SERPENT[(b - 2) % 4]], t, beat, 0.18, 0.1)
+    return master(tr.loop(), -27)
 
 
 def win():
@@ -319,7 +325,7 @@ def win():
         tr.add(bell(hz(s_)), land + k * 0.1, 0.6, (-1) ** k * 0.4)
     tr.add(dollu(1.3), land, 0.7, 0)
     tr.add(taala(1.3), land, 0.6, -0.3)
-    return master(tr.once(1.5))
+    return master(tr.once(1.5), -20)
 
 
 def lose():
@@ -330,7 +336,7 @@ def lose():
     tr.add(dollu(1.0), 0, 0.6, 0)
     tr.add(dollu(1.0), 3.5 * beat, 0.6, 0)
     tr.add(bell(hz(-2)), 3.5 * beat, 0.5, 0)
-    return master(tr.once(1.5), 0.8)
+    return master(tr.once(1.5), -21)
 
 
 if __name__ == "__main__":

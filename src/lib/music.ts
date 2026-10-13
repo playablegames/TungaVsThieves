@@ -12,8 +12,11 @@
 export type Mood = "calm" | "tense" | "silent";
 
 const PREF = "tunga:music";
-const LEVEL: Record<Mood, number> = { calm: 0.22, tense: 0.26, silent: 0 };
-const DUCKED = 0.3; // × the level while someone talks
+// (research 2026-10-13, designer: "too loud for a voice talking game") the loops are mastered to -26 LUFS with the
+// speech band (1-4 kHz) carved out; here they play ~6 dB lower still (≈ -32 LUFS, a bed under the table), and the
+// moment anyone talks they drop another ~18 dB (music under speech: 15-20 dB is the broadcast rule)
+const LEVEL: Record<Mood, number> = { calm: 0.5, tense: 0.56, silent: 0 };
+const DUCKED = 0.12; // × the level while someone talks (≈ -18 dB)
 const FILES = { calm: "/audio/music/village.mp3", tense: "/audio/music/faisla.mp3", win: "/audio/music/win.mp3", lose: "/audio/music/lose.mp3" };
 
 let enabled = true;
@@ -57,7 +60,8 @@ function apply(fast = false) {
   if (!score) return;
   const t = score.ac.currentTime;
   score.bus.gain.cancelScheduledValues(t);
-  score.bus.gain.setTargetAtTime(level(), t, fast ? 0.05 : 0.8);
+  // ducking in fast (~30 ms) so the first word is clear; back up slowly (~0.6 s) so it never pumps
+  score.bus.gain.setTargetAtTime(level(), t, fast ? 0.03 : 0.6);
   // crossfade: the mood's loop up, the other down (each keeps its place, so coming back resumes the phrase)
   for (const k of ["calm", "tense"] as const) {
     const g = score.loops[k]?.gain;
@@ -105,7 +109,7 @@ export async function playSting(won: boolean) {
   if (!enabled || !score) return;
   const buf = await load(score, won ? FILES.win : FILES.lose);
   if (!buf || !score) return;
-  const g = score.ac.createGain(); g.gain.value = (ducked ? DUCKED : 1) * 0.5;
+  const g = score.ac.createGain(); g.gain.value = (ducked ? DUCKED : 1) * 0.6;
   const src = score.ac.createBufferSource(); src.buffer = buf;
   src.connect(g).connect(score.ac.destination); src.start();
 }
