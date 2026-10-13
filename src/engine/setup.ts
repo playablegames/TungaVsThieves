@@ -9,7 +9,7 @@ import { shuffle } from "./rng";
  *  7p 2T 54/59/61 · 8p 3T 41/43/50 · 9p 3T 51/54/55 · 10p 3T 55/54/50 · 11p 4T 43/47/53 · 12p 4T 45/63/53.
  *  About one thief in three; 13-30 follow that ratio (not measured). Rounds fixed at 3. */
 export const ROLE_TABLE: Record<number, [number, number, number]> = {
-  5: [3, 2, 3], 6: [4, 2, 3], 7: [4, 3, 3], 8: [5, 3, 3], 9: [6, 3, 3], 10: [7, 3, 3], 11: [7, 4, 3], 12: [8, 4, 3], 13: [9, 4, 3], 14: [9, 5, 3], 15: [10, 5, 3], 16: [11, 5, 3], 17: [11, 6, 3], 18: [12, 6, 3], 19: [13, 6, 3], 20: [13, 7, 3], 21: [14, 7, 3], 22: [15, 7, 3], 23: [15, 8, 3], 24: [16, 8, 3], 25: [17, 8, 3], 26: [17, 9, 3], 27: [18, 9, 3], 28: [19, 9, 3], 29: [19, 10, 3], 30: [20, 10, 3],
+  5: [3, 2, 3], 6: [4, 2, 3], 7: [4, 3, 3], 8: [5, 3, 3], 9: [6, 3, 3], 10: [6, 4, 3], 11: [7, 4, 3], 12: [8, 4, 3], 13: [9, 4, 3], 14: [9, 5, 3], 15: [10, 5, 3], 16: [11, 5, 3], 17: [11, 6, 3], 18: [12, 6, 3], 19: [13, 6, 3], 20: [13, 7, 3], 21: [14, 7, 3], 22: [15, 7, 3], 23: [15, 8, 3], 24: [16, 8, 3], 25: [17, 8, 3], 26: [17, 9, 3], 27: [18, 9, 3], 28: [19, 9, 3], 29: [19, 10, 3], 30: [20, 10, 3],
 };
 export const MIN_PLAYERS = 5;
 export const MAX_PLAYERS = 30;
@@ -39,9 +39,17 @@ export const COPIES_PER_ACTION = 10;
  *  to start(), never mutated: tsx loads this module twice */
 export const DEAL_HAND = 2;
 
+/** SIMULATIONS ONLY (2026-10-13, measuring a deck change for the designer): BOT_FLAGS="bhukamp=8" deals that many
+ *  Bhukamp cards. The game itself never sets it — the deck is always 10 of each. */
+const simBhukamp = (): number | null => {
+  const m = typeof process !== "undefined" ? /bhukamp=(\d+)/.exec(process.env.BOT_FLAGS ?? "") : null;
+  return m ? Number(m[1]) : null;
+};
+
 export function newDeck(): Card[] {
   const d: Card[] = [];
-  for (const c of ACTION_CARDS) for (let i = 0; i < COPIES_PER_ACTION; i++) d.push(c);
+  const bhukamp = simBhukamp();
+  for (const c of ACTION_CARDS) for (let i = 0; i < (c === "BATWARA" && bhukamp !== null ? bhukamp : COPIES_PER_ACTION); i++) d.push(c);
   d.push("DAL_BADAL");
   return d;
 }
