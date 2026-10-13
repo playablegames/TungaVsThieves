@@ -141,6 +141,27 @@ if (typeof document !== "undefined") document.addEventListener("visibilitychange
   else if (enabled) void score.ac.resume();
 });
 
+// THE HOME SCREEN (2026-10-13): the festive Mohanam (village.mp3) under the living cover — soft, looped, only after a
+// tap (browsers), only if music is on; it stops when you go to a table
+let home: HTMLAudioElement | null = null;
+let homeArmed = false;
+export function startHomeMusicOnFirstTap() {
+  if (typeof window === "undefined" || homeArmed) return;
+  homeArmed = true;
+  const go = () => {
+    window.removeEventListener("pointerdown", go);
+    if (!enabled || !homeArmed) return;
+    home = new Audio("/audio/music/village.mp3");
+    home.loop = true; home.volume = 0.4;
+    void home.play().catch(() => {});
+  };
+  window.addEventListener("pointerdown", go);
+}
+export function stopHomeMusic() {
+  homeArmed = false;
+  if (home) { home.pause(); home = null; }
+}
+
 /** leaving the table: stop everything */
 export function stopMusic() {
   if (!score) return;

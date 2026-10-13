@@ -3,7 +3,8 @@
 // Title screen (designer's mockup 2026-10-07; two ways in, 2026-10-09): PLAY WITH FRIENDS (a table + the invite lobby),
 // PLAY WITH BOTS (a table of bots, the game starts at once), or join friends with a code. Your name is asked after you
 // choose. How to play is one tap away.
-import { Suspense, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { startHomeMusicOnFirstTap, stopHomeMusic } from "@/lib/music";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api, saveToken, useHydrated } from "@/lib/client";
 import { CARD } from "@/lib/cards";
@@ -32,6 +33,8 @@ function Entry() {
   // LEARN BY PLAYING (2026-10-09): offered once to a first-time visitor — skippable
   // (read only once hydrated: the server can't see this phone's storage)
   const hydrated = useHydrated();
+  // the festive Mohanam plays softly under the cover after the first tap; it stops when you go to a table
+  useEffect(() => { startHomeMusicOnFirstTap(); return () => stopHomeMusic(); }, []);
   const [skipped, setSkipped] = useState(false);
   const newHere = hydrated && !skipped && (() => { try { return localStorage.getItem(LEARNED) === null; } catch { return false; } })();
   const skipLearn = () => { setSkipped(true); try { localStorage.setItem(LEARNED, "skipped"); } catch {} };
@@ -84,11 +87,26 @@ function Entry() {
       <div aria-hidden className="fixed inset-0 -z-10 bg-[radial-gradient(90%_55%_at_50%_30%,var(--color-ember-2)_0%,var(--color-ember)_65%,#120903_100%)]" />
 
       <h1 className="sr-only">Tunga vs Thieves</h1>
-      {/* eslint-disable-next-line @next/next/no-img-element -- static art, no optimisation needed */}
-      <img src="/emblem.webp" alt="" width={500} height={710}
-        className="w-[min(78vw,340px)] [mask-composite:intersect] [mask-image:linear-gradient(to_right,transparent,#000_7%,#000_93%,transparent),linear-gradient(to_bottom,transparent,#000_5%,#000_95%,transparent)] drop-shadow-[0_0_40px_rgba(224,162,74,.18)]" />
+      {/* THE COVER, ALIVE (designer: "the cover = the home screen"; 2026-10-13): the box art with a slow cinematic push-in,
+          the two Stones glowing on the shrine steps, dust drifting up through the light, the emblem in the sky */}
+      <div aria-hidden className="relative -mx-6 -mt-[9dvh] aspect-[1060/1484] w-[calc(100%+3rem)] overflow-hidden">
+        {/* eslint-disable-next-line @next/next/no-img-element -- static art */}
+        <img src="/art/cover.webp" alt="" className="cover-pushin absolute inset-0 h-full w-full object-cover" />
+        <span className="stone-glow" style={{ left: "42.5%", top: "70%", ["--g" as string]: "90,140,255" }} />
+        <span className="stone-glow" style={{ left: "58%", top: "70%", ["--g" as string]: "255,170,60", animationDelay: "-1.3s" }} />
+        {Array.from({ length: 16 }, (_, i) => (
+          <span key={i} className="dust-mote" style={{ left: `${(i * 37 + 11) % 96}%`, top: `${40 + ((i * 23) % 50)}%`, animationDuration: `${9 + (i % 5) * 2}s`, animationDelay: `${-i * 1.1}s` }} />
+        ))}
+        <div className="absolute inset-x-0 bottom-0 h-[28%] bg-gradient-to-b from-transparent to-[#120903]" />
+        {/* the title in the sky (the emblem card covered the villagers — screen check 2026-10-13) */}
+        <p className="cover-title absolute inset-x-0 top-[3%] text-center font-[family-name:var(--font-engraved)] font-black uppercase leading-[.95] text-[#ffe2a3]">
+          <span className="block text-[clamp(30px,10vw,44px)] tracking-[0.08em]">Tunga</span>
+          <span className="block text-[clamp(13px,4vw,18px)] tracking-[0.4em] text-[#f3c66b]">vs</span>
+          <span className="block text-[clamp(30px,10vw,44px)] tracking-[0.08em]">Thieves</span>
+        </p>
+      </div>
 
-      <div className="mt-8 flex w-full flex-col gap-7">
+      <div className="-mt-6 flex w-full flex-col gap-7">
         {newHere && !invited && (
           <div className="stage-in -mb-2 rounded-2xl border-2 border-[#f0a32e]/80 bg-[#2a1a08] p-3 text-center">
             <p className="text-[15px] text-stock">New here? Learn in a short guided game against bots.</p>
