@@ -703,6 +703,13 @@ function Ring({ v, voice, talking, floorSeat = null, actor, target, pick, tally,
       {picker !== null && (
         <div className="pop absolute z-30 flex w-[min(92%,340px)] -translate-x-1/2 -translate-y-[115%] flex-col gap-1 rounded-2xl border border-brass/60 bg-ember/95 p-1.5 shadow-[0_8px_20px_rgba(0,0,0,.7)]"
           style={{ left: "50%", top: `${Math.max(24, pos(picker).y)}%` }} role="menu" aria-label={`${v.players[picker]?.name}`}>
+          {picker !== v.me.seat && faces[picker]?.seen && roleArt(faces[picker].seen) && (
+            <div className="flex items-center gap-2 rounded-xl bg-black/40 p-1.5" aria-label={`You saw: ${faces[picker].seen}`}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={roleArt(faces[picker].seen)!} alt="" className="h-16 rounded-md shadow-[0_6px_14px_-4px_rgba(0,0,0,.8)]" />
+              <p className="text-[13px] leading-tight text-stock">You saw it with your own eyes:<br /><b className="text-[15px] text-[#f3c66b]">{faces[picker].seen}</b><br /><span className="text-stock/60">Only you know.</span></p>
+            </div>
+          )}
           {/* your own seat: a ready-made line, straight into the centre */}
           {picker === v.me.seat && onQuick && (
             <div className="grid grid-cols-2 gap-1">
@@ -824,26 +831,32 @@ function CardFlights({ v, pos }: { v: PlayerView; pos: (seat: number) => { x: nu
 }
 
 /** what a seat's card shows on this phone (designer 2026-10-12) */
-interface SeatFace { kind: "back" | "mine" | "known" | "rumour"; art: string; role?: string }
+interface SeatFace { kind: "back" | "mine" | "known" | "rumour"; art: string; role?: string; /** a role you SAW (Kundli, or putting them out) — shown again when you tap the seat */ seen?: string }
 function seatFaces(v: PlayerView, said: Record<number, SaidAbout>): Record<number, SeatFace> {
-  const known = new Map<number, string>();
+  // (designer 2026-10-13) a role you SAW stays face up for ONE TURN — time to accuse or let it go — then the card turns
+  // back face down; tapping that player shows it again. Only roles really seen (Kundli either way, or putting them out).
+  const seen = new Map<number, { role: string; n: number }>();
   for (const e of v.events) {
     const mine = Array.isArray(e.to) && e.to.includes(v.me.seat);
-    if (mine && e.type === "kundli_private") known.set(e.data?.target as number, String(e.data?.role));
-    if (mine && e.type === "eliminated_private") known.set(e.data?.seat as number, String(e.data?.role));
-    if (e.type === "dal_badal") for (const x of (e.data?.seats as number[]) ?? []) known.delete(x);
+    if (mine && e.type === "kundli_private") seen.set(e.data?.target as number, { role: String(e.data?.role), n: e.n });
+    if (mine && e.type === "eliminated_private") seen.set(e.data?.seat as number, { role: String(e.data?.role), n: e.n });
+    if (e.type === "dal_badal") for (const x of (e.data?.seats as number[]) ?? []) seen.delete(x);
   }
+  const turnsSince = (n: number) => v.events.filter((e) => e.n > n && e.type === "pickup").length;
+  const known = new Map<number, string>();
+  for (const [x, k] of seen) if (turnsSince(k.n) < 2) known.set(x, k.role); // this turn and the next one
   // a player who is out and watching sees every card
   for (const r of v.spectate ?? []) known.set(r.seat, r.role);
   const out: Record<number, SeatFace> = {};
   for (const p of v.players) {
     const role = p.seat === v.me.seat ? v.me.role : known.get(p.seat);
     const art = roleArt(role);
+    const saw = seen.get(p.seat)?.role;
     if (p.seat === v.me.seat && art) out[p.seat] = { kind: "mine", art, role };
-    else if (role && art) out[p.seat] = { kind: "known", art, role };
+    else if (role && art) out[p.seat] = { kind: "known", art, role, seen: saw };
     else {
       const rumour = roleArt(said[p.seat]?.role);
-      out[p.seat] = rumour ? { kind: "rumour", art: rumour, role: said[p.seat]?.role } : { kind: "back", art: CARD_BACK };
+      out[p.seat] = rumour ? { kind: "rumour", art: rumour, role: said[p.seat]?.role, seen: saw } : { kind: "back", art: CARD_BACK, seen: saw };
     }
   }
   return out;
