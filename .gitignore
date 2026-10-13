@@ -44,3 +44,6 @@ next-env.d.ts
 dev.log
 *.log
 art-source/
+
+# real players' game logs (names, chats) — scripts/learn-from-games.mts
+/analysis/logs/

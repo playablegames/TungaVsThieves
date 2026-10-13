@@ -1,24 +1,22 @@
 // Learn the TELLS (src/server/tells.ts) from whole bot games: for every public action, how often a thief takes it
 // against a villager. Writes src/server/tells.json.   npx tsx scripts/tells-learn.mts [games per count=600]
-import { writeFileSync } from "node:fs";
-import { apply, start, waitingOn } from "@/engine/engine";
-import { ROLE_TABLE } from "@/engine/setup";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { GameState } from "@/engine/types";
-import { pushBotClaim, skilledAction, SKILLS } from "@/server/belief";
+import { SKILLS } from "@/server/belief";
+import { PERSONALITIES, personalised } from "@/server/personality";
+import { playTable } from "@/server/simtable";
 import { tellsOf, type TellOdds } from "@/server/tells";
 
 const G = Number(process.argv[2] ?? 600);
 let seed = 11; const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
 const MIX = [SKILLS.average, SKILLS.casual, SKILLS.sharp];
+const PS = Object.keys(PERSONALITIES);
 const cnt: Record<string, Record<string, [number, number]>> = {};       // group → key → [thief, villager]
 const aims: Record<string, { T: [number, number][]; V: [number, number][] }> = {}; // card → side → [hitThief, q]
 for (const n of [5, 6, 7, 8, 9, 10, 11, 12]) for (let g = 0; g < G; g++) {
-  let s: GameState = start(Array.from({ length: n }, (_, i) => `P${i}`), 31_000 + 1000 * n + g, ROLE_TABLE);
-  for (let k = 0; k < 20000 && s.phase.kind !== "over"; k++) {
-    const seat = waitingOn(s)[0]; const ph = s.phase; const sk = MIX[(seat + g) % 3];
-    if (ph.kind === "vote" && ph.debate) pushBotClaim(s, seat, s.seed, rnd, sk);
-    s = apply(s, seat, skilledAction(s, seat, s.seed, rnd, sk));
-  }
+  // the table people play against: every skill x personality, played as online (simtable.ts)
+  const s = playTable(n, 31_000 + 1000 * n + g, rnd, { skillOf: (x) => personalised(MIX[(x + g) % 3], PS[(x + 2 * g) % PS.length]) });
   // sides as dealt (a Dal Badal moves them — rare enough to ignore here)
   const side = (x: number) => s.players[x].side;
   for (const t of tellsOf(s.events, n)) {
@@ -32,6 +30,31 @@ for (const n of [5, 6, 7, 8, 9, 10, 11, 12]) for (let g = 0; g < G; g++) {
       a[side(t.actor)].push([side(t.target) === "T" ? 1 : 0, thieves / t.cands.length]);
     }
   }
+}
+// REAL PLAYERS (scripts/learn-from-games.mts): every move a real person made counts HUMAN_WEIGHT times a bot's — the
+// tells are meant to be what PEOPLE give away, and bots only stand in until there are enough real games
+const HUMAN_WEIGHT = 5;
+if (existsSync("analysis/logs") && existsSync("analysis/players.json")) {
+  const people: string[] = JSON.parse(readFileSync("analysis/players.json", "utf8")).map((x: string) => x.toLowerCase());
+  let games = 0, moves = 0;
+  for (const f of readdirSync("analysis/logs").filter((x) => x.endsWith(".json"))) {
+    const s = (JSON.parse(readFileSync(join("analysis/logs", f), "utf8"))[0]?.state ?? null) as GameState | null;
+    if (!s || s.phase.kind !== "over") continue;
+    const human = new Set(s.players.filter((p) => people.includes(p.name.toLowerCase())).map((p) => p.seat));
+    const side = (x: number) => s.players[x].side;
+    games++;
+    for (const t of tellsOf(s.events, s.players.length)) {
+      if (!human.has(t.actor)) continue;
+      moves++;
+      if (t.kind === "outcome") { const c = ((cnt[t.group] ??= {})[t.key] ??= [0, 0]); c[side(t.actor) === "T" ? 0 : 1] += HUMAN_WEIGHT; }
+      else {
+        const thieves = t.cands.filter((x) => side(x) === "T").length;
+        if (!thieves || thieves === t.cands.length) continue;
+        for (let k = 0; k < HUMAN_WEIGHT; k++) (aims[t.card] ??= { T: [], V: [] })[side(t.actor)].push([side(t.target) === "T" ? 1 : 0, thieves / t.cands.length]);
+      }
+    }
+  }
+  console.log(`real players: ${moves} moves from ${games} games, each weighing ${HUMAN_WEIGHT}x`);
 }
 // outcome odds per group, Laplace-smoothed
 const out: TellOdds = { outcome: {}, aim: {} };

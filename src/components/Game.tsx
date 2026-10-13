@@ -835,8 +835,9 @@ function CardFlights({ v, pos }: { v: PlayerView; pos: (seat: number) => { x: nu
 /** what a seat's card shows on this phone (designer 2026-10-12) */
 interface SeatFace { kind: "back" | "mine" | "known" | "rumour"; art: string; role?: string; /** a role you SAW (Kundli, or putting them out) — shown again when you tap the seat */ seen?: string }
 function seatFaces(v: PlayerView, said: Record<number, SaidAbout>): Record<number, SeatFace> {
-  // (designer 2026-10-13) a role you SAW stays face up for ONE TURN — time to accuse or let it go — then the card turns
-  // back face down; tapping that player shows it again. Only roles really seen (Kundli either way, or putting them out).
+  // (designer 2026-10-13, later the same day: "after Kundli, the role should be visible to the Kundli player") a role you
+  // SAW with Kundli — either way, Mutual Kundli — stays face up on that seat for the rest of the game, on your phone
+  // only, until a Dal Badal shuffles it. (A player you put out shows the plain back; tapping says what you saw.)
   const seen = new Map<number, { role: string; n: number }>();
   for (const e of v.events) {
     const mine = Array.isArray(e.to) && e.to.includes(v.me.seat);
@@ -844,9 +845,8 @@ function seatFaces(v: PlayerView, said: Record<number, SaidAbout>): Record<numbe
     if (mine && e.type === "eliminated_private") seen.set(e.data?.seat as number, { role: String(e.data?.role), n: e.n });
     if (e.type === "dal_badal") for (const x of (e.data?.seats as number[]) ?? []) seen.delete(x);
   }
-  const turnsSince = (n: number) => v.events.filter((e) => e.n > n && e.type === "pickup").length;
   const known = new Map<number, string>();
-  for (const [x, k] of seen) if (turnsSince(k.n) < 2) known.set(x, k.role); // this turn and the next one
+  for (const [x, k] of seen) known.set(x, k.role);
   // a player who is out and watching sees every card
   for (const r of v.spectate ?? []) known.set(r.seat, r.role);
   const out: Record<number, SeatFace> = {};

@@ -70,6 +70,19 @@ export interface Skill {
    *  play is likely sitting on a Stone — and a skilled thief does exactly that. How hard this bot reads it (0 = never):
    *  it raises their odds of holding a Stone and of being a thief, so Talashi, Hera Pheri and the votes go their way */
   readQuiet?: number;
+  /** PERSONALITY (personality.ts): the chance it keeps its pair in hand rather than play while holding a Stone
+   *  (people: 55% of pairs unplayed holding a Stone, 12% without) */
+  stoneSit?: number;
+  /** a villager's bluff now and then — the decoy "I have a Stone" (reactions.ts) */
+  bluff?: number;
+  /** how readily a villager voices a suspicion that hasn't firmed up (a wrong accusation out loud is human) */
+  hunchTalk?: number;
+  personality?: "open" | "quiet" | "hothead" | "detective";
+  /** THE HUMAN LAYER (2026-10-13): how much a round-old piece of evidence still counts (deduce.ts; 1 = all of it) */
+  memory?: number;
+  /** ...and how loosely it picks among its suspects when it votes: a ballot is a weighted die, not the top of a list
+   *  (0 = always the top suspect; higher = the second and third get picked more often) */
+  temper?: number;
 }
 
 export const SKILLS: Record<Skill["name"], Skill> = {
@@ -262,7 +275,7 @@ export function beliefOf(s: GameState, seat: number, seed: number, skill: Skill 
   }
   if (skill.exact) {
     // every placement of the thieves, weighed (deduce.ts); the trust record above still decides whose word to take
-    const ex = deduce(s, seat, skill.model, asTable && thiefSide).p;
+    const ex = deduce(s, seat, skill.model, asTable && thiefSide, skill.memory ?? 1).p;
     ex.delete(seat);
     if (self) ex.set(seat, 0);
     return { p: readQuietTell(s, seat, skill, known, ex), known, trust };
@@ -334,7 +347,15 @@ export function beliefVote(s: GameState, seat: number, seed: number, r: R, skill
   // (a high draw means noise: tests drive bots with seeded draws that start near 0)
   const d = r();
   if (skill.name === "casual" && d >= 0.92) return null;
-  return d >= 1 - skill.voteNoise ? pick(r, order.slice(0, 3)) : order[0];
+  if (skill.temper === undefined) return d >= 1 - skill.voteNoise ? pick(r, order.slice(0, 3)) : order[0];
+  // THE WEIGHTED DIE (human layer): each suspect is picked in proportion to exp(score / temper) — a strong suspect
+  // nearly always, a close second sometimes, a long shot rarely
+  const top3 = order.slice(0, 3);
+  const best = score(top3[0]);
+  const wts = top3.map((x) => Math.exp((score(x) - best) / Math.max(0.01, skill.temper!)));
+  let u = r() * wts.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < top3.length; i++) { u -= wts[i]; if (u <= 0) return top3[i]; }
+  return top3[0];
 }
 
 /** TIE-BREAK (designer 2026-10-12, game 9NAQM: the mandatory vote tied 6–6 and nobody went out): as the clock ends,
@@ -544,6 +565,9 @@ export function botClaim(s: GameState, seat: number, seed: number, r: R, skill: 
     const order = s.players.filter((p) => p.alive && p.seat !== seat).map((p) => p.seat).sort((x, y) => (bel.p.get(y) ?? 0) - (bel.p.get(x) ?? 0));
     const [a, b] = order.map((x) => bel.p.get(x) ?? 0);
     if (order.length && a >= 0.5 && a - (b ?? 0) >= 0.1 && fresh("accuse", order[0])) return { kind: "accuse", target: order[0], role: null, side: "T" };
+    // a hunch said out loud before it has firmed up — sometimes wrong, as people are (only 60% of real villagers' words
+    // were true, 2026-10-13)
+    if (order.length && a >= 0.3 && r() < (skill.hunchTalk ?? 0) && fresh("accuse", order[0])) return { kind: "accuse", target: order[0], role: null, side: "T" };
     return null;
   }
   for (const o of outs) if (fresh("was", o.target)) {
@@ -610,13 +634,19 @@ export function skilledAction(s: GameState, seat: number, seed: number, r: R, sk
   if (db) return db;
   const shot = me.side === "V" ? accusationShot(s, seat, seed, r, skill) : null;
   if (shot) return shot;
-  const first = turnMove(s, seat, seed, r, skill);
+  let first = turnMove(s, seat, seed, r, skill);
+  // SITTING ON THE STONE (people do: 55% of pairs left in hand while holding one, 12% without) — keep the pair, keep the Stone
+  const holding = me.hand.some(isStoneCard);
+  if (holding && first.type === "play" && first.card !== "TEER_KAMAN" && r() < (skill.stoneSit ?? 0))
+    first = { type: "pass", pass: stonesLastOf(me.hand, passSize(me.hand)) };
+  if (holding && first.type === "pass" && r() < (skill.stoneSit ?? 0)) return first;
   // (designer 2026-10-13, 13 games: 48% of playable pairs went unplayed — "I hardly receive any intel") a villager
   // that drew a pair it shouldn't play (Teer Kaman with no read, a Faisla with no suspect) — or just hesitated — tries
   // its other pairs before passing: every play is information for the table. A thief may still sit quiet (the tell).
   // A thief who isn't guarding a Stone BLENDS IN the same way (2026-10-13: once every pass became a tell, quiet
   // thieves were caught 60% of the time) — a beginner thief still sits quiet, and gives itself away.
-  const blends = me.side === "T" && skill.name !== "casual" && !me.hand.some(isStoneCard);
+  // (2026-10-13, balance: thieves passed 60% of turns, villagers 46%) a beginner thief blends half the time too
+  const blends = me.side === "T" && (skill.name !== "casual" || r() < 0.5) && !me.hand.some(isStoneCard);
   if (first.type !== "pass" || (me.side !== "V" && !blends)) return first;
   for (const c of ["KUNDLI", "TALASHI", "HERA_PHERI", "BATWARA", "FAISLA", "TEER_KAMAN"] as const) {
     if (!canPlay(s, seat, c)) continue;
@@ -815,6 +845,9 @@ function withReason(s: GameState, seat: number, seed: number, r: R, skill: Skill
       const read = readsOf(s, seat);
       const fresh = others.filter((x) => !read.has(x));
       const pool = fresh.length ? fresh : others;
+      // (2026-10-13, balance) a skilled thief reads whoever the TABLE suspects most, as a villager would — reading only
+      // the innocent-looking was a tell (aim lean 0.75 against a villager's 1.6). It never reads a partner it knows.
+      if (thief && skill.name !== "casual") return { ...a, target: best(pool.filter((x) => read.get(x)?.side !== "T").length ? pool.filter((x) => read.get(x)?.side !== "T") : pool, p) };
       return { ...a, target: thief ? best(pool, (x) => -p(x)) : best(pool, p) };
     }
     case "TALASHI": {
@@ -826,6 +859,8 @@ function withReason(s: GameState, seat: number, seed: number, r: R, skill: Skill
       const st = stoneOdds(s, seat, seed, skill);
       const withCards = others.filter((x) => s.players[x].hand.length > 0);
       if (!withCards.length) return a;
+      // a skilled thief still goes for the Stone, but dressed as a villager's suspicion (2026-10-13, balance)
+      if (thief && skill.name !== "casual") return { ...a, target: best(withCards, (x) => (st.get(x) ?? 0) * (0.5 + p(x))) };
       return { ...a, target: thief ? best(withCards, (x) => st.get(x) ?? 0) : best(withCards, (x) => p(x) * (0.3 + (st.get(x) ?? 0))) };
     }
     default: return a;

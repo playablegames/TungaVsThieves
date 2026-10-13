@@ -62,8 +62,8 @@ export interface Deduction {
 }
 
 /** `publicOnly`: what the TABLE can deduce — no private reads, own role unknown (a thief blending in votes with this) */
-export function deduce(s: GameState, seat: number, m: Model = MODEL, publicOnly = false): Deduction {
-  const { H, w, n } = scenarios(s, seat, m, publicOnly);
+export function deduce(s: GameState, seat: number, m: Model = MODEL, publicOnly = false, memory = 1): Deduction {
+  const { H, w, n } = scenarios(s, seat, m, publicOnly, memory);
   const isT = (h: number, x: number) => (h >> x) & 1;
   const p = new Map<number, number>();
   for (let x = 0; x < n; x++) {
@@ -78,7 +78,9 @@ export function deduce(s: GameState, seat: number, m: Model = MODEL, publicOnly 
 
 /** every placement of the thieves (bitmasks `H`) and its weight `w` (summing to 1) — what the FLOWSHEET samples its
  *  hidden worlds from (flowsheet.ts) */
-export function scenarios(s: GameState, seat: number, m: Model = MODEL, publicOnly = false): { H: number[]; w: Float64Array; n: number } {
+/** `memory` (2026-10-13, the human layer): how much a round-old piece of evidence still counts (1 = all of it; 0.8 =
+ *  80% of its weight a round on, 64% two rounds on) — people forget; a careful player does not */
+export function scenarios(s: GameState, seat: number, m: Model = MODEL, publicOnly = false, memory = 1): { H: number[]; w: Float64Array; n: number } {
   const v = viewFor(s, seat);
   const n = v.players.length;
   const thiefRoles = v.rolesInPlay.filter((r) => THIEF_ROLES.includes(r));
@@ -94,6 +96,12 @@ export function scenarios(s: GameState, seat: number, m: Model = MODEL, publicOn
   const index = new Map(H.map((h, i) => [h, i]));
   const said = new Set<string>();
 
+  // the round each event happened in, for the fading memory
+  const roundAt: number[] = [];
+  { let rd = 1; for (const e of v.events) { if (e.type === "pickup" && typeof e.data?.round === "number") rd = e.data.round as number; roundAt[e.n] = rd; } }
+  const fade = (n0: number) => (memory >= 1 ? 1 : Math.pow(memory, Math.max(0, s.round - (roundAt[n0] ?? s.round))));
+  /** a factor weighed by how well this evidence is still remembered */
+  const faded = (n0: number, f: (h: number) => number) => { const k = fade(n0); scale(k === 1 ? f : (h) => Math.pow(f(h), k)); };
   for (const e of v.events) {
     if (!mine(e)) continue;
     const d = e.data, actor = num(d, "seat"), target = num(d, "target");
@@ -144,7 +152,7 @@ export function scenarios(s: GameState, seat: number, m: Model = MODEL, publicOn
         said.add(key);
         const seen = d?.kind === "kundli" || d?.kind === "was";
         // an accusation the accused hasn't answered yet weighs less (tempered: the factor to a power below 1)
-        const k = says === "T" && unanswered(v.events, e.n, target) ? UNANSWERED : 1;
+        const k = (says === "T" && unanswered(v.events, e.n, target) ? UNANSWERED : 1) * fade(e.n);
         const tempered = (f: (h: number) => number) => scale(k === 1 ? f : (h) => Math.pow(f(h), k));
         if (seen) {
           // a villager who SAW tells the truth; a thief says it less often, and when it does it is noise
@@ -179,7 +187,7 @@ export function scenarios(s: GameState, seat: number, m: Model = MODEL, publicOn
         for (const [k, t] of Object.entries((d?.ballots as Record<string, number | null>) ?? {})) {
           const voter = Number(k);
           if (t === null || voter === seat) continue;
-          scale((h) => (isT(h, voter) ? 1 : isT(h, t) ? m.ballot : 1) / m.ballot);
+          faded(e.n, (h) => (isT(h, voter) ? 1 : isT(h, t) ? m.ballot : 1) / m.ballot);
         }
         break;
       }
@@ -194,12 +202,12 @@ export function scenarios(s: GameState, seat: number, m: Model = MODEL, publicOn
       const o = TELLS.outcome[t.group]?.[t.key];
       if (!o) continue;
       const lr = clampLR(o[0] / o[1]);
-      scale((h) => (isT(h, t.actor) ? lr : 1));
+      faded(t.n, (h) => (isT(h, t.actor) ? lr : 1));
     } else {
       const lean = TELLS.aim[t.card];
       if (!lean) continue;
       const mask = t.cands.reduce((a, x) => a | (1 << x), 0);
-      scale((h) => {
+      faded(t.n, (h) => {
         const l = clampLR(lean[isT(h, t.actor) ? 0 : 1]);
         let kc = 0; for (let m = h & mask; m; m &= m - 1) kc++;
         return (isT(h, t.target) ? l : 1) / (kc * l + (t.cands.length - kc));

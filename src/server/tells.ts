@@ -13,9 +13,9 @@ import LEARNED from "./tells.json";
 
 export type Tell =
   /** a choice among outcomes (what this player did on their turn; whether they spoke after a Kundli) */
-  | { kind: "outcome"; group: string; key: string; actor: number }
+  | { kind: "outcome"; group: string; key: string; actor: number; n: number }
   /** a choice of TARGET among `cands`: does this side aim at thieves or villagers? */
-  | { kind: "aim"; card: string; actor: number; target: number; cands: number[] };
+  | { kind: "aim"; card: string; actor: number; target: number; cands: number[]; n: number };
 
 const num = (d: Record<string, unknown> | undefined, k: string) => (typeof d?.[k] === "number" ? (d[k] as number) : null);
 
@@ -36,7 +36,7 @@ export function tellsOf(events: GameEvent[], n: number): Tell[] {
     const e = pub[i], d = e.data, a = num(d, "seat"), t = num(d, "target");
     switch (e.type) {
       case "pickup": if (a !== null && alive.has(a)) turnOf.set(a, i); break;
-      case "pass": if (a !== null && turnOf.has(a)) { out.push({ kind: "outcome", group: "turn", key: "pass", actor: a }); turnOf.delete(a); } break;
+      case "pass": if (a !== null && turnOf.has(a)) { out.push({ kind: "outcome", group: "turn", key: "pass", actor: a, n: e.n }); turnOf.delete(a); } break;
       case "play": {
         if (a === null || !turnOf.has(a)) break;
         turnOf.delete(a);
@@ -46,9 +46,9 @@ export function tellsOf(events: GameEvent[], n: number): Tell[] {
         if (card === "FAISLA") ctx = [...accused].some((x) => alive.has(x) && x !== a) ? ":suspect" : ":nobody";
         if (card === "TEER_KAMAN" && t !== null) ctx = accused.has(t) ? ":backed" : ":blind";
         if (card === "TALASHI" && t !== null) ctx = stoneSaid.has(t) ? ":again" : "";
-        out.push({ kind: "outcome", group: "turn", key: `play:${card}${ctx}`, actor: a });
+        out.push({ kind: "outcome", group: "turn", key: `play:${card}${ctx}`, actor: a, n: e.n });
         if (t !== null && ["KUNDLI", "TALASHI", "HERA_PHERI", "TEER_KAMAN"].includes(card))
-          out.push({ kind: "aim", card, actor: a, target: t, cands: [...alive].filter((x) => x !== a) });
+          out.push({ kind: "aim", card, actor: a, target: t, cands: [...alive].filter((x) => x !== a), n: e.n });
         break;
       }
       case "kundli": {
@@ -63,7 +63,7 @@ export function tellsOf(events: GameEvent[], n: number): Tell[] {
             if (x.type === "claim" && x.data?.seat === who && x.data?.target === other) { said = true; break; }
             if ((x.type === "pickup" && x.data?.seat === who) || x.type === "vote_result" || x.type === "over") { closed = true; break; }
           }
-          if (said || closed) out.push({ kind: "outcome", group, key: said ? "said" : "silent", actor: who });
+          if (said || closed) out.push({ kind: "outcome", group, key: said ? "said" : "silent", actor: who, n: e.n });
         }
         break;
       }
