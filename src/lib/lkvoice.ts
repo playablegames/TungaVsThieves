@@ -4,7 +4,9 @@
 // Who hears whom is decided by the passes our server hands out (server/livekit.ts):
 //   alive → the table room (speak + listen) · out → the table room listen-only + the Gone room (speak + listen)
 // so the living can't hear the gone even if a phone misbehaves.
-import { Room, RoomEvent, Track, type Participant, type RemoteParticipant, AudioPresets } from "livekit-client";
+// (2026-10-14, "the game loads slowly") LiveKit is 700 KB: it loads only when a voice call actually starts (start()),
+// never for a table of bots or the home screen
+import type { Room, Participant, RemoteParticipant } from "livekit-client";
 import { loadToken } from "./client";
 import { DUCKED, playAndRecord, type VoicePeer, type VoiceSnap } from "./voice";
 
@@ -62,6 +64,8 @@ export class LiveKitVoice {
     if (gen !== this.gen) return;
     this.alive = passes.alive;
     playAndRecord();
+    const { Room, RoomEvent, Track, AudioPresets } = await import("livekit-client");
+    if (gen !== this.gen) return;
 
     const join = async (pass: string, speak: boolean, ghostly = false) => {
       // BATTERY + DATA (research 2026-10-12): the "speech" preset (the default is music quality, ~2× the bits), DTX

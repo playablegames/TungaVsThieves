@@ -5,13 +5,13 @@
 import { useEffect, useRef, useState } from "react";
 import { TapOn } from "./ui";
 
-export const DEAL_MS = 8400;
+// (2026-10-14, "game starting is super slow" — Lighthouse + a stopwatch): the deal was 8.4 s; now 2.7 s, same story
+export const DEAL_MS = 2700;
 const STAGES = [
   { at: 0, key: "collect", title: "Collecting all cards", sub: "in the center…" },
-  { at: 1800, key: "shuffle", title: "Shuffling cards…" },
-  { at: 3600, key: "deal", title: "Dealing cards…" },
-  { at: 5300, key: "deal", title: "Almost done…" },
-  { at: 6400, key: "done", title: "Cards distributed!", sub: "Game begins now." },
+  { at: 450, key: "shuffle", title: "Shuffling cards…" },
+  { at: 900, key: "deal", title: "Dealing cards…" },
+  { at: 2100, key: "done", title: "Cards distributed!", sub: "Game begins now." },
 ] as const;
 const HAND = 2; // cards each player is dealt (engine/setup.ts)
 const AVATAR = ["#f5a623", "#c77dd6", "#f2766b", "#6aaee8", "#7cc47a", "#a9a9a9", "#e3c565", "#5fc4b8", "#e88fb4", "#9b8cf0", "#4f7cf0", "#f08c5a"];
@@ -66,7 +66,7 @@ export function DealIntro({ names, mySeat, onDone }: { names: string[]; mySeat: 
 
         {/* collect: one card from every seat slides into the centre */}
         {s.key === "collect" && seats.map((p, i) => (
-          <CardBack key={`c${p.seat}`} className="deal-in" style={{ "--x": `${p.x}%`, "--y": `${p.y}%`, "--r": `${(i * 47) % 40 - 20}deg`, animationDelay: `${(i / n) * 700}ms` } as React.CSSProperties} />
+          <CardBack key={`c${p.seat}`} className="deal-in" style={{ "--x": `${p.x}%`, "--y": `${p.y}%`, "--r": `${(i * 47) % 40 - 20}deg`, animationDelay: `${(i / n) * 300}ms` } as React.CSSProperties} />
         ))}
         {(s.key === "collect" || s.key === "deal") && <Pile thin={stage === 3} />}
 
@@ -84,7 +84,7 @@ export function DealIntro({ names, mySeat, onDone }: { names: string[]; mySeat: 
 
         {/* deal: HAND waves, one card to each seat, round the table in order */}
         {s.key === "deal" && Array.from({ length: HAND }).flatMap((_, w) => seats.map((p, i) => (
-          <CardBack key={`d${w}-${p.seat}`} className="deal-out" style={{ "--x": `${p.x}%`, "--y": `${p.y}%`, "--r": `${(i * 53) % 50 - 25}deg`, animationDelay: `${w * 1300 + (i / n) * 1100}ms` } as React.CSSProperties} />
+          <CardBack key={`d${w}-${p.seat}`} className="deal-out" style={{ "--x": `${p.x}%`, "--y": `${p.y}%`, "--r": `${(i * 53) % 50 - 25}deg`, animationDelay: `${w * 500 + (i / n) * 450}ms` } as React.CSSProperties} />
         )))}
 
         {/* the words, over the top of the table */}

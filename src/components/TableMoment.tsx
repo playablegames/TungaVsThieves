@@ -13,8 +13,9 @@
 // Remotion maths (interpolate, spring) on our own frame clock, positions in % of the table.
 /* eslint-disable @next/next/no-img-element */
 import { useEffect, useState } from "react";
-import { interpolate, spring } from "remotion";
+import { interpolate, spring } from "@/lib/anim";
 import type { Beat } from "@/lib/beats";
+import { motionReduced } from "@/lib/motion";
 
 const C = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;
 const at = (f: number, a: number, b: number, from = 0, to = 1) => interpolate(f, [a, b], [from, to], C);
@@ -45,6 +46,7 @@ const Spot = ({ p, children, style }: { p: P; children: React.ReactNode; style?:
 
 export function TableMoment({ beat, pos, speed = 1 }: { beat: Beat; pos: (seat: number) => P; speed?: number }) {
   const f = useFrames(MOMENT_FRAMES, speed);
+  if (motionReduced()) return null; // the centre card and its words still say what happened
   const out = at(f, MOMENT_FRAMES - 10, MOMENT_FRAMES, 1, 0);
   const A = beat.actor !== undefined ? pos(beat.actor) : { x: 50, y: 88 };
   const B = beat.target !== undefined ? pos(beat.target) : { x: 50, y: 12 };

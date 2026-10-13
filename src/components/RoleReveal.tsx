@@ -8,7 +8,9 @@ import { DealIntro } from "./DealIntro";
 import { roleArt } from "./CardIcon";
 
 // (designer 2026-10-13 evening: every screen moves on by itself after ~2 s past its animation, or on a tap)
-const ROLE_SECONDS = 4;
+const ROLE_SECONDS = 3;
+const STONES_SEEN = "tunga:stones-seen";
+const stonesSeen = () => { try { return localStorage.getItem(STONES_SEEN) === "1"; } catch { return false; } };
 const STONES_SECONDS = 4;
 const seenKey = (code: string) => `tunga:reveal:${code.toUpperCase()}`;
 const BACKDROP = "fixed inset-0 z-40 flex flex-col items-center overflow-y-auto bg-[radial-gradient(90%_55%_at_50%_45%,var(--color-ember-2)_0%,var(--color-ember)_65%,#120903_100%)] px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]";
@@ -48,8 +50,10 @@ export function RoleReveal({ code, role, side, names, mySeat, onDone }: {
     try { localStorage.setItem(seenKey(code), "1"); } catch {}
     onDone();
   }
-  if (step === "role") return <RoleStep role={role} side={side} onDone={() => setStep("stones")} />;
-  if (step === "stones") return <StonesStep onDone={() => setStep("deal")} />;
+  // (2026-10-14, "game starting is super slow") the Stones explainer only on this phone's FIRST game — after that the
+  // role card goes straight to the deal (How to play keeps the explainer)
+  if (step === "role") return <RoleStep role={role} side={side} onDone={() => setStep(stonesSeen() ? "deal" : "stones")} />;
+  if (step === "stones") return <StonesStep onDone={() => { try { localStorage.setItem(STONES_SEEN, "1"); } catch {} setStep("deal"); }} />;
   return <DealIntro names={names} mySeat={mySeat} onDone={done} />;
 }
 

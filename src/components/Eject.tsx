@@ -7,20 +7,27 @@ import { useEffect, useState } from "react";
 import { THIEF_ROLES } from "@/engine/setup";
 import { LAST_WORDS_MS } from "@/lib/beats";
 import { TapOn } from "./ui";
+import { roleArt } from "./CardIcon";
 
 const STARS = Array.from({ length: 46 }, (_, i) => ({
   x: (i * 37.7) % 100, y: (i * 23.3) % 62, s: 1 + ((i * 7) % 3), t: 1.6 + ((i * 13) % 20) / 10,
 }));
 
-export function Eject({ name, initials, colour, thief, role, remaining, onDone, onSkipWords, lastWords = false, mine = false, speed = 1 }: {
+export function Eject({ name, initials, colour, thief, role, remaining, onDone, onSkipWords, lastWords = false, mine = false, speed = 1, killer = null, secret = null }: {
   name: string; initials: string; colour: string; thief: boolean; role: string | null; remaining: number; onDone: () => void;
+  /** (designer 2026-10-14: "role hidden is salt on the wound") who put them out — "only Asha knows…" */
+  killer?: string | null;
+  /** the role, when THIS phone put them out (the Faisla caller / Teer Kaman shooter) — their private reveal */
+  secret?: { role: string; thief: boolean } | null;
   /** a human put out speaks for 10 s first, in a spotlight, everyone else's mic held (designer 2026-10-07) */
   lastWords?: boolean; mine?: boolean;
   /** (designer 2026-10-12) the speaker ends their last words for everyone; anyone else just closes the screen */
   onSkipWords?: () => void;
   speed?: number;
 }) {
-  const verdict = role ? `${name} was ${thief ? "a Thief" : "not a Thief"}.` : `${name} is out.`;
+  // (designer 2026-10-14) three stories, never "their role stays hidden": YOU are out but still in the game · YOU put
+  // them out and see the card · everyone else wonders, and only the one who did it knows
+  const verdict = mine ? "You're out." : role ? `${name} was ${thief ? "a Thief" : "not a Thief"}.` : `${name} is OUT!`;
   const words = lastWords ? LAST_WORDS_MS : 0;
   const [typed, setTyped] = useState(0);
   const [flying, setFlying] = useState(!lastWords);
@@ -34,12 +41,12 @@ export function Eject({ name, initials, colour, thief, role, remaining, onDone, 
       const t = setInterval(() => { i += 1; setTyped(i); if (i >= verdict.length) clearInterval(t); }, 55);
     }, words + 900);
     // (designer 2026-10-13 evening) the flight + 2 s, then it moves on by itself
-    const end = setTimeout(onDone, words + Math.round(4000 / speed));
+    const end = setTimeout(onDone, words + Math.round((secret || !mine ? 5200 : 4000) / speed));
     return () => { clearTimeout(start); clearTimeout(end); clearTimeout(fly); if (tick) clearInterval(tick); };
-  }, [verdict, onDone, words, lastWords, speed]);
+  }, [verdict, onDone, words, lastWords, speed, secret, mine]);
 
   return (
-    <button type="button" onClick={() => { if (flying) onDone(); }} aria-label={`${verdict} ${role ? `${remaining} ${remaining === 1 ? "thief remains" : "thieves remain"}.` : "Their role stays hidden."} Tap to continue`}
+    <button type="button" onClick={() => { if (flying) onDone(); }} aria-label={`${verdict} ${role ? `${remaining} ${remaining === 1 ? "thief remains" : "thieves remain"}.` : mine ? "You are still in the game." : secret ? `Only you see it: ${secret.role}.` : killer ? `Only ${killer} knows the role.` : ""} Tap to continue`}
       className="fixed inset-0 z-50 overflow-hidden bg-[linear-gradient(180deg,#05040c_0%,#0d0a1f_55%,#1f1007_100%)] text-center">
       {STARS.map((st, i) => (
         <span key={i} aria-hidden className="twinkle absolute rounded-full bg-[#fff6dc]"
@@ -75,8 +82,37 @@ export function Eject({ name, initials, colour, thief, role, remaining, onDone, 
         <p className="min-h-[2.6em] font-display text-[clamp(24px,7vw,34px)] font-bold leading-tight text-stock">
           {verdict.slice(0, typed)}<span className="opacity-60">{typed < verdict.length ? "▌" : ""}</span>
         </p>
-        {typed >= verdict.length && !role && (
-          <p className="rise mt-3 font-display text-[18px] text-stock/75">Their role stays hidden.</p>
+        {typed >= verdict.length && !role && mine && (
+          <div className="rise mt-3 flex flex-col items-center gap-2">
+            <p className="font-display text-[20px] text-stock/90">…but you&rsquo;re <b className="text-jade-soft">still in the game</b>.</p>
+            <p className="text-[15px] text-stock/75">Talk. Accuse. Bluff. Help your team win the Stones.</p>
+          </div>
+        )}
+        {typed >= verdict.length && !role && !mine && secret && (
+          <div className="mt-4 flex flex-col items-center">
+            <p className="rise font-[family-name:var(--font-engraved)] text-[12px] font-bold uppercase tracking-[0.25em] text-jade-soft">Only you see this</p>
+            {roleArt(secret.role)
+              // eslint-disable-next-line @next/next/no-img-element
+              ? <img src={roleArt(secret.role)!} alt={secret.role} className="flip-in mt-2 w-28 rounded-lg shadow-[0_14px_30px_-8px_rgba(0,0,0,.9)]" />
+              : <p className="flip-in mt-2 font-display text-[28px] font-bold">{secret.role}</p>}
+            <p className={`stage-stamp mt-3 inline-block rounded border-4 border-current px-4 py-1 font-[family-name:var(--font-engraved)] text-[26px] font-black tracking-[0.12em] ${secret.thief ? "text-crimson-soft" : "text-[#f3c66b]"}`}>
+              {secret.thief ? "CHOR! CAUGHT" : "A VILLAGER…"}
+            </p>
+            <p className="rise mt-2 text-[14px] text-stock/75">{secret.thief ? "You caught a thief. Tell them — or keep it to yourself." : "Oops. Say it — or let them wonder."}</p>
+          </div>
+        )}
+        {typed >= verdict.length && !role && !mine && !secret && (
+          <div className="mt-4 flex flex-col items-center">
+            <div className="flip-in relative">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/art/cards/back.webp" alt="" className="w-24 rounded-lg shadow-[0_14px_30px_-8px_rgba(0,0,0,.9)]" />
+              <span className="stage-stamp absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 -rotate-12 rounded border-[3px] border-crimson-soft bg-black/50 px-2 font-[family-name:var(--font-engraved)] text-[18px] font-black tracking-[0.15em] text-crimson-soft">SECRET</span>
+            </div>
+            <p className="rise mt-3 font-display text-[20px] text-stock/90">Who were they, really?</p>
+            {killer
+              ? <p className="rise mt-1 text-[15px] text-stock/80">Only <b className="text-[#f3c66b]">{killer}</b> knows… <b className="text-jade-soft">ask {killer}!</b></p>
+              : <p className="rise mt-1 text-[15px] text-stock/80">Nobody knows. Start talking.</p>}
+          </div>
         )}
         <div className="mt-6"><TapOn ms={Math.round(4000 / speed)} /></div>
         {typed >= verdict.length && role && (

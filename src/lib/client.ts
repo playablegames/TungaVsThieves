@@ -32,7 +32,7 @@ export const api = {
     call<{ code: string; token: string }>(`/api/games/${code}/join`, { method: "POST", body: JSON.stringify({ name }) }),
   start: (code: string, token: string) => call(`/api/games/${code}/start`, { method: "POST", token }),
   act: (code: string, token: string, a: Action) => call(`/api/games/${code}/act`, { method: "POST", token, body: JSON.stringify(a) }),
-  addBot: (code: string, token: string) => call(`/api/games/${code}/bots`, { method: "POST", token }),
+  addBot: (code: string, token: string, count = 1) => call(`/api/games/${code}/bots`, { method: "POST", token, body: JSON.stringify({ count }) }),
   removeBot: (code: string, token: string, index: number) =>
     call(`/api/games/${code}/bots`, { method: "DELETE", token, body: JSON.stringify({ index }) }),
   rename: (code: string, token: string, index: number, name: string) =>

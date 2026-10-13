@@ -8,6 +8,7 @@ import { startHomeMusicOnFirstTap, stopHomeMusic } from "@/lib/music";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api, saveToken, useHydrated } from "@/lib/client";
 import { HowToPlay } from "@/components/HowToPlay";
+import { MotionSettings } from "@/components/MotionSettings";
 
 const NAME_KEY = "tunga:name";
 const LEARNED = "tunga:learned";
@@ -37,6 +38,7 @@ function Entry() {
   const newHere = hydrated && !skipped && (() => { try { return localStorage.getItem(LEARNED) === null; } catch { return false; } })();
   const skipLearn = () => { setSkipped(true); try { localStorage.setItem(LEARNED, "skipped"); } catch {} };
   const [rules, setRules] = useState(false);
+  const [comfort, setComfort] = useState(false);
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -69,7 +71,8 @@ function Entry() {
       saveToken(r.code, r.token);
       if (ask === "bots") {
         // a table of bots, and the game begins at once
-        for (let i = 0; i < bots; i++) await api.addBot(r.code, r.token);
+        // (2026-10-14) every bot in one call — it used to be one round trip per bot
+        await api.addBot(r.code, r.token, bots);
         await api.start(r.code, r.token);
       }
       router.push(`/g/${r.code}`);
@@ -89,7 +92,7 @@ function Entry() {
           the two Stones glowing on the shrine steps, dust drifting up through the light, the emblem in the sky */}
       <div aria-hidden className="relative -mx-6 -mt-[9dvh] aspect-[1060/1484] w-[calc(100%+3rem)] overflow-hidden">
         {/* eslint-disable-next-line @next/next/no-img-element -- static art */}
-        <img src="/art/cover.webp" alt="" className="cover-pushin absolute inset-0 h-full w-full object-cover" />
+        <img src="/art/cover.webp" alt="" fetchPriority="high" decoding="async" className="cover-pushin absolute inset-0 h-full w-full object-cover" />
         <span className="stone-glow" style={{ left: "42.5%", top: "70%", ["--g" as string]: "90,140,255" }} />
         <span className="stone-glow" style={{ left: "58%", top: "70%", ["--g" as string]: "255,170,60", animationDelay: "-1.3s" }} />
         {Array.from({ length: 16 }, (_, i) => (
@@ -155,9 +158,18 @@ function Entry() {
         {error && !ask && <p role="alert" className="rounded-xl bg-crimson-deep p-3 text-center text-[14px]">{error}</p>}
         <div className="flex items-center justify-center gap-2">
           <button type="button" onClick={() => setRules(true)} className="min-h-11 px-4 text-[15px] font-semibold text-brass underline underline-offset-4">How to play</button>
-          <a href="/privacy" className="min-h-11 px-4 py-2.5 text-[13px] text-stock/60 underline underline-offset-4">Privacy</a>
+          <button type="button" onClick={() => setComfort(true)} className="min-h-11 px-3 text-[13px] text-stock/60 underline underline-offset-4">Motion &amp; comfort</button>
+          <a href="/privacy" className="min-h-11 px-3 py-2.5 text-[13px] text-stock/60 underline underline-offset-4">Privacy</a>
         </div>
       </div>
+      {comfort && (
+        <div className="fixed inset-0 z-30 flex items-end justify-center bg-black/60" onClick={() => setComfort(false)}>
+          <div role="dialog" aria-label="Motion and comfort" onClick={(e) => e.stopPropagation()} className="stage-in flex w-full max-w-md flex-col gap-3 rounded-t-3xl border-t-2 border-brass/70 bg-ember px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-5">
+            <MotionSettings />
+            <button type="button" onClick={() => setComfort(false)} className="min-h-12 rounded-full border-2 border-brass/70 text-[14px] font-bold uppercase tracking-wide text-stock">Done</button>
+          </div>
+        </div>
+      )}
       {rules && <HowToPlay onClose={() => setRules(false)} onLearn={() => { setRules(false); choose("learn"); }} />}
 
       {ask && (

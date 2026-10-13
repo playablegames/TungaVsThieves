@@ -1,6 +1,6 @@
 // Room service: create / join / start / act / tick / view / chat. The engine is the only thing that changes state.
 import { iceServers } from "./turn";
-import { listenPass, livekitConfigured, voicePasses } from "./livekit";
+import { livekitConfigured, voicePasses } from "./livekit";
 import { randomBytes, randomInt } from "node:crypto";
 import { apply, closeVote, start, waitingOn } from "@/engine/engine";
 import { defaultAction } from "@/engine/decisions";
@@ -37,8 +37,9 @@ export const VOTE_SETTLE_MS = 5_000;
  *  this far. The engine plays 5-30; raise this once big tables have their own layout and a voice relay. */
 export const ONLINE_MAX_PLAYERS = 12;
 /** the intro every phone shows when the game starts (RoleReveal.tsx): role 15s, the Stones 10s, the deal 8.4s (DealIntro.tsx) */
-// your role 4 s + the Stones 4 s + the deal 8.4 s (RoleReveal.tsx, DealIntro.tsx), with a little slack
-export const INTRO_MS = 18_000;
+// your role 3 s + the deal 2.7 s (+ the Stones 4 s on a phone's first game only) — RoleReveal.tsx, DealIntro.tsx.
+// (2026-10-14, "game starting is super slow") was 18 s
+export const INTRO_MS = 7_000;
 const BOT_SKILLS = ["average", "casual", "sharp"] as const;
 const BOT_NAMES = ["Raju", "Shyam", "Babu Rao", "Pappu", "Munna", "Circuit", "Chintu", "Bunty", "Golu", "Tinku",
   "Gabbar", "Basanti", "Mogambo", "Jhumru", "Lallan", "Kallu", "Bholu", "Chhotu", "Guddu", "Sonu",
@@ -188,16 +189,20 @@ export async function joinRoom(code: string, name: unknown) {
   return { code: code.toUpperCase(), token };
 }
 
-export async function addBot(code: string, token: string | null) {
+/** `count` (2026-10-14, "bot loading is super slow"): Play with bots seats all its bots in ONE write, not one round trip each */
+export async function addBot(code: string, token: string | null, count = 1) {
+  const k = Math.max(1, Math.min(ONLINE_MAX_PLAYERS, Math.floor(Number(count) || 1)));
   await mutate(code, (row) => {
     if (row.hostToken !== token) throw new HttpError(403, "Only the host can add bots");
     if (row.status !== "lobby") throw new HttpError(409, "This game has already started");
-    if (row.lobby.length >= ONLINE_MAX_PLAYERS) throw new HttpError(409, `The table is full (${ONLINE_MAX_PLAYERS})`);
-    const taken = new Set(row.lobby.map((p) => p.name.toLowerCase()));
-    const name = BOT_NAMES.map((n) => `${n} 🤖`).find((n) => !taken.has(n.toLowerCase())) ?? `Bot ${row.lobby.length + 1} 🤖`;
-    // (2026-10-12) a table of bots is a mix: average, casual, sharp, in turn
-    const n = row.lobby.filter((p) => p.bot).length;
-    row.lobby.push({ name, token: newToken(), bot: true, skill: BOT_SKILLS[n % BOT_SKILLS.length] });
+    for (let i = 0; i < k; i++) {
+      if (row.lobby.length >= ONLINE_MAX_PLAYERS) throw new HttpError(409, `The table is full (${ONLINE_MAX_PLAYERS})`);
+      const taken = new Set(row.lobby.map((p) => p.name.toLowerCase()));
+      const name = BOT_NAMES.map((n) => `${n} 🤖`).find((n) => !taken.has(n.toLowerCase())) ?? `Bot ${row.lobby.length + 1} 🤖`;
+      // (2026-10-12) a table of bots is a mix: average, casual, sharp, in turn
+      const n = row.lobby.filter((p) => p.bot).length;
+      row.lobby.push({ name, token: newToken(), bot: true, skill: BOT_SKILLS[n % BOT_SKILLS.length] });
+    }
     return row;
   });
 }
@@ -531,9 +536,7 @@ export async function chat(code: string, token: string | null, text: unknown) {
   const t = String(text ?? "").trim().slice(0, 300);
   if (!t) throw new HttpError(400, "Empty message");
   const s = row.state;
-  // (designer 2026-10-12, reversing 2026-10-09) a player who is OUT watches in silence: no quick lines, captions or
-  // throws while the game runs — they see everything, so they must not speak
-  if (s && s.phase.kind !== "over" && !s.players[seat]?.alive) throw new HttpError(403, "You're out — you watch in silence");
+  // (designer 2026-10-14) a player who is OUT stays in the game and may say anything — they see no secrets
   await store.addMessage(row.code, { seat, name: row.lobby[seat].name, text: t, phase: s ? s.phase.kind : "lobby" });
   // bots hear captions: a plain accusation / vouch / role read becomes the claim a tap would make — for the bots only
   // (humans already read the caption), so the table never sees it twice
@@ -561,8 +564,7 @@ export async function claim(code: string, token: string | null, body: { kind?: u
     const s = row.state;
     if (!s || s.phase.kind === "over") throw new HttpError(409, "No game in progress");
     const seat = seatOf(row, token);
-    // (designer 2026-10-12) a player who is out watches in silence — they see everything, so no marks
-    if (!s.players[seat].alive) throw new HttpError(403, "You're out — you watch in silence");
+    // (designer 2026-10-14) a player who is out keeps accusing and clearing — they see no secrets, so it's only talk
     const kind = String(body.kind) as ClaimKind;
     // (designer 2026-10-13) no bare "thief" / "villager": name a ROLE (a thief role accuses, a village role clears) or a Stone
     if (!["kundli", "stone"].includes(kind)) throw new HttpError(400, "Name a role or a Stone");
@@ -603,7 +605,7 @@ export { pushStoneClaim };
 
 /** DEVELOPMENT ONLY — screen checks: give the caller a chosen hand and, if a turn is on, the turn. Refuses to run
  *  anywhere but `next dev` (NODE_ENV is "production" on Vercel), so it can never touch a real game. */
-export async function debugRig(code: string, token: string | null, body: { hand?: unknown; out?: unknown; jump?: unknown; thief?: unknown; skills?: unknown; accuse?: unknown }) {
+export async function debugRig(code: string, token: string | null, body: { hand?: unknown; out?: unknown; jump?: unknown; thief?: unknown; skills?: unknown; accuse?: unknown; spy?: unknown }) {
   if (process.env.NODE_ENV !== "development") throw new HttpError(404, "Not found");
   await play(code, (row) => {
     const seat = seatOf(row, token);
@@ -638,6 +640,8 @@ export async function debugRig(code: string, token: string | null, body: { hand?
         s.players[seat].hand.push(c);
       }
     }
+    // (screen checks) every role, to this phone only — so a check can aim a Teer Kaman that HITS
+    if (body.spy === true) s.events.push({ n: s.events.length, type: "dev_roles", to: [seat], msg: "dev", data: { roles: s.players.map((p) => p.role) } });
     // (screen checks) the next player accuses the caller out loud: a thief role named
     if (body.accuse === true) {
       const by = s.players.find((p) => p.alive && p.seat !== seat)!;
@@ -702,7 +706,6 @@ export async function whisper(code: string, token: string | null, body: { to?: u
     const s = row.state;
     if (!s || s.phase.kind === "over") throw new HttpError(409, "No game in progress");
     const seat = seatOf(row, token);
-    if (!s.players[seat].alive) throw new HttpError(403, "Eliminated players stay silent");
     const to = Number(body.to);
     if (!s.players[to]?.alive || to === seat) throw new HttpError(400, "Whisper to another living player");
     if (s.events.some((e) => e.type === "whisper" && e.data?.seat === seat && e.data?.round === s.round)) throw new HttpError(409, "One whisper per round");
@@ -743,7 +746,6 @@ export async function takeFloor(code: string, token: string | null) {
     const s = row.state;
     if (!s || s.phase.kind !== "vote" || !s.phase.debate) throw new HttpError(409, "The floor is only open during a debate");
     const seat = seatOf(row, token);
-    if (!s.players[seat].alive) throw new HttpError(403, "Eliminated players stay silent");
     const debate = [...s.events].reverse().find((e) => e.type === "faisla" || e.type === "final_vote")?.n ?? 0;
     const f = s.floor && s.floor.debate === debate ? s.floor : { seat: -1, until: 0, used: [], debate };
     if (f.until > Date.now()) throw new HttpError(409, `${s.players[f.seat].name} has the floor`);
@@ -765,7 +767,6 @@ export async function defend(code: string, token: string | null, body: { kind?: 
     const s = row.state;
     if (!s || s.phase.kind === "over") throw new HttpError(409, "No game in progress");
     const seat = seatOf(row, token);
-    if (!s.players[seat].alive) throw new HttpError(403, "You're out — you watch in silence");
     const acc = openAccusation(s.events, seat);
     if (!acc) throw new HttpError(409, "Nobody is accusing you right now");
     const kind = String(body.kind) as DefendKind;
@@ -855,12 +856,8 @@ export async function livekitPasses(code: string, token: string | null) {
   if (!livekitConfigured()) return null;
   const row = await load(code);
   const seat = seatOf(row, token);
-  const s = row.state;
-  const lastWords = Boolean(s?.lastWords && s.lastWords.seat === seat && s.lastWords.until > Date.now());
-  // (designer 2026-10-12, reversing 2026-10-09) a player who is out LISTENS but never speaks — except their last words
-  const speak = !s || s.phase.kind === "over" || s.players[seat].alive || lastWords;
-  const p = await voicePasses(row.code, seat, row.lobby[seat].name, true, token!);
-  return speak ? p : { ...p, table: await listenPass(row.code, seat, row.lobby[seat].name, token!) };
+  // (designer 2026-10-14, reversing 2026-10-12) a player who is out SPEAKS too — they stay in the game, blind to secrets
+  return voicePasses(row.code, seat, row.lobby[seat].name, true, token!);
 }
 
 /** TURN/STUN servers for table voice; seated players only. */

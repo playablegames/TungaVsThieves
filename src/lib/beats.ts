@@ -114,7 +114,7 @@ function rawBeat(e: GameEvent, names: string[], history: GameEvent[]): Beat | nu
     case "eliminated":
       // (2026-10-09) roles are never shown to the table — only "out", and the hand they held
       if (d?.side === undefined)
-        return { ...base, actor: num(d, "killer") ?? undefined, target: actor, title: `${nm(actor)} is out`, detail: "Their role stays hidden.", result: "out", tone: "lethal", big: true, hold: BIG + (d?.lastWords ? LAST_WORDS_MS : 0), lastWords: Boolean(d?.lastWords) };
+        return { ...base, actor: num(d, "killer") ?? undefined, target: actor, title: `${nm(actor)} is out`, detail: num(d, "killer") !== undefined && d?.killer !== null ? `Who were they, really? Only ${nm(num(d, "killer"))} knows.` : "Who were they, really? Nobody knows.", result: "out", tone: "lethal", big: true, hold: BIG + (d?.lastWords ? LAST_WORDS_MS : 0), lastWords: Boolean(d?.lastWords) };
       return { ...base, actor: num(d, "killer") ?? undefined, target: actor, title: `${nm(actor)} was ${String(d?.role)}`, detail: d?.side === "T" ? "A thief." : "A villager.", result: "out", tone: d?.side === "T" ? "relic" : "lethal", big: true, hold: BIG + (d?.lastWords ? LAST_WORDS_MS : 0), lastWords: Boolean(d?.lastWords) };
     case "eliminated_private":
       // only the Teer Kaman shooter or the Faisla caller sees the role

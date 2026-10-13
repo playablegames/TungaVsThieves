@@ -13,7 +13,7 @@
 //   DAL BADAL   three role cards are shuffled like the cup game and fly back to three seats
 /* eslint-disable @next/next/no-img-element */
 import type { CSSProperties } from "react";
-import { AbsoluteFill, interpolate, spring } from "remotion";
+import { AbsoluteFill, interpolate, spring } from "@/lib/anim";
 import type { CineKind } from "./Cinematic";
 
 const C = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;

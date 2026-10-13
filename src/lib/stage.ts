@@ -4,6 +4,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { GameEvent } from "@/engine/types";
 import { beatsFor, PACE, type Beat } from "./beats";
+import { motionReduced } from "./motion";
 
 export interface StageSnapshot {
   current: Beat | null;   // on stage right now
@@ -12,8 +13,7 @@ export interface StageSnapshot {
   ms: number;             // how long the current beat stays before it moves on by itself
 }
 
-const reducedMotion = () =>
-  typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+const reducedMotion = () => motionReduced();
 
 export class BeatQueue {
   private seen = -1;

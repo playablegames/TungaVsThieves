@@ -7,12 +7,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, saveToken, useGame, useHydrated } from "@/lib/client";
 import { beatsFor } from "@/lib/beats";
-import { CARD } from "@/lib/cards";
 import type { Action, Card, GameEvent, Side } from "@/engine/types";
 import type { StoneStep } from "@/engine/stonepath";
 import { MIN_PLAYERS, THIEF_ROLES, VILLAGER_ROLES } from "@/engine/setup";
 import { openAccusation, type Accusation, type DefendKind } from "@/lib/defend";
 import { report as reportIssue } from "@/lib/report";
+import { MotionSettings } from "./MotionSettings";
+import { setStreamer, useStreamer } from "@/lib/streamer";
 import type { PlayerView, PublicPlayer } from "@/engine/view";
 import type { ClientState } from "@/server/game";
 import { useStage } from "@/lib/stage";
@@ -77,10 +78,9 @@ export default function Game({ code }: { code: string }) {
   useEffect(() => { if (ptt.down) cut(); }, [ptt.down]);
   // an update (the Sutradhar) has priority over voice chat: mic held, the table ducked under it — even mid push-to-talk
   // (designer 2026-10-12) a player who is out watches in silence — their mic stays shut, except for their last words
-  const outSilent = st?.status === "playing" && st.view && !st.view.me.alive && !(lw && lw.seat === me);
   // your own floor (an accusation answered, a debate turn) or your last words open the mic by themselves — no button to hold
   const ownFloor = Boolean((fl && fl.seat === me) || (lw && lw.seat === me));
-  const held = Boolean(outSilent || (fl && fl.seat !== me) || (lw && lw.seat !== me) || (ptt.on && !ptt.down && !ownFloor) || reading === "update" || (reading === "talk" && !ptt.down && !ownFloor));
+  const held = Boolean((fl && fl.seat !== me) || (lw && lw.seat !== me) || (ptt.on && !ptt.down && !ownFloor) || reading === "update" || (reading === "talk" && !ptt.down && !ownFloor));
   const duckTable = voice.duck;
   useEffect(() => { duckTable(reading === "update"); }, [reading, duckTable]);
   const setHeld = voice.setHeld;
@@ -149,6 +149,7 @@ function Lobby({ s, code, token, onError, voice }: { s: ClientState; code: strin
   const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState<number | null>(null);
   const [settings, setSettings] = useState(false);
+  const streamer = useStreamer();
   const n = names.length;
   // a big table shrinks the seats so the ring still fits a phone
   const big = n > 8;
@@ -174,7 +175,8 @@ function Lobby({ s, code, token, onError, voice }: { s: ClientState; code: strin
       </div>
 
       <h1 className="mt-1 text-center font-display text-[36px] font-bold leading-tight text-stock landscape:mt-0 landscape:text-[28px]">Invite your friends</h1>
-      <p className={`mt-1 text-center ${ENGRAVED} text-[13px] font-semibold tracking-[0.25em] text-brass`}>TABLE {code}</p>
+      <p className={`mt-1 text-center ${ENGRAVED} text-[13px] font-semibold tracking-[0.25em] text-brass`}>TABLE {streamer ? "•••••" : code}</p>
+      <StreamerToggle />
 
       <div className="mt-5 grid grid-cols-[1.3fr_1fr] gap-3 landscape:mt-3">
         <a href={`https://wa.me/?text=${encodeURIComponent(invite)}`} target="_blank" rel="noreferrer"
@@ -539,7 +541,9 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
         <Eject key={beat.n} name={ejected.name.replace(/\s*🤖$/, "")} initials={initialsOf(names)[ejected.seat]} colour={SEAT_COLOURS[ejected.seat % SEAT_COLOURS.length]}
           thief={beat.tone === "relic"} role={ejected.revealedRole} onDone={stage.skip} speed={s.timers.speed ?? 1} lastWords={Boolean(beat.lastWords)} mine={ejected.seat === v.me.seat}
           onSkipWords={ejected.seat === v.me.seat && token ? () => { void api.endWords(code, token).catch(() => {}); stage.skip(); } : undefined}
-          remaining={thievesRemaining(v.rolesInPlay, v.players.filter((p) => !p.alive).map((p) => p.revealedRole))} />
+          remaining={thievesRemaining(v.rolesInPlay, v.players.filter((p) => !p.alive).map((p) => p.revealedRole))}
+          killer={beat.actor !== undefined && beat.actor !== ejected.seat ? (v.players[beat.actor]?.name ?? "").replace(/\s*🤖$/, "") || null : null}
+          secret={(() => { const e = [...v.events].reverse().find((x) => x.type === "eliminated_private" && x.data?.seat === ejected.seat); return e ? { role: String(e.data?.role), thief: e.data?.side === "T" } : null; })()} />
       )}
       {/* (designer 2026-10-12) the PLAYMAT: a dark warm table, softly lit in the middle — the printed cards are the only bright
           things. The world's paintings (the cover, the shrine) are kept for home, the final vote and the end. */}
@@ -552,7 +556,7 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
           {newSecrets > 0 && <span className="nudge-dot absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full px-1 text-[11px] font-black" aria-hidden>{newSecrets}</span>}
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden><path d="M4 6h16M4 12h16M4 18h16" /></svg>
         </button>
-        {!solo && (v.me.alive || s.lastWords?.seat === v.me.seat) && <MicButton voice={voice} />}
+        {!solo && <MicButton voice={voice} />}
         <button type="button" onClick={() => { setFeedOpen(true); markSeen("feed"); }} aria-label="What happened so far" className="relative grid h-11 w-11 place-items-center text-brass">
           {newFeed && <span className="nudge-dot absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full" aria-hidden />}
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5M12 7v5l3 2" /></svg>
@@ -565,20 +569,21 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
       )}
 
       <Ring v={v} voice={voice} moment={beat && TABLE_MOMENTS.has(beat.type) ? beat : null} speed={s.timers.speed ?? 1} onHistory={setHistory} hint={!v.tutorial && v.me.alive && !tipsSeen.includes("seats")} talking={bots.current?.seat ?? null} floorSeat={s.floor && s.floor.until > now() ? s.floor.seat : null} actor={headline?.actor} target={headline?.target} pick={v.decision?.kind === "vote" ? v.decision.mine ?? null : null} tally={live ?? voteShown?.tally}
-        flying={flying} onThrow={s.status === "playing" && v.me.alive ? throwAt : undefined}
+        flying={flying} onThrow={s.status === "playing" ? throwAt : undefined}
         away={s.away} marks={marks} onMark={setMark}
-        onClaim={s.status === "playing" && v.me.alive ? claimAt : undefined}>
+        onClaim={s.status === "playing" ? claimAt : undefined}>
         {stage.current?.big
           ? <Stage stage={stage} skip={stage.skip} names={v.players.map((p) => p.name)} inline small={v.players.length > 8} />
           : <Centre v={v} feed={feed} onOpen={() => setFeedOpen(true)} compact={Boolean(myMove && myMove !== "vote" && myMove !== "debate")} living={living.length} extend={extend}
           ready={() => act({ type: "ready" })} />}
       </Ring>
-      {!solo && v.me.alive && <TalkButton up={Boolean(myMove && myMove !== "debate")} />}
+      <StreamerBadge v={v} />
+      {!solo && <TalkButton up={Boolean(myMove && myMove !== "debate")} />}
       {/* the coach (a guided first game) or a first-time tip sits INSIDE the tray, so the cards never cover it */}
       <Tray v={v} act={act} live={live} waitForExit={myExitPending} banner={coach
         ? <Coach key={coach.id} text={coach.text} onNext={() => setCoachSeen((xs) => [...xs, coach.id])} onSkip={() => setCoachOff(true)} />
         // (designer 2026-10-13: "remove this — everything has to be nudges") no text tips: the thing to tap glows green
-        : accused && v.me.alive && accused.n !== dropped
+        : accused && accused.n !== dropped
           ? <Defend v={v} acc={accused} voice={!solo} onAnswer={(b) => api.defend(code, token, b).catch(() => {})} onClose={() => setDropped(accused.n)} />
           : null} />
       {history !== null && <Sheet title={`${history === v.me.seat ? "Your" : `${v.players[history]?.name.replace(/\s*🤖$/, "")}'s`} history`} onClose={() => setHistory(null)}><SeatHistory v={v} seat={history} /></Sheet>}
@@ -595,6 +600,8 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
             </div>
           )}
           <SoundMode lines={bots.voice} setLines={bots.setVoice} />
+          <MotionSettings />
+          <StreamerToggle />
           <SpeedRow code={code} token={token} host={s.you.host} speed={s.timers.speed ?? 1} asked={s.timers.speedAsk === s.you.seat} />
           <AlertsToggle code={code} token={token} on={s.you.alerts} />
           <details className="group rounded-2xl border border-brass/30 px-4 py-1 [&_summary::-webkit-details-marker]:hidden">
@@ -830,15 +837,12 @@ function seatFaces(v: PlayerView, said: Record<number, SaidAbout>): Record<numbe
   }
   const known = new Map<number, string>();
   for (const [x, k] of seen) known.set(x, k.role);
-  // a player who is out and watching sees every card
-  for (const r of v.spectate ?? []) known.set(r.seat, r.role);
   const out: Record<number, SeatFace> = {};
   for (const p of v.players) {
     const saw = seen.get(p.seat)?.role;
     // (designer 2026-10-13: "the player voted out is still visible although you covered it") an out seat is the plain
     // card back under its cover — no role you saw, no "I was …" rumour showing through. Tap still says what you saw.
-    // A player who is out and watching sees every card (spectate).
-    if (!p.alive && p.seat !== v.me.seat && !v.spectate) { out[p.seat] = { kind: "back", art: CARD_BACK, seen: saw }; continue; }
+    if (!p.alive && p.seat !== v.me.seat) { out[p.seat] = { kind: "back", art: CARD_BACK, seen: saw }; continue; }
     const role = p.seat === v.me.seat ? v.me.role : known.get(p.seat);
     const art = roleArt(role);
     if (p.seat === v.me.seat && art) out[p.seat] = { kind: "mine", art, role };
@@ -1060,8 +1064,7 @@ function Tray({ v, act, live, banner = null, waitForExit = false }: { v: PlayerV
       {!v.me.alive && (
         <h2 className="text-center font-display text-[22px] font-bold leading-tight text-stock">You&rsquo;re out</h2>
       )}
-      {!v.me.alive && <p className="text-center text-[13px] text-stock/70">{v.spectate ? "You’re out — you see everything now. You can’t speak." : "You’re out."}</p>}
-      {v.spectate && <Watching v={v} />}
+      {!v.me.alive && <p className="text-center text-[13px] text-stock/70">You&rsquo;re out — but still in the game. Talk, accuse, bluff, help your team. You see no secrets.</p>}
       {exitFirst ? <p className="py-3 text-center font-display text-[16px] text-stock/80">Your last decision comes next…</p>
         : inTray ? <Decide key={v.phase} v={v} act={act} />
         : v.me.alive && <>
@@ -1073,21 +1076,6 @@ function Tray({ v, act, live, banner = null, waitForExit = false }: { v: PlayerV
   );
 }
 
-/** WATCHING (designer 2026-10-12): a player who is out sees every role and every hand, live — and may not speak */
-function Watching({ v }: { v: PlayerView }) {
-  const rows = (v.spectate ?? []).filter((r) => v.players[r.seat]?.alive);
-  return (
-    <ul className="flex max-h-[38dvh] flex-col gap-1 overflow-y-auto" aria-label="Everyone's role and cards">
-      {rows.map((r) => (
-        <li key={r.seat} className="flex items-center gap-2 rounded-xl bg-black/30 px-2 py-1">
-          <span className="w-20 truncate text-[13px] font-bold text-stock">{v.players[r.seat].name.replace(/\s*🤖$/, "")}</span>
-          <span className={`shrink-0 rounded px-1.5 text-[10px] font-bold uppercase tracking-wide ${r.side === "T" ? "bg-crimson-deep text-ink" : "bg-[#3a240c] text-[#f3c66b]"}`}>{r.role}</span>
-          <span className="min-w-0 flex-1 truncate text-right text-[12px] text-stock/80">{r.hand.map((c) => (c.startsWith("STONE") ? `💎 ${CARD[c].name}` : CARD[c].name)).join(" · ") || "—"}</span>
-        </li>
-      ))}
-    </ul>
-  );
-}
 
 function Story({ v }: { v: PlayerView }) {
   const items = [...v.events].reverse().filter((e) => !["analytics_deal", "analytics_turn"].includes(e.type)).slice(0, 120);
@@ -1577,6 +1565,37 @@ function AccuseSheet({ v, seat, said, seen, mark, onClose, onClaim, onMark, onTh
           {onHistory && <button type="button" onClick={onHistory} className="min-h-10 rounded-full px-3 text-[13px] font-bold text-stock/85 ring-1 ring-brass/40">📜 History</button>}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** STREAMER MODE switch (lib/streamer.ts) — in the lobby and the ☰ menu */
+function StreamerToggle() {
+  const on = useStreamer();
+  return (
+    <button type="button" role="switch" aria-checked={on} onClick={() => setStreamer(!on)}
+      className={`mx-auto mt-2 flex min-h-11 items-center gap-2 rounded-full px-4 text-[13px] font-bold ${on ? "bg-crimson-deep text-ink ring-2 ring-crimson" : "border border-brass/40 text-stock/80"}`}>
+      <span aria-hidden>{on ? "🔴" : "📺"}</span>{on ? "Streamer mode ON — code hidden, your role shown to viewers" : "Streamer mode"}
+    </button>
+  );
+}
+
+/** the streamer's own role, in a corner, for the AUDIENCE (the table can't see the stream) */
+function StreamerBadge({ v }: { v: PlayerView }) {
+  const on = useStreamer();
+  if (!on) return null;
+  const thief = v.me.side === "T";
+  return (
+    <div aria-hidden className={`pointer-events-none fixed left-2 top-[68px] z-20 flex items-center gap-2 rounded-xl border-2 bg-black/80 p-1 pr-2.5 ${thief ? "border-crimson" : "border-[#f0a32e]"}`}>
+      {roleArt(v.me.role)
+        // eslint-disable-next-line @next/next/no-img-element
+        ? <img src={roleArt(v.me.role)!} alt="" className="w-10 rounded" />
+        : null}
+      <span className="leading-tight">
+        <span className="block text-[10px] font-bold uppercase tracking-wide text-stock/70">For viewers 🤫</span>
+        <span className={`block font-display text-[15px] font-bold ${thief ? "text-crimson-soft" : "text-[#f3c66b]"}`}>{v.me.role}</span>
+        <span className="block text-[11px] text-stock/80">{v.me.hand.filter((c) => c.startsWith("STONE")).length ? `💎 holding ${v.me.hand.filter((c) => c.startsWith("STONE")).length}` : thief ? "Team Thieves" : "Team Tunga"}</span>
+      </span>
     </div>
   );
 }

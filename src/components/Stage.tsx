@@ -10,6 +10,7 @@ import { PlayedPair } from "./Hand";
 import { TapOn } from "./ui";
 import { useEffect } from "react";
 import { play } from "@/lib/sfx";
+import { fx } from "@/lib/fx";
 
 const TALLY_STEP = 420;
 
@@ -34,9 +35,15 @@ export function Stage({ stage, skip, names, inline = false, small = false }: { s
   const landing = b?.n ?? -1, chips = tally.length;
   useEffect(() => {
     if (!chips) return;
-    const ts = Array.from({ length: chips }, (_, i) => setTimeout(() => play("vote", i + 1), 300 + i * TALLY_STEP));
+    // …and the table shakes a little harder with each one — the last (the most votes) hardest, hardest of all when
+    // it puts someone out
+    const out = b?.result === "out";
+    const ts = Array.from({ length: chips }, (_, i) => setTimeout(() => {
+      play("vote", i + 1);
+      fx.rumble(i === chips - 1 ? (out ? 1 : 0.6) : (0.12 + 0.4 * (i / Math.max(1, chips - 1))));
+    }, 300 + i * TALLY_STEP));
     return () => ts.forEach(clearTimeout);
-  }, [landing, chips]);
+  }, [landing, chips]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <>
       {/* screen readers hear every beat; nobody has to watch the screen to follow the table */}

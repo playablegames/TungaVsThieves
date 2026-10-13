@@ -11,9 +11,11 @@
 //               per-pixel dissolve mask, then ash
 // Lighting, depth, outlines, the turn bounce and the end's wind sway are CSS (globals.css). Reduced motion: no
 // particles, no shake, no burn — the words still say what happened.
+import { flashesOn, motionReduced, shakeScale } from "./motion";
 import type { Beat } from "./beats";
 
-const reduced = () => typeof window !== "undefined" && Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
+// (2026-10-14) the phone's reduce-motion OR the player's own (☰ → Motion & comfort, lib/motion.ts)
+const reduced = () => motionReduced();
 
 type Shape = "dot" | "spark" | "petal" | "puff";
 interface P { x: number; y: number; vx: number; vy: number; life: number; max: number; size: number; color: string; g: number; drag: number; shape: Shape; rot: number; vr: number; sway: number; flicker: boolean }
@@ -123,13 +125,27 @@ const FX = {
     emit(n, () => ({ x: rnd(0, W), y: H + rnd(0, 40), vx: rnd(-15, 15), vy: rnd(-90, -40), drag: 0.3, max: rnd(3, 5.5), size: rnd(10, 26), color: pickOf(["rgba(40,30,30,.5)", "rgba(70,50,45,.4)", "rgba(25,18,18,.55)"]), shape: "puff", sway: 12 }));
   },
 
+  /** (2026-10-14, Balatro study: the shake grows with the score) a shake of any size, 0 = a tremor, 1 = the biggest:
+   *  2→10 px, 150→420 ms, a little turn at the top end, dying away */
+  rumble(amount: number) {
+    if (reduced() || typeof document === "undefined") return;
+    const root = document.querySelector<HTMLElement>("[data-juice-root]") ?? document.body;
+    // scaled by the player's shake setting (off · gentle · full); sliding only — no turning, which sickens more
+    const k = Math.max(0, Math.min(1, amount)) * shakeScale();
+    if (k <= 0) return;
+    const px = 2 + 8 * k;
+    const frames = [0, 1, 2, 3, 4, 5].map((i) => {
+      const f = 1 - i / 6, sx = (i % 2 ? -1 : 1) * px * f, sy = (i % 3 ? 1 : -1) * px * 0.5 * f;
+      return { transform: `translate(${sx}px, ${sy}px)` };
+    });
+    root.animate([...frames, { transform: "none" }], { duration: 150 + 270 * k, easing: "ease-out" });
+  },
+
   /** the whole screen shakes: strong · sharp · thud */
   shake(kind: "strong" | "sharp" | "thud") {
     if (reduced() || typeof document === "undefined") return;
-    const root = document.querySelector<HTMLElement>("[data-juice-root]") ?? document.body;
-    for (const k of ["shake", "shake-sharp", "thud"]) root.classList.remove(k);
-    void root.offsetWidth;
-    root.classList.add(kind === "strong" ? "shake" : kind === "sharp" ? "shake-sharp" : "thud");
+    // (2026-10-14) one shake for everything, so the player's setting governs them all
+    FX.rumble(kind === "strong" ? 0.8 : kind === "sharp" ? 0.6 : 0.45);
   },
 
   /** a word stamped over the table */
@@ -148,7 +164,7 @@ const FX = {
 
   /** the struck seat flashes white and punches */
   flash(seat: number | undefined) {
-    if (seat === undefined || typeof document === "undefined") return;
+    if (seat === undefined || typeof document === "undefined" || !flashesOn()) return;
     const el = document.querySelector<HTMLElement>(`[data-seat="${seat}"]`);
     if (!el) return;
     el.classList.remove("hit-flash"); void el.offsetWidth; el.classList.add("hit-flash");

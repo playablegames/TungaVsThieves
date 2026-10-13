@@ -87,7 +87,7 @@ describe("room service (memory store)", () => {
     expect((await memoryStore.get(code))!.state!.events.some((e) => e.type === "timeout")).toBe(true);
   });
 
-  it("a player who is out watches in silence and sees every role and hand (designer 2026-10-12)", async () => {
+  it("a player who is out stays in the game: talks and accuses, but sees no secrets (designer 2026-10-14)", async () => {
     const { code, tokens } = await room(5);
     await startGame(code, tokens[0]);
     await chat(code, tokens[2], "hello");
@@ -95,14 +95,13 @@ describe("room service (memory store)", () => {
     const seat = row.lobby.findIndex((p) => p.token === tokens[2]);
     row.state!.players[seat].alive = false;
     await memoryStore.update({ ...row }, row.version);
-    await err(chat(code, tokens[2], "I was a villager!"), 403);
-    await err(claim(code, tokens[2], { kind: "accuse", target: (seat + 1) % 5 }), 403);
-    expect((await getState(code, tokens[0], 0)).messages.map((m) => m.text)).toEqual(["hello"]);
+    await chat(code, tokens[2], "I was a villager!");
+    const role = row.state!.rolesInPlay[0];
+    await claim(code, tokens[2], { kind: "kundli", target: (seat + 1) % 5, role });
+    expect((await getState(code, tokens[0], 0)).messages.map((m) => m.text)).toEqual(["hello", "I was a villager!"]);
     const me = (await getState(code, tokens[2], 0)).view!;
-    expect(me.spectate).toHaveLength(5);
-    expect(me.spectate!.every((p) => typeof p.role === "string" && Array.isArray(p.hand))).toBe(true);
-    // the living see nothing extra
-    expect((await getState(code, tokens[0], 0)).view!.spectate).toBeUndefined();
+    expect(me.spectate).toBeUndefined();
+    expect(me.players.filter((p) => p.seat !== seat).every((p) => p.revealedRole === null || p.revealedRole === undefined)).toBe(true);
   });
 
   it("only the host adds bots or removes seats — any seat but the host's own (2026-10-09)", async () => {

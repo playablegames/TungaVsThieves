@@ -19,7 +19,7 @@ export const viewport: Viewport = { width: "device-width", initialScale: 1, view
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${playfair.variable} ${cinzel.variable} ${jakarta.variable} h-full antialiased`}>
+    <html lang="en" suppressHydrationWarning className={`${playfair.variable} ${cinzel.variable} ${jakarta.variable} h-full antialiased`}>
       <body className="min-h-dvh"><CrashWatch />{children}</body>
     </html>
   );

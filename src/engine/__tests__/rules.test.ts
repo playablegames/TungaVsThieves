@@ -222,13 +222,17 @@ describe("ELIMINATION — out, dying power, hand-off", () => {
   const kill = (s: GameState, target: number) =>
     apply(s, 0, { type: "play", card: "TEER_KAMAN", pass: [F, K, H], target, roles: tk(s, [role(s, target), other(s, target, "")]) });
 
-  it("WATCHING (2026-10-12): an out player sees every role and hand — but only AFTER their last decision", () => {
+  it("(2026-10-14) an out player stays IN the game and sees NO secrets — no other roles, no hands, before or after their last decision", () => {
     const s = rig(6, { sides: ["T", "V", "V", "V", "V", "T"], hands: [[TK, TK, F, K, H], [S1, B], [F], [T], [K], [B]] });
     let n = kill(s, 1);
-    expect(viewFor(n, 1).spectate).toBeUndefined(); // still choosing who gets the vote: no peeking
+    expect(viewFor(n, 1).spectate).toBeUndefined();
     n = apply(n, 1, { type: "gift", target: 2 });
-    expect(viewFor(n, 1).spectate?.map((p) => p.role)).toEqual(n.players.map((p) => p.role));
-    expect(viewFor(n, 2).spectate).toBeUndefined(); // the living never get it
+    const v = viewFor(n, 1);
+    expect(v.spectate).toBeUndefined();
+    // nothing in what this phone receives names another player's role
+    const others = n.players.filter((p) => p.seat !== 1).map((p) => p.role);
+    const leaked = v.events.filter((e) => e.type !== "role" && others.some((r) => JSON.stringify(e.data ?? {}).includes(`"role":"${r}"`)) && e.to !== "all");
+    expect(leaked).toEqual([]);
   });
   it("(2026-10-10) a player hit by Teer Kaman gives 1 vote; their cards go to the SHOOTER — no choice; the shooter takes them instead of drawing", () => {
     const s = rig(6, { sides: ["T", "V", "V", "V", "V", "T"], hands: [[TK, TK, F, K, H], [S1, B], [F], [T], [K], [B]] });

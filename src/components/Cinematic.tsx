@@ -11,8 +11,9 @@
 // which some browsers refuse (screen check 2026-10-13: a black screen until tapped).
 /* eslint-disable @next/next/no-img-element */
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { AbsoluteFill, interpolate, spring } from "remotion";
+import { AbsoluteFill, interpolate, spring } from "@/lib/anim";
 import { TapOn } from "./ui";
+import { flashesOn, motionReduced } from "@/lib/motion";
 import { Scene, SCENE_LEN } from "./Scenes";
 
 /** (designer 2026-10-13 evening, "animations must slow down") the films play at 3/4 speed */
@@ -75,7 +76,7 @@ function Film({ len, speed = 1, hold = false, loop = false, box = false, onEnd, 
     </div>
   );
 }
-const reduced = () => typeof window !== "undefined" && Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
+const reduced = () => motionReduced();
 
 const font: CSSProperties = { fontFamily: "var(--font-engraved), serif", fontWeight: 900, letterSpacing: "0.12em" };
 
@@ -143,7 +144,7 @@ function Moment({ kind, hit, frame }: { kind: CineKind; hit: boolean; frame: num
       {kind === "talashi" && (
         <div style={{ position: "absolute", inset: 0, background: `radial-gradient(circle 120px at ${spot}% 44%, transparent 0%, transparent 60%, rgba(0,0,0,.72) 100%)` }} />
       )}
-      {flash > 0 && <div style={{ position: "absolute", inset: 0, background: "#fff", opacity: flash }} />}
+      {flash > 0 && flashesOn() && <div style={{ position: "absolute", inset: 0, background: "#fff", opacity: flash }} />}
       <Title text={kind === "teer_kaman" ? (hit ? "HIT!" : "MISS") : a.word} frame={frame} color={kind === "teer_kaman" && !hit ? "#e8dcc4" : a.color} glow={a.glow} />
       <Letterbox frame={frame} len={LEN} />
     </AbsoluteFill>
