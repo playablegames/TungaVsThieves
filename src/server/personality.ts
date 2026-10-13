@@ -12,10 +12,10 @@ import type { Skill } from "./belief";
 export type Personality = "open" | "quiet" | "hothead" | "detective";
 
 export const PERSONALITIES: Record<Personality, Partial<Skill>> = {
-  open: { activity: 0.95, stoneSit: 0.3, claimRate: 1, lie: 0.5, bluff: 0.05, hunchTalk: 0.2, memory: 0.85, temper: 0.08 },
-  quiet: { activity: 0.9, stoneSit: 0.75, claimRate: 0.6, lie: 0.85, bluff: 0.35, hunchTalk: 0.1, memory: 0.9, temper: 0.06 },
-  hothead: { activity: 1, stoneSit: 0.25, claimRate: 1, lie: 0.7, bluff: 0.15, hunchTalk: 0.6, followAnyAccusation: true, faislaDiscipline: 0.4, memory: 0.7, temper: 0.15 },
-  detective: { activity: 0.92, stoneSit: 0.5, claimRate: 0.9, lie: 0.6, bluff: 0.1, hunchTalk: 0.05, followAnyAccusation: false, faislaDiscipline: 1, memory: 1, temper: 0.03 },
+  open: { activity: 0.95, stoneSit: 0.3, claimRate: 1, lie: 0.5, bluff: 0.05, hunchTalk: 0.2, memory: 0.85, temper: 0.08, tkConfidence: 0.65 },
+  quiet: { activity: 0.9, stoneSit: 0.75, claimRate: 0.6, lie: 0.85, bluff: 0.35, hunchTalk: 0.1, memory: 0.9, temper: 0.06, tkConfidence: 0.7 },
+  hothead: { activity: 1, stoneSit: 0.25, claimRate: 1, lie: 0.7, bluff: 0.15, hunchTalk: 0.6, followAnyAccusation: true, faislaDiscipline: 0.4, memory: 0.7, temper: 0.15, tkConfidence: 0.55 },
+  detective: { activity: 0.92, stoneSit: 0.5, claimRate: 0.9, lie: 0.6, bluff: 0.1, hunchTalk: 0.05, followAnyAccusation: false, faislaDiscipline: 1, memory: 1, temper: 0.03, tkConfidence: 0.8 },
 };
 
 /** a skill played with a personality (the skill's name stays — it still decides what the bot can read) */

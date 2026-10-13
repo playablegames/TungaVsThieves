@@ -56,11 +56,18 @@ describe("THE PLAYBOOK — beginners gamble, skilled players hold", () => {
     const shots = runs(s, SKILLS.casual).filter((a) => a.type === "play" && a.card === "TEER_KAMAN");
     expect(shots.some((a) => a.type === "play" && a.target === 2 && a.roles?.includes(s.players[2].role))).toBe(true);
   });
-  it("a bare accusation (no Kundli the table saw) never draws an arrow", () => {
+  it("a bare accusation alone draws no arrow from a bot that isn't sure (its suspicion bar not reached)", () => {
     const s = tkTable();
     s.events.push({ n: s.events.length, type: "claim", to: "all", msg: "", data: { seat: 3, target: 2, kind: "kundli", role: s.players[2].role, side: "T" } });
     for (const skill of [SKILLS.casual, SKILLS.average, SKILLS.sharp])
-      expect(runs(s, skill).some((a) => a.type === "play" && a.card === "TEER_KAMAN")).toBe(false);
+      expect(runs(s, { ...skill, tkConfidence: 0.99 }).some((a) => a.type === "play" && a.card === "TEER_KAMAN")).toBe(false);
+  });
+  it("ON SUSPICION: a villager sure enough shoots its top suspect, naming the role the table claimed for them", () => {
+    const s = tkTable();
+    s.events.push({ n: s.events.length, type: "claim", to: "all", msg: "", data: { seat: 3, target: 2, kind: "kundli", role: s.players[2].role, side: "T" } });
+    const shots = runs(s, { ...SKILLS.casual, tkConfidence: 0.05 }).filter((a) => a.type === "play" && a.card === "TEER_KAMAN");
+    expect(shots.length).toBeGreaterThan(0);
+    expect(shots.every((a) => a.type === "play" && a.roles?.length)).toBe(true);
   });
   it("WAIT FOR THE ANSWER: an accusation moves a bot less until the accused has answered (or the floor closed)", () => {
     for (const skill of [SKILLS.casual, SKILLS.sharp]) {

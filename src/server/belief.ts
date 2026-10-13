@@ -83,6 +83,8 @@ export interface Skill {
   /** ...and how loosely it picks among its suspects when it votes: a ballot is a weighted die, not the top of a list
    *  (0 = always the top suspect; higher = the second and third get picked more often) */
   temper?: number;
+  /** Teer Kaman on suspicion: how sure (P thief) a villager must be before it shoots without a read (default 0.7) */
+  tkConfidence?: number;
 }
 
 export const SKILLS: Record<Skill["name"], Skill> = {
@@ -685,6 +687,23 @@ export function turnMove(s: GameState, seat: number, seed: number, r: R, skill: 
   if (foes.length) {
     const [target, k] = pick(r, foes);
     return { ...a, target, roles: [k.role, pick(r, s.rolesInPlay.filter((x) => x !== k.role))].slice(0, tkGuesses(s.rolesInPlay)) };
+  }
+  // ON SUSPICION (designer 2026-10-13: "Teer Kaman can be played with suspicion also, and with open table
+  // information"): a villager whose belief that a player is a thief has cleared its bar shoots — naming the role the
+  // table claimed for them, if anyone did, and another thief role. (A thief shoots only what it read: a miss puts the
+  // shooter out, and a reckless thief is not a human one.)
+  if (me.side === "V") {
+    const bel = beliefOf(skill.followAnyAccusation ? s : withoutHearsay(s, seat), seat, seed, skill);
+    const alive = s.players.filter((p) => p.alive && p.seat !== seat).map((p) => p.seat);
+    const target = [...alive].sort((x, y) => (bel.p.get(y) ?? 0) - (bel.p.get(x) ?? 0))[0];
+    if (target !== undefined && (bel.p.get(target) ?? 0) >= (skill.tkConfidence ?? 0.7)) {
+      const thiefRoles = s.rolesInPlay.filter((x) => THIEF_ROLES.includes(x));
+      const said = s.events.filter((e) => e.type === "claim" && e.data?.target === target && e.data?.side === "T" && typeof e.data?.role === "string")
+        .map((e) => String(e.data!.role)).filter((x) => thiefRoles.includes(x)).at(-1);
+      const r1 = said ?? pick(r, thiefRoles);
+      const rest = thiefRoles.filter((x) => x !== r1);
+      return { ...a, target, roles: [r1, ...(rest.length ? [pick(r, rest)] : [])].slice(0, tkGuesses(s.rolesInPlay)) };
+    }
   }
   if (!(me.side === "T" && skill.thiefRestraint) && r() < skill.blindShot) {
     const target = topSuspect(s, seat, seed, skill);
