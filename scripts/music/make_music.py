@@ -172,6 +172,37 @@ def kombu(dur=1.6):
     return y * env(n, 0.06, 0.4)
 
 
+def veena(f, dur, prev=None):
+    """the Saraswati veena, plucked: a bright Karplus-Strong string with the jawari buzz and a small slide into the note"""
+    n = int(max(dur, 0.35) * SR)
+    p = max(2, int(SR / f))
+    buf = rng.uniform(-1, 1, p)
+    out = np.empty(n)
+    for i in range(n):
+        out[i] = buf[i % p]
+        buf[i % p] = 0.5 * (buf[i % p] + buf[(i + 1) % p]) * 0.9975
+    t = np.arange(n) / SR
+    buzz = np.tanh(out * 3) * 0.25  # the jawari: the string grazing a curved bridge
+    x = lp(out + buzz, 3500)
+    return x * env(n, 0.002, 0.08) * np.exp(-t / 0.9)
+
+
+def ghatam(level=1.0):
+    """the clay pot: a dry, hollow tock"""
+    n = int(0.12 * SR)
+    t = np.arange(n) / SR
+    f = 430 * (1 + 0.15 * np.exp(-t / 0.01))
+    x = np.sin(phase_of(f)) * np.exp(-t / 0.035) + lp(rng.standard_normal(n), 900) * np.exp(-t / 0.006) * 0.5
+    return x * level * 0.7
+
+
+def mridangam_thom(level=1.0):
+    n = int(0.4 * SR)
+    t = np.arange(n) / SR
+    f = 85 * (1 + 0.25 * np.exp(-t / 0.05))
+    return np.sin(phase_of(f)) * np.exp(-t / 0.16) * level
+
+
 def bell(f, level=1.0):
     """a temple bell"""
     n = int(2.4 * SR)
@@ -311,6 +342,66 @@ def faisla():
     return master(tr.loop(), -27)
 
 
+# Raag Kiravani on D (the South Indian harmonic minor — the heist's pull): S=0 R=2 g=3 M=5 P=7 d=8 N=11 S'=12
+# Khanda chapu: 5 beats a cycle (Yakshagana's tala) — never quite settled
+THIEF = [  # the veena tiptoes, staccato, creeping through a chromatic step (6 is outside the raga on purpose)
+    [(7, 0, .5), (8, 1, .5), (7, 1.5, .5), (6, 2, .5), (5, 3, 1)],
+    [(3, 0, .5), (5, .5, .5), (3, 1, .5), (2, 2, .5), (-1, 3, 1)],
+    [(7, 0, .5), (8, 1, .5), (11, 1.5, .5), (12, 2, .5), (11, 3, .5), (8, 4, .5)],
+    [(7, 0, .5), (6, 1, .5), (5, 2, .5), (3, 3, .5), (2, 4, .5)],
+]
+GUARD = [  # the bansuri holds the line: long, low, warm
+    [(0, 0, 3), (2, 3, 2)],
+    [(3, 0, 2.5), (2, 2.5, 2.5)],
+    [(-1, 0, 3), (0, 3, 2)],
+    [(0, 0, 5)],
+]
+SNEAK_BASS = [(0, 0), (7, 2), (8, 3), (7, 4)]   # D . A Bb A — the tiptoe
+SNEAK_BASS2 = [(0, 0), (3, 2), (5, 3), (3, 4)]
+
+
+def intrigue():
+    e = 0.25            # one beat of the five
+    bars = 24
+    bar = 5 * e * 2     # the cycle, played at half speed: 2.5 s
+    tr = Track(bars * bar)
+    for b in range(bars):
+        t = b * bar
+        tr.add(shruti(bar + 0.3, (-12, -5)), t, 0.16, 0)
+        # the tiptoe bass, plucked low
+        for semi, at in (SNEAK_BASS if (b // 4) % 2 == 0 else SNEAK_BASS2):
+            tr.add(veena(hz(semi - 24), 0.4), t + at * 2 * e, 0.35, -0.1)
+        # the pot and the drum, barely there
+        tr.add(mridangam_thom(0.8), t, 0.35, 0)
+        for at in (2, 3):
+            tr.add(ghatam(0.7), t + at * 2 * e, 0.3, 0.3)
+        if b % 2:
+            tr.add(ghatam(0.4), t + 4.5 * 2 * e, 0.25, -0.3)
+        # who moves: the thieves creep (bars 4-7, 12-15), the village holds (8-11, 16-19), the end draws in (20-23)
+        k = b % 4
+        if 4 <= b < 8 or 12 <= b < 16:
+            play_line(tr, veena, THIEF[k], t, 2 * e, 0.22, 0.25)
+        elif 8 <= b < 12 or 16 <= b < 20:
+            play_line(tr, bansuri, [(s_ - 12, a, d) for s_, a, d in GUARD[k]], t, 2 * e, 0.2, -0.2)
+        elif b >= 20:
+            tr.add(pungi_drone(bar + 0.2, -12), t, 0.04 * (b - 19), 0.1)
+            play_line(tr, veena, THIEF[k][:3], t, 2 * e, 0.15, 0.3)
+        if b in (0, 12):
+            tr.add(bell(hz(12), 0.5), t + 0.05, 0.25, -0.5)
+    return master(tr.loop(), -26)
+
+
+def bansuri(f, dur, prev=None):
+    """the bamboo flute: soft, breathy, a slow vibrato — the village keeping watch"""
+    n = int(dur * SR)
+    t = np.arange(n) / SR
+    vib = 1 + 0.004 * np.sin(2 * np.pi * 4.6 * t) * np.clip((t - 0.3) / 0.4, 0, 1)
+    ph = phase_of(f * vib * glide_in(n, f, prev, 0.1))
+    x = np.sin(ph) + 0.18 * np.sin(2 * ph) + 0.05 * np.sin(3 * ph)
+    breath = bp(rng.standard_normal(n), f * 0.8, min(f * 3, 9000), 1) * 0.1
+    return (x + breath) * env(n, 0.15, min(0.4, dur / 2))
+
+
 def win():
     beat = 60 / 132
     tr = Track(5.0)
@@ -341,7 +432,7 @@ def lose():
 
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
-    for name, make in (("village", village), ("faisla", faisla), ("win", win), ("lose", lose)):
+    for name, make in (("intrigue", intrigue), ("village", village), ("faisla", faisla), ("win", win), ("lose", lose)):
         x = make()
         path = os.path.join(OUT, f"{name}.mp3")
         sf.write(path, x, SR, format="MP3")

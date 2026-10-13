@@ -3,7 +3,9 @@
 // Recorded loops made by scripts/music/make_music.py — the Malnad sound of the Tunga and the Bhadra: nadaswaram,
 // thavil, dollu, the Yakshagana chande, taala, the pungi (the Serpent's voice), a shruti drone, temple bells, the kombu.
 // Three moods follow the game:
-//   calm   — turns: village.mp3 (Raag Mohanam, the procession)
+//   calm   — turns: intrigue.mp3 (designer 2026-10-13: "a suspicious, intriguing vibe — thieves trying to steal,
+//            villagers holding them dear"): Raag Kiravani in the 5-beat khanda chapu, a tiptoeing veena for the thieves,
+//            a low bansuri holding the line for the village. (village.mp3, Mohanam, waits for the home screen.)
 //   tense  — a Faisla, the last vote, the surrender: faisla.mp3 (Raag Punnagavarali on the pungi, a heartbeat thavil)
 //   silent — the ejection and the end: the score steps aside (the end plays its own sting: playSting)
 // Voice is the heart of this game: the score sits well below the effects and drops further whenever anyone talks.
@@ -17,7 +19,7 @@ const PREF = "tunga:music";
 // moment anyone talks they drop another ~18 dB (music under speech: 15-20 dB is the broadcast rule)
 const LEVEL: Record<Mood, number> = { calm: 0.5, tense: 0.56, silent: 0 };
 const DUCKED = 0.12; // × the level while someone talks (≈ -18 dB)
-const FILES = { calm: "/audio/music/village.mp3", tense: "/audio/music/faisla.mp3", win: "/audio/music/win.mp3", lose: "/audio/music/lose.mp3" };
+const FILES = { calm: "/audio/music/intrigue.mp3", tense: "/audio/music/faisla.mp3", win: "/audio/music/win.mp3", lose: "/audio/music/lose.mp3" };
 
 let enabled = true;
 try { enabled = localStorage.getItem(PREF) !== "off"; } catch {}
