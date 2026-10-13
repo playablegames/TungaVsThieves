@@ -107,6 +107,8 @@ const hunch = (seed: number, a: number, b: number) => (((seed ^ (a * 7919) ^ (b 
 const sig = (x: number) => 1 / (1 + Math.exp(-x));
 const logit = (p: number) => Math.log(p / (1 - p));
 const pick = <T,>(r: R, xs: T[]): T => xs[Math.floor(r() * xs.length)];
+/** sims only: BOT_FLAGS=old-stonecraft plays the thieves as they were before the Stone craft (an A/B on the same deals) */
+const STONECRAFT = !(typeof process !== "undefined" && (process.env.BOT_FLAGS ?? "").includes("old-stonecraft"));
 
 export interface Claim { actor: number; target: number; side: Side; kind: string; /** an accusation not yet answered */ pending?: boolean }
 export interface Belief {
@@ -823,7 +825,9 @@ function bhukampMove(s: GameState, seat: number, seed: number, r: R, skill: Skil
   const left = nb(s, seat, 1), right = nb(s, seat, -1);
   // (2026-10-12, game 9NAQM: Raju gave the Tunga Stone to a thief because an out player had called them a villager)
   // an experienced player trusts evidence, not bare words, with a Stone
-  const bel = beliefOf(skill.followAnyAccusation ? s : withoutHearsay(s, seat), seat, seed, skill, me.side === "T");
+  // (2026-10-13, STONE CRAFT) a thief sends its Stone by what IT knows (its reads, its own odds) — not by what the table
+  // suspects: the autopsy found Bhukamp handing thieves' Stones to villagers 378-782 times in 1,000 games
+  const bel = beliefOf(skill.followAnyAccusation ? s : withoutHearsay(s, seat), seat, seed, skill, me.side === "T" && !(STONECRAFT && skill.name !== "casual"));
   const pT = (x: number) => bel.p.get(x) ?? 0.5;
   // the "precious" card of the two (a Stone, else Dal Badal) goes to the friendlier side
   const precious = [g1, g2].find(isStoneCard) ?? [g1, g2].find((c) => c === "DAL_BADAL");
@@ -875,6 +879,12 @@ function withReason(s: GameState, seat: number, seed: number, r: R, skill: Skill
       const st = stoneOdds(s, seat, seed, skill);
       const unsure = others.filter((x) => (st.get(x) ?? 0) > 0.02 && (st.get(x) ?? 0) < 0.98);
       return { ...a, target: best(unsure.length ? unsure : others, (x) => st.get(x) ?? 0) };
+    }
+    case "BATWARA": {
+      // (2026-10-13, STONE CRAFT) a thief holding a Stone never shakes the table itself — with 2 cards in hand its own
+      // Bhukamp forces the Stone out of its hand
+      if (STONECRAFT && thief && skill.name !== "casual" && me.hand.some(isStoneCard)) return randomAction(s, seat, r, 0, true);
+      return a;
     }
     case "HERA_PHERI": {
       const st = stoneOdds(s, seat, seed, skill);
