@@ -11,7 +11,7 @@ export const CARD: Record<Card, { name: string; sub: string; text: string; voice
   HERA_PHERI: { name: "Hera Pheri", sub: "Swap action cards", text: "Steal 2 cards face down from any one player. They draw 2.", voice: "lethal" },
   BATWARA: { name: "Bhukamp", sub: "Pass both ways", text: "Draw 2, then everyone — you too — passes 1 card left and 1 right. You choose which goes where.", voice: "gold" },
   TEER_KAMAN: { name: "Teer Kaman", sub: "Eliminate a player", text: "Pick a player, name two roles (one if the game started with 2 thieves). Right: they're out, only you see their role, and you take their 2 cards. Miss: you're out.", voice: "lethal" },
-  DAL_BADAL: { name: "Dal Badal", sub: "Thieves only", text: "Thieves only. On your turn (pass 3 first, draw 1 after), in the mandatory vote's debate (draw 1 after), or when it votes you out: show your role and shuffle role cards with 2 players — each picks one back face down. Then it leaves the game.", voice: "neutral" },
+  DAL_BADAL: { name: "Dal Badal", sub: "Thieves only", text: "Thieves only. On your turn (then pass 3 and draw back to 2), in the mandatory vote's debate (draw back to 2 after), or when it votes you out: show your role and shuffle role cards with 2 players — each picks one back face down. Then it leaves the game.", voice: "neutral" },
   STONE_1: { name: "Bhadra Stone", sub: "Villagers need both · Thieves need one", text: "Can be passed, never discarded.", voice: "bhadra" },
   STONE_2: { name: "Tunga Stone", sub: "Villagers need both · Thieves need one", text: "Can be passed, never discarded.", voice: "tunga" },
 };
