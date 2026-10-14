@@ -42,13 +42,13 @@ function Pickers({ options, sel, onPick }: { options: PublicPlayer[]; sel: numbe
   return <div className="grid grid-cols-2 gap-2">{options.map((p) => <PlayerChip key={p.seat} p={p} selected={sel === p.seat} onClick={() => onPick(p.seat)} />)}</div>;
 }
 
-function RolePicker({ roles, sel, setSel, max, known = [], said = [] }: { roles: string[]; sel: string[]; setSel: (r: string[]) => void; max: number; known?: string[]; said?: string[] }) {
+function RolePicker({ roles, sel, setSel, max, known = [] }: { roles: string[]; sel: string[]; setSel: (r: string[]) => void; max: number; known?: string[] }) {
   const toggle = (r: string) => setSel(sel.includes(r) ? sel.filter((x) => x !== r) : sel.length < max ? [...sel, r] : max === 1 ? [r] : sel);
   return (
     <div className="flex flex-wrap gap-2" role="group" aria-label={max === 1 ? "Name one role" : "Name two roles"}>
       {roles.map((r) => (
         <button key={r} type="button" onClick={() => toggle(r)} aria-pressed={sel.includes(r)}
-          className={`min-h-11 rounded-full border-2 px-4 text-[14px] font-semibold ${sel.includes(r) ? "border-crimson bg-crimson-deep text-ink" : known.includes(r) ? "border-[#f0a32e] bg-[#3a240c] text-[#f3c66b] shadow-[0_0_12px_2px_rgba(240,163,46,.35)]" : said.includes(r) ? "border-dashed border-stock/50 bg-black/30 text-stock" : "border-brass/35 bg-black/30 text-stock"}`}>
+          className={`min-h-11 rounded-full border-2 px-4 text-[14px] font-semibold ${sel.includes(r) ? "border-crimson bg-crimson-deep text-ink" : known.includes(r) ? "border-[#f0a32e] bg-[#3a240c] text-[#f3c66b] shadow-[0_0_12px_2px_rgba(240,163,46,.35)]" : "border-brass/35 bg-black/30 text-stock"}`}>
           {known.includes(r) ? `🔮 ${r}` : r}</button>
       ))}
     </div>
@@ -227,10 +227,7 @@ function DalBadalOut({ v, act }: { v: PlayerView; act: (a: Action) => void }) {
 }
 
 /** TEER KAMAN'S LIST (designer 2026-10-12): every role of the OTHER team in this game — a villager sees the thief roles,
- *  a thief the village roles (your side now; a Dal Badal may have changed it). Nothing is removed. A role you KNOW is
- *  the target's (your Kundli read, read back to you) comes first — the best shot; then roles the table has named for
- *  them, newest first. (designer 2026-10-12) Your OWN read gets the best colour — gold with 🔮; a role others claimed
- *  (bots included) is taken with a pinch of salt — a faint dashed outline only. */
+ *  a thief the village roles (your side now; a Dal Badal may have changed it). Nothing is removed. */
 /** the roles your own Kundli reads have shown you, by seat (a Dal Badal over a seat wipes it) */
 function knownRoles(v: PlayerView): Map<number, string> {
   const known = new Map<number, string>();
@@ -242,29 +239,12 @@ function knownRoles(v: PlayerView): Map<number, string> {
   return known;
 }
 
-/** roles OTHER players have claimed for this target — a claim can be a lie (or a bot's guess), so only a faint outline */
-function claimedRoles(v: PlayerView, target: number | null): string[] {
-  if (target === null) return [];
-  return v.events.filter((e) => e.type === "claim" && e.data?.target === target && typeof e.data?.role === "string" && e.data?.seat !== v.me.seat)
-    .map((e) => e.data!.role as string);
-}
-
-function shortlist(v: PlayerView, target: number | null): string[] {
-  const known = knownRoles(v);
+/** (designer 2026-10-14: "a dark pattern") the list never steers — same order every time, no role moved up or
+ *  outlined because someone CLAIMED it. Only your own Kundli read of THIS target is marked (🔮), since you saw it. */
+function shortlist(v: PlayerView): string[] {
   const other = v.rolesInPlay.filter((r) => THIEF_ROLES.includes(r) === (v.me.side === "V"));
   // Teer Kaman must name tkGuesses roles; a tiny list (a single thief role at a 1-guess table) is always long enough
-  const roles = other.length >= tkGuesses(v.rolesInPlay) ? other : v.rolesInPlay.filter((r) => r !== v.me.role);
-  const first: string[] = [];
-  if (target !== null) {
-    const k = known.get(target);
-    if (k && roles.includes(k)) first.push(k);
-    for (const e of [...v.events].reverse()) {
-      if (e.type !== "claim" || e.data?.target !== target || typeof e.data?.role !== "string" || e.data?.seat === v.me.seat) continue;
-      const r = e.data.role as string;
-      if (roles.includes(r) && !first.includes(r)) first.push(r);
-    }
-  }
-  return [...first, ...roles.filter((r) => !first.includes(r))];
+  return other.length >= tkGuesses(v.rolesInPlay) ? other : v.rolesInPlay.filter((r) => r !== v.me.role);
 }
 
 /** why a pair in your hand can't be played right now (engine canPlay, in words) */
@@ -399,7 +379,7 @@ function Turn({ v, playable, passSize, dalBadal, act, ask }: { v: PlayerView; pl
           }} />
       )}
       {needsTarget && <Pickers options={targets} sel={target} onPick={setTarget} />}
-      {card === "TEER_KAMAN" && <RolePicker roles={shortlist(v, target)} known={[...knownRoles(v).values()]} said={claimedRoles(v, target)} max={guesses} sel={roles} setSel={setRoles} />}
+      {card === "TEER_KAMAN" && <RolePicker roles={shortlist(v)} known={target !== null && knownRoles(v).has(target) ? [knownRoles(v).get(target)!] : []} max={guesses} sel={roles} setSel={setRoles} />}
       {complete(pass, target, roles) && (
         <button type="button" onClick={send}
           // the next step glows green — never a lethal one (Teer Kaman)

@@ -375,7 +375,7 @@ function doPlay(s: GameState, seat: number, a: Extract<Action, { type: "play" }>
       emit(s, "teer_kaman", "all", `${p.name} shoots at ${t!.name}, naming ${named.join(" and ")} — ${hit ? "HIT" : "miss"}.`,
         { seat, target: t!.seat, roles: named, hit });
       if (hit) {
-        s.elimQueue.push({ seat: t!.seat, killer: seat, reveal: [seat] }); // only the shooter sees the role
+        s.elimQueue.push({ seat: t!.seat, killer: seat, reveal: [], open: true }); // (designer 2026-10-14) a HIT shows the role to everyone
         s.after = { kind: "endTurn", drawFor: seat };
         runElims(s);
       } else {
@@ -535,13 +535,13 @@ function runElims(s: GameState) {
       p.votesAtDeath = p.votes;
       p.votes = 0;
       s.deadOrder.push(p.seat);
-      // (designer 2026-10-09) roles are never shown to the table: only the Teer Kaman shooter who hit, or the Faisla
-      // caller, sees it. The private line goes first, so a mind reading events meets the role before the public line.
+      // (designer 2026-10-09) roles are never shown to the table: only the Faisla caller sees it. (2026-10-14) Except a
+      // Teer Kaman HIT — the shot named the role out loud, so the table sees it. The private line goes first, so a mind reading events meets the role before the public line.
       if (job.reveal.length) {
         emit(s, "eliminated_private", job.reveal, `${p.name} was ${p.role} (${p.side === "V" ? "Tunga" : "Thief"}).`,
           { seat: p.seat, role: p.role, side: p.side, hand: [...p.hand], killer: job.killer });
       }
-      if (s.publicRoles) {
+      if (s.publicRoles || job.open) {
         p.revealedRole = p.role;
         emit(s, "eliminated", "all", `${p.name} is OUT — ${p.role} (${p.side === "V" ? "Tunga" : "Thief"}).`,
           { seat: p.seat, role: p.role, side: p.side, killer: job.killer });

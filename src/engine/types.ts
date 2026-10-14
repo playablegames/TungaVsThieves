@@ -97,9 +97,9 @@ export interface GameState {
   rounds: number;
   turnSeat: number;
   phase: Phase;
-  /** reveal: the seats that see the role (designer 2026-10-09: roles are never shown to the table — only the Teer Kaman
-   *  shooter who hit, or the Faisla caller, sees it); [] = nobody until the game is over */
-  elimQueue: { seat: number; killer: number | null; reveal: number[] }[];
+  /** reveal: the seats that see the role (designer 2026-10-09: the Faisla caller); [] = nobody until the game is over.
+   *  open: the whole table sees it (designer 2026-10-14: a Teer Kaman HIT — the shot named the role) */
+  elimQueue: { seat: number; killer: number | null; reveal: number[]; open?: boolean }[];
   after: Continuation | null;
   /** cards of players put out in the MANDATORY vote: they belong to the village, Stones included (rule 2026-10-07).
    *  Optional so games saved before the rule still load. */

@@ -43,17 +43,19 @@ function check(s: GameState, thieves: number, roles: string, firstPickupDone: bo
 function redaction(s: GameState, bad: Map<string, number>) {
   const hit = (k: string) => bad.set(k, (bad.get(k) ?? 0) + 1);
   const over = s.phase.kind === "over";
+  // (designer 2026-10-14) the one public role: a Teer Kaman HIT
+  const shot = new Set(s.events.filter((e) => e.type === "teer_kaman" && e.data?.hit).map((e) => e.data!.target as number));
   for (const p of s.players) {
     const v = viewFor(s, p.seat);
     if (!over && v.events.some((e) => e.to !== "all" && !e.to.includes(p.seat))) hit("view leaks a private event");
     if (v.events.some((e) => Array.isArray(e.to) && e.to.length === 0)) hit("view shows analytics");
     if (over && v.events.length !== s.events.filter((e) => !(Array.isArray(e.to) && e.to.length === 0)).length) hit("the end doesn't open the whole story");
     if (!over && v.finalReveal) hit("final reveal before the end");
-    if (!over && v.events.some((e) => e.to === "all" && e.type === "eliminated" && e.data?.role !== undefined)) hit("a role on a public elimination");
+    if (!over && v.events.some((e) => e.to === "all" && e.type === "eliminated" && e.data?.role !== undefined && !shot.has(e.data?.seat as number))) hit("a role on a public elimination");
     for (const q of v.players) {
       if ("role" in q || "hand" in q) hit("public player row carries role/hand");
       if (!over && q.revealedRole && s.players[q.seat].revealedRole === null) hit("unrevealed role in view");
-      if (!over && q.revealedRole) hit("a role shown on a seat (roles are hidden)");
+      if (!over && q.revealedRole && !shot.has(q.seat)) hit("a role shown on a seat (only a Teer Kaman hit shows one)");
     }
   }
 }

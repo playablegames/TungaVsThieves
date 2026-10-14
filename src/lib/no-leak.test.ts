@@ -6,7 +6,7 @@ import { beatsFor } from "./beats";
 
 // The Sutradhar reads the centre line word for word (narrator.ts). Roles are never shown to the table — so no PUBLIC
 // line about someone going out may say villager / thief / a role name. (2026-10-09: the old Hindi narrator said
-// "a villager is out" on every hidden exit.)
+// "a villager is out" on every hidden exit.) (designer 2026-10-14) The one exception: a Teer Kaman HIT shows the role.
 let a = 11;
 const rnd = () => { a = (a * 16807) % 2147483647; return a / 2147483647; };
 
@@ -20,9 +20,10 @@ describe("no public line gives away the side of a player who went out", () => {
         s = apply(s, seat, randomAction(s, seat, rnd));
       }
       const roles = s.rolesInPlay;
+      const shot = new Set(s.events.filter((e) => e.type === "teer_kaman" && e.data?.hit).map((e) => e.data!.target as number));
       for (const p of s.players) {
         const v = viewFor({ ...s, phase: { kind: "turn", seat: 0 } } as typeof s, p.seat); // as seen DURING play
-        for (const b of beatsFor(v.events, s.players.map((x) => x.name)).filter((x) => !x.private && x.type === "eliminated")) {
+        for (const b of beatsFor(v.events, s.players.map((x) => x.name)).filter((x) => !x.private && x.type === "eliminated" && !shot.has(x.target!))) {
           exits++;
           const said = `${b.title} ${b.detail ?? ""}`;
           expect(said).not.toMatch(/villager|thief|tunga/i);

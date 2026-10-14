@@ -179,16 +179,16 @@ describe("THE CARDS", () => {
     expect(() => apply(s6, 0, { type: "play", card: "TEER_KAMAN", pass: [F, K, H], target: 1, roles: [role(s6, 1)] })).toThrow(RuleError);
     expect(apply(s6, 0, { type: "play", card: "TEER_KAMAN", pass: [F, K, H], target: 1, roles: [other(s6, 1, ""), role(s6, 1)] }).players[1].alive).toBe(false);
   });
-  it("TEER KAMAN hit: the target is out — only the SHOOTER sees their role", () => {
+  it("TEER KAMAN hit (designer 2026-10-14): the target is out and EVERYONE sees their role — the shot named it", () => {
     const s = rig(5, { sides: ["V", "T", "V", "V", "T"], hands: [[TK, TK, F, K, H], [B, B], [F], [T], [K]] });
     const n = apply(s, 0, { type: "play", card: "TEER_KAMAN", pass: [F, K, H], target: 1, roles: tk(s, [role(s, 1), other(s, 1, "")]) });
     expect(n.players[1].alive).toBe(false);
     expect(n.events.find((e) => e.type === "teer_kaman")!.to).toBe("all");
-    const priv = n.events.find((e) => e.type === "eliminated_private")!;
-    expect(priv.to).toEqual([0]);
-    expect(priv.data!.role).toBe(role(s, 1));
-    expect(viewFor(n, 2).events.some((e) => e.type === "eliminated_private")).toBe(false);
-    noPublicRoles(n);
+    const out = n.events.find((e) => e.type === "eliminated")!;
+    expect(out.to).toBe("all");
+    expect(out.data!.role).toBe(role(s, 1));
+    expect(viewFor(n, 2).players[1].revealedRole).toBe(role(s, 1));
+    expect(n.events.some((e) => e.type === "eliminated_private")).toBe(false);
   });
   it("FAISLA: most votes is out — only the CALLER sees the role; a tie does nothing; the caller draws 2 either way", () => {
     const s = rig(5, { sides: ["V", "V", "V", "T", "T"], hands: [[F, F, T, K, H], [B], [F], [T], [K]] });
