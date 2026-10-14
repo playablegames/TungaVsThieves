@@ -1,11 +1,14 @@
 import { tkGuesses } from "@/engine/setup";
 import { describe, expect, it, vi } from "vitest";
-import { act, addBot, createBotGame, chat, claim, createRoom, debateSeconds, extendDebate, reclaim, removeBot, sweep, getState, joinRoom, startGame, tick, HttpError, INTRO_MS, BOT_DELAY_MS, VOTE_SETTLE_MS, ONLINE_MAX_PLAYERS, whisper, exportLog, takeFloor, FLOOR_MS } from "./game";
+import { act, addBot, chatLimit, createBotGame, chat, claim, createRoom, debateSeconds, extendDebate, reclaim, removeBot, sweep, getState, joinRoom, startGame, tick, HttpError, INTRO_MS, BOT_DELAY_MS, VOTE_SETTLE_MS, ONLINE_MAX_PLAYERS, whisper, exportLog, takeFloor, FLOOR_MS } from "./game";
 import { botVote } from "./botmind";
 import { HOLD_CAP } from "@/lib/beats";
 import { defaultAction, randomAction } from "@/engine/decisions";
 import { waitingOn } from "@/engine/engine";
 import { memoryStore } from "./store";
+
+// most tests send many messages at once; the 2-second limit has its own test below
+chatLimit.gapMs = 0;
 
 async function room(n: number) {
   const host = await createRoom("Host");
@@ -431,5 +434,15 @@ describe("rejoining by name (designer 2026-10-14)", () => {
     const j = await joinRoom(code, "Meera");
     expect(j.code).toBe(row!.state!.next);
     void token;
+  });
+});
+
+describe("the message limit (designer 2026-10-14)", () => {
+  it("one message every 2 seconds per player", async () => {
+    chatLimit.gapMs = 2000;
+    const { code, token } = await createRoom("Asha");
+    await chat(code, token, "one");
+    await err(chat(code, token, "two"), 429);
+    chatLimit.gapMs = 0;
   });
 });

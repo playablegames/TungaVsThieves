@@ -573,12 +573,12 @@ export async function getState(code: string, token: string | null, sinceMsg: num
 }
 
 /** (designer 2026-10-14) one message every 2 seconds per player — chat can never flood the centre */
-export const CHAT_GAP_MS = 2000;
+export const chatLimit = { gapMs: 2000 }; // tests set it to 0
 const lastChat = new Map<string, number>();
 function chatGate(row: GameRow, seat: number, system = false) {
   if (system) return;
   const key = `${row.code}:${seat}`, now = Date.now();
-  if (now - (lastChat.get(key) ?? 0) < CHAT_GAP_MS) throw new HttpError(429, "Slow down — one message every 2 seconds");
+  if (now - (lastChat.get(key) ?? 0) < chatLimit.gapMs) throw new HttpError(429, "Slow down — one message every 2 seconds");
   lastChat.set(key, now);
 }
 
