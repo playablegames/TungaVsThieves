@@ -204,17 +204,25 @@ export async function createBotGame(name: unknown, count: unknown, timers?: Part
   throw new HttpError(500, "Could not allocate a room code");
 }
 
-export async function joinRoom(code: string, name: unknown) {
+export async function joinRoom(code: string, name: unknown, hops = 0): Promise<{ code: string; token: string }> {
   const n = cleanName(name);
+  const row = await load(code);
+  // (designer 2026-10-14: "it doesn't let me rejoin… says the game has started though it's in the lobby") the old code
+  // after PLAY AGAIN leads on to the new table
+  if (row.status === "over" && row.state?.next && hops < 5) return joinRoom(row.state.next, name, hops + 1);
+  // YOUR NAME IS YOUR SEAT: a player already at this table — lobby or mid-game — who comes back (new phone, cleared
+  // browser) gets their own seat back by typing the same name. Bots' seats can't be taken this way.
+  const mine = row.lobby.find((p) => !p.bot && p.name.toLowerCase() === n.toLowerCase());
+  if (mine) return { code: row.code, token: mine.token };
   const token = newToken();
-  await mutate(code, (row) => {
-    if (row.status !== "lobby") throw new HttpError(409, "This game has already started");
-    if (row.lobby.length >= ONLINE_MAX_PLAYERS) throw new HttpError(409, `The table is full (${ONLINE_MAX_PLAYERS})`);
-    if (row.lobby.some((p) => p.name.toLowerCase() === n.toLowerCase())) throw new HttpError(409, "That name is taken at this table");
-    row.lobby.push({ name: n, token });
-    return row;
+  await mutate(row.code, (r) => {
+    if (r.status !== "lobby") throw new HttpError(409, r.status === "over" ? "This game is over — ask the host for the new table's code" : "This game has already started — join with the name you played under to take your seat back");
+    if (r.lobby.length >= ONLINE_MAX_PLAYERS) throw new HttpError(409, `The table is full (${ONLINE_MAX_PLAYERS})`);
+    if (r.lobby.some((p) => p.name.toLowerCase() === n.toLowerCase())) throw new HttpError(409, "That name belongs to a bot here — pick another");
+    r.lobby.push({ name: n, token });
+    return r;
   });
-  return { code: code.toUpperCase(), token };
+  return { code: row.code, token };
 }
 
 /** `count` (2026-10-14, "bot loading is super slow"): Play with bots seats all its bots in ONE write, not one round trip each */

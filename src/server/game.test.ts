@@ -411,3 +411,21 @@ describe("Play with bots in one call (2026-10-14)", () => {
     expect(st.you.name).toBe("Asha");
   });
 });
+
+describe("rejoining by name (designer 2026-10-14)", () => {
+  it("typing your name again gives you your own seat back — in the lobby and mid-game", async () => {
+    const { code } = await createRoom("Asha");
+    const a = await joinRoom(code, "Vikram");
+    const again = await joinRoom(code, "vikram");
+    expect(again).toEqual({ code, token: a.token });
+  });
+  it("the old code after Play again leads on to the new table", async () => {
+    const { code, token } = await createBotGame("Asha", 5);
+    const row = await memoryStore.get(code);
+    row!.status = "over"; row!.state!.next = (await createRoom("Asha")).code;
+    await memoryStore.update({ ...row! }, row!.version);
+    const j = await joinRoom(code, "Meera");
+    expect(j.code).toBe(row!.state!.next);
+    void token;
+  });
+});
