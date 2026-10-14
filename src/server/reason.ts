@@ -227,6 +227,13 @@ export function stoneMemory(s: GameState, seat: number, skill: Skill, l: Ledger 
         moveFrom(x, k ?? nextAlive(x));
         break;
       }
+      case "whisper_private":
+        // a friend told me privately where a Stone went
+        if (d?.kind === "stone" && num(d, "to") === seat && (d?.stone === "STONE_1" || d?.stone === "STONE_2")) {
+          const a = num(d, "seat")!;
+          if (!l.liars.has(a) && !(l.known.get(a)?.side === "T" && v.me.side === "V")) put(d.stone as Card, num(d, "target")!);
+        }
+        break;
       case "claim":
         // "X has a Stone" from someone I don't take for a liar (a casual bot believes every word)
         if (d?.kind === "stone" && d?.has === true) {

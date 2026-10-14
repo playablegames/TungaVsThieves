@@ -24,7 +24,7 @@ export const CHAT_MAX = 50;
 
 /** TYPE A MESSAGE (designer 2026-10-14): tap a player → private to them; tap your own seat → to everyone. Everything
  *  lands in the centre: a public line for all, a private one only for the two of you (the rest see "A → B, privately"). */
-export function MessageSheet({ v, code, token, to, onClose, onHistory }: { v: PlayerView; code: string; token: string; to: number | null; onClose: () => void; onHistory?: () => void }) {
+export function MessageSheet({ v, code, token, to, onClose }: { v: PlayerView; code: string; token: string; to: number | null; onClose: () => void }) {
   const [text, setText] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -57,7 +57,6 @@ export function MessageSheet({ v, code, token, to, onClose, onHistory }: { v: Pl
             className={`grid h-12 w-12 shrink-0 place-items-center rounded-full text-[20px] font-black text-card-ink disabled:opacity-40 ${priv ? "bg-jade" : "bg-brass"}`}>➤</button>
         </form>
         {err && <p role="alert" className="rounded-xl bg-crimson-deep p-2 text-center text-[13px]">{err}</p>}
-        {onHistory && <button type="button" onClick={onHistory} className="mx-auto min-h-10 px-3 text-[13px] text-stock/70 underline-offset-2 hover:underline">📜 My history</button>}
       </div>
     </div>
   );

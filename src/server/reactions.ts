@@ -4,7 +4,7 @@
 import type { GameState } from "@/engine/types";
 import { readsOf } from "@/engine/decisions";
 import { keptMyStone, roleFor, RULES, thiefWord, type Skill } from "./belief";
-import { wordAboutRole, wordAboutSearch } from "./reason";
+import { ledger, wordAboutRole, wordAboutSearch } from "./reason";
 import { THIEF_ROLES } from "@/engine/setup";
 import type { LineClaim } from "./botmind";
 
@@ -29,15 +29,53 @@ export function pushStoneClaim(s: GameState, seat: number, target: number, has: 
  *  ONE friend — a living player it knows is a villager (a Kundli read either way), a person first — once a round. A
  *  villager whispers the truth; a thief whispers its lie to a villager who trusts it (a false friendship). The table
  *  sees only "X whispered to Y" — itself a tell (who confides in whom). */
-function botWhisper(s: GameState, seat: number, about: number, role: string, side: "V" | "T") {
-  if (s.events.some((e) => e.type === "whisper" && e.data?.seat === seat && e.data?.round === s.round)) return;
-  const friends = [...readsOf(s, seat)].filter(([x, k]) => k.side === "V" && x !== about && s.players[x]?.alive).map(([x]) => x);
-  if (!friends.length) return;
-  const to = friends[0];
+/** WHOM A BOT TRUSTS WITH A SECRET (designer 2026-10-14: "bots should share info like real players — privately to
+ *  people they can trust"): the players it KNOWS are on its side (its Kundli reads, either way); a villager also trusts
+ *  players with something IN THEIR FAVOUR (vouched for, proven right — a score below 0), up to 2 friends. Nobody like
+ *  that: the secret stays with it. A thief trusts only partners it knows. */
+export function trustedFriends(s: GameState, seat: number, skill: Skill | null, not: number[] = []): number[] {
+  const me = s.players[seat];
+  const known = readsOf(s, seat);
+  const ok = (x: number) => x !== seat && s.players[x]?.alive && !not.includes(x);
+  const sure = s.players.filter((p) => ok(p.seat) && known.get(p.seat)?.side === me.side).map((p) => p.seat);
+  if (me.side === "T" || !skill) return sure.slice(0, 2);
+  const l = ledger(s, seat, skill);
+  const clean = s.players.filter((p) => ok(p.seat) && !sure.includes(p.seat) && known.get(p.seat)?.side !== "T" && (l.score.get(p.seat) ?? 0) < 0)
+    .map((p) => p.seat).sort((a, b) => (l.score.get(a) ?? 0) - (l.score.get(b) ?? 0));
+  return [...sure, ...clean].slice(0, 2);
+}
+
+/** a private word from a bot to one friend — the table sees "A → B, privately" (once a round per pair), the friend the
+ *  words. `data` carries what a bot friend reasons with (a Kundli read, or where a Stone went). Never twice the same. */
+function tell(s: GameState, seat: number, to: number, line: string, data: Record<string, unknown>) {
+  if (s.events.some((e) => e.type === "whisper_private" && e.data?.seat === seat && e.data?.to === to && e.msg.endsWith(line))) return;
   const me = s.players[seat].name, them = s.players[to].name;
-  s.events.push({ n: s.events.length, type: "whisper", to: "all", msg: `${me} → ${them}, privately`, data: { seat, target: to, round: s.round, bot: true } });
-  s.events.push({ n: s.events.length, type: "whisper_private", to: [seat, to], msg: `${me}: "I read ${s.players[about].name}'s Kundli — ${role}."`,
-    data: { seat, target: about, role, side, kind: "kundli", to } });
+  const pair = (e: GameState["events"][number]) => e.type === "whisper" && e.data?.round === s.round
+    && ((e.data?.seat === seat && e.data?.target === to) || (e.data?.seat === to && e.data?.target === seat));
+  if (!s.events.some(pair)) s.events.push({ n: s.events.length, type: "whisper", to: "all", msg: `${me} → ${them}, privately`, data: { seat, target: to, round: s.round, bot: true } });
+  s.events.push({ n: s.events.length, type: "whisper_private", to: [seat, to], msg: `${me}: "${line}"`, data: { seat, to, ...data } });
+}
+
+/** a Kundli read (true for a villager, the thief's lie for a thief) goes to every friend it trusts */
+function botWhisper(s: GameState, seat: number, about: number, role: string, side: "V" | "T", skill: Skill | null = null) {
+  for (const to of trustedFriends(s, seat, skill, [about]))
+    tell(s, seat, to, `I read ${s.players[about].name}'s Kundli — ${role}.`, { target: about, role, side, kind: "kundli" });
+}
+
+const STONE_WORD: Record<string, string> = { STONE_1: "the Bhadra Stone", STONE_2: "the Tunga Stone" };
+/** A STONE LEFT MY HAND (designer 2026-10-14: "share the Stone's last location if it left their hand"): the bot tells
+ *  the friends it trusts where it went. A villager also tells the whole table when it went to someone it suspects —
+ *  the village needs to know a suspect holds a Stone. A thief tells only partners it knows. */
+function shareStone(s: GameState, seat: number, skill: Skill, stone: string, to: number, how: string) {
+  if (!s.players[to] || to === seat) return;
+  for (const f of trustedFriends(s, seat, skill, [to]))
+    tell(s, seat, f, `${how} ${STONE_WORD[stone]} to ${s.players[to].name}.`, { kind: "stone", target: to, stone, has: true });
+  if (s.players[seat].side === "V" && s.players[to].alive) {
+    const l = ledger(s, seat, skill);
+    const suspect = (l.score.get(to) ?? 0) >= 1 || l.known.get(to)?.side === "T";
+    const said = s.events.some((e) => e.type === "claim" && e.data?.seat === seat && e.data?.target === to && e.data?.kind === "stone" && e.data?.stone === stone);
+    if (suspect && !said) pushStoneClaim(s, seat, to, true, stone);
+  }
 }
 
 /** A VILLAGER'S BLUFF (designer 2026-10-13: "villagers can mimic thief skills — let a villager sabotage themselves").
@@ -62,6 +100,19 @@ export function botReactions(s: GameState, from: number, botSkill: (seat: number
       data: { seat, kind, target, role, side } });
   };
   for (const e of s.events.slice(from)) {
+    if (RULES) {
+      const stones = (cs: unknown) => ((cs as string[]) ?? []).filter((c) => c === "STONE_1" || c === "STONE_2");
+      // the pile I passed was picked up: my Stone is with them now
+      if (e.type === "pickup_private" && Array.isArray(e.to)) {
+        const got = stones(e.data?.cards), taker = e.to[0];
+        const passer = s.events.slice(0, e.n).findLast((x) => (x.type === "pass" || x.type === "play" || (x.type === "dal_badal" && x.data?.when === "turn")))?.data?.seat as number | undefined;
+        if (got.length && passer !== undefined && bot(passer) && passer !== taker) for (const c of got) shareStone(s, passer, botSkill(passer)!, c, taker, "I passed");
+      }
+      if (e.type === "batwara_private" && bot(e.data?.from) && stones([e.data?.card]).length)
+        shareStone(s, e.data!.from as number, botSkill(e.data!.from as number)!, String(e.data!.card), e.data!.to as number, "In the Bhukamp I gave");
+      if (e.type === "handoff_private" && bot(e.data?.seat))
+        for (const c of stones(e.data?.cards)) shareStone(s, e.data!.seat as number, botSkill(e.data!.seat as number)!, c, e.data!.target as number, "My cards went with");
+    }
     // (designer 2026-10-14: "make the bots do the same") ACCUSED → ANSWER AT ONCE, the way a player taps the accuser:
     // a bot called a thief (or named with a thief role) calls the accuser out in return — a villager because it knows
     // the word is wrong, a thief to hit back. Once per accuser; a role only if the bot SAW the accuser's card.
@@ -122,7 +173,7 @@ export function botReactions(s: GameState, from: number, botSkill: (seat: number
       const kind = e.type === "eliminated_private" ? "was" : "kundli";
       if (kind === "kundli" && !s.players[target].alive) continue;
       const w = wordAboutRole(s, seen, skill, r, target, e.data?.role as string, e.data?.side as "V" | "T");
-      if (w) { mark(seen, kind, target, w.role, w.side); if (!thief || skill.name !== "casual") botWhisper(s, seen, target, w.role ?? "", w.side); }
+      if (w) { mark(seen, kind, target, w.role, w.side); if (w.role && (!thief || skill.name !== "casual")) botWhisper(s, seen, target, w.role, w.side, skill); }
       continue;
     }
     const speaks = r() < skill.claimRate;

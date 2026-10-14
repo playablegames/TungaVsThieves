@@ -136,3 +136,23 @@ knows, otherwise the neighbour the table suspects more. Dal Badal follows the sa
 | sharp | yes | yes | yes | yes | always |
 
 No random noise anywhere. The only coin flip is between options that are truly equal.
+
+## 9. Sharing information (designer 2026-10-14: "share info like real players")
+
+**Whom a bot trusts:** players it knows are on its side (its Kundli reads, either way). A villager also trusts players
+with something in their favour (vouched for, or proven right: a score below 0). That's at most 2 friends. With nobody
+like that, the secret stays with the bot. A thief trusts only partners it knows.
+
+**Privately, to those friends** (the table sees "A → B, privately", the friend sees the words):
+- every Kundli read (a villager's truth, a thief's lie)
+- where a Stone went when it left the bot's hand: "I passed the Tunga Stone to Raju", "In the Bhukamp I gave the Bhadra
+  Stone to Adi", "My cards went with Munna"
+
+**Publicly:** a villager whose Stone went to someone it suspects (or knows is a thief) tells the whole table
+("Raju has the Tunga Stone"), because the village needs that for the vote.
+
+**Answering:** a bot called a thief answers at once by naming the accuser. A villager who read the accuser and saw a
+thief names the role; otherwise it says "X is lying".
+
+**Listening:** bots read claims in public chat lines and in private lines sent to them. A friend's private word about a
+Stone puts that Stone where the friend said, unless the friend is a known liar or a known thief.

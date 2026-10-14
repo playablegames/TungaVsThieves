@@ -366,7 +366,6 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
     return next;
   });
   const newSecrets = secretsOf(v).filter((e) => e.n > news.secret).length;
-  const newFeed = v.events.some((e) => e.n > news.feed && e.to === "all" && !["analytics_turn", "pickup", "conduit"].includes(e.type));
   const [history, setHistory] = useState<number | null>(null);
   // (designer 2026-10-14) MESSAGES: tap a player → to them (text or voice note); tap your own seat → to everyone
   const [compose, setCompose] = useState<{ to: number | null; voice: boolean } | null>(null);
@@ -557,10 +556,7 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden><path d="M4 6h16M4 12h16M4 18h16" /></svg>
         </button>
         {!solo && <MicButton voice={voice} />}
-        <button type="button" onClick={() => { setFeedOpen(true); markSeen("feed"); }} aria-label="What happened so far" className="relative grid h-11 w-11 place-items-center text-brass">
-          {newFeed && <span className="nudge-dot absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full" aria-hidden />}
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5M12 7v5l3 2" /></svg>
-        </button>
+        {/* (designer 2026-10-14) no log button: tap the centre to open everything that was shared */}
         <p className="flex-1 text-center font-[family-name:var(--font-engraved)] text-[12px] font-semibold uppercase tracking-[0.18em] text-brass">Round {v.round} of {v.rounds}</p>
         <TimerRing deadline={s.deadline} now={now} size={52} brass />
       </header>
@@ -586,8 +582,7 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
         // (designer 2026-10-14) no Defend panel: the accused answers like anyone — tap the accuser to message them or
         // send a voice note, talk, or tap a role card
         : null} />
-      {compose && !compose.voice && <MessageSheet v={v} code={code} token={token} to={compose.to} onClose={() => setCompose(null)}
-        onHistory={compose.to === null ? () => { setCompose(null); setHistory(v.me.seat); } : undefined} />}
+      {compose && !compose.voice && <MessageSheet v={v} code={code} token={token} to={compose.to} onClose={() => setCompose(null)} />}
       {compose?.voice && compose.to !== null && <VoiceNoteSheet v={v} code={code} token={token} to={compose.to} onClose={() => setCompose(null)} />}
       <VoiceNoteInbox throws={throws} names={names} />
       {history !== null && <Sheet title={`${history === v.me.seat ? "Your" : `${v.players[history]?.name.replace(/\s*🤖$/, "")}'s`} history`} onClose={() => setHistory(null)}><SeatHistory v={v} seat={history} /></Sheet>}
@@ -764,7 +759,7 @@ function Ring({ v, voice, moment = null, speed = 1, talking, floorSeat = null, a
           onMark={onMark ? (m) => { onMark(picker, m); setPicker(null); } : undefined}
           onThrow={onThrow ? (e) => { onThrow(picker, e); setPicker(null); } : undefined}
           hush={peerOf(picker) ? { hushed: peerOf(picker)!.hushed, toggle: () => { voice.hush(picker); setPicker(null); } } : undefined}
-          onHistory={onHistory ? () => { onHistory(picker); setPicker(null); } : undefined} />
+          />
       )}
       <CardFlights v={v} pos={pos} />
       {moment && <TableMoment key={moment.n} beat={moment} pos={pos} speed={speed} />}
@@ -1596,10 +1591,10 @@ export const TOUR: [string, React.ReactNode][] = [
 /** THE ACCUSE SHEET (designer 2026-10-14): what the table has said about them so far, then ONE tap — a role card
  *  (thief cards first, in red: accuse · village cards in gold: clear) or the Stone. Your own read wears 🔮. Private
  *  marks, throws, mute and history sit below. An out player: "was…", no Stone. */
-function AccuseSheet({ v, seat, said, seen, mark, onClose, onClaim, onMark, onThrow, hush, onHistory, onMessage }: {
+function AccuseSheet({ v, seat, said, seen, mark, onClose, onClaim, onMark, onThrow, hush, onMessage }: {
   v: PlayerView; seat: number; said?: SaidAbout; seen?: string; mark?: Mark; onClose: () => void;
   onClaim?: (kind: "kundli" | "stone", role?: string, has?: boolean, stone?: Card) => void; onMark?: (m: Mark | null) => void; onThrow?: (e: string) => void;
-  hush?: { hushed: boolean; toggle: () => void }; onHistory?: () => void; onMessage?: (voice: boolean) => void;
+  hush?: { hushed: boolean; toggle: () => void }; onMessage?: (voice: boolean) => void;
 }) {
   const p = v.players[seat];
   const name = p.name.replace(/\s*🤖$/, "");
@@ -1674,7 +1669,6 @@ function AccuseSheet({ v, seat, said, seen, mark, onClose, onClaim, onMark, onTh
           </>}
           {onThrow && REACTIONS.map((e) => <button key={e} type="button" onClick={() => onThrow(e)} className="grid h-10 w-10 place-items-center rounded-full text-[22px] active:scale-90">{e}</button>)}
           {hush && <button type="button" aria-label={hush.hushed ? "Unmute for me" : "Mute for me"} onClick={hush.toggle} className="grid h-10 w-10 place-items-center rounded-full text-[20px]">{hush.hushed ? "🔊" : "🔇"}</button>}
-          {onHistory && <button type="button" onClick={onHistory} className="min-h-10 rounded-full px-3 text-[13px] font-bold text-stock/85 ring-1 ring-brass/40">📜 History</button>}
         </div>
       </div>
     </div>
