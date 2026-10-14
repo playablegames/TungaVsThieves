@@ -708,7 +708,7 @@ function Ring({ v, voice, moment = null, speed = 1, talking, floorSeat = null, a
   })() : null;
   const peerOf = (seat: number) => voice.peers[seat];
   const said = useMemo(() => saidAbout(v), [v]);
-  const faces = useMemo(() => seatFaces(v, said), [v, said]);
+  const faces = useMemo(() => seatFaces(v), [v]);
   return (
     <section className="relative mx-2 mt-5 min-h-[440px] flex-1" aria-label="The table">
       {/* depth: the felt sits sunk in its frame; light: the table darker toward its edges, a lantern on whoever acts */}
@@ -824,7 +824,7 @@ function CardFlights({ v, pos }: { v: PlayerView; pos: (seat: number) => { x: nu
 
 /** what a seat's card shows on this phone (designer 2026-10-12) */
 interface SeatFace { kind: "back" | "mine" | "known" | "rumour"; art: string; role?: string; /** a role you SAW (Kundli, or putting them out) — shown again when you tap the seat */ seen?: string }
-function seatFaces(v: PlayerView, said: Record<number, SaidAbout>): Record<number, SeatFace> {
+function seatFaces(v: PlayerView): Record<number, SeatFace> {
   // (designer 2026-10-13, later the same day: "after Kundli, the role should be visible to the Kundli player") a role you
   // SAW with Kundli — either way, Mutual Kundli — stays face up on that seat for the rest of the game, on your phone
   // only, until a Dal Badal shuffles it. (A player you put out shows the plain back; tapping says what you saw.)
@@ -1118,9 +1118,23 @@ function Final({ v, clips = [], host = false, hostName = "the host", onRematch }
   const STONES: Card[] = ["STONE_1", "STONE_2"];
   const held = STONES.map((c) => ({ c, ...stoneAt(c) }));
   const plainName = (w: string) => w.replace(/\s*🤖$/, "");
+  const swaps = dalBadalHistory(v);
+  /** "Chirag was Police (Tunga) until Circuit's Dal Badal made them Lootera" — the last swap that changed this seat's side */
+  const turned = (who: string) => {
+    const seat = v.players.findIndex((p) => p.name === who);
+    for (const d of [...swaps].reverse()) {
+      const w = d.swaps.find((x) => x.seat === seat && x.from.side !== x.to.side);
+      if (w) return `${plainName(who)} was ${w.from.role} (${w.from.side === "V" ? "Tunga" : "Thief"}) until ${plainName(name(d.actor))}'s Dal Badal made them ${w.to.role}`;
+    }
+    return "";
+  };
   const why = !village
-    ? held.filter((h) => h.side === "T").map((h) => `${plainName(h.who)}${h.role ? ` (${h.role})` : ""} kept the ${STONE_NAME[h.c]}`).join(" · ")
-    : held.every((h) => h.role === null) ? "Both Stones ended with the village." : "No thief kept a Stone.";
+    ? held.filter((h) => h.side === "T").map((h) => { const t = turned(h.who); return `${plainName(h.who)}${h.role ? ` (${h.role})` : ""} kept the ${STONE_NAME[h.c]}${t ? `. ${t}` : ""}`; }).join(" · ")
+    : held.every((h) => h.role === null) ? "Both Stones ended with the village." : `No thief kept a Stone.${held.map((h) => turned(h.who)).filter(Boolean).map((t) => ` ${t}.`).join("")}`;
+  const firstRole = (seat: number) => {
+    const r = v.events.find((e) => e.type === "role" && !e.data?.swapped && Array.isArray(e.to) && e.to[0] === seat);
+    return r ? String(r.data?.role) : null;
+  };
   const n = reveal.length;
   const size: SeatSize = n <= 7 ? "lg" : n <= 9 ? "md" : "sm";
   // the mandatory vote decided the game: everyone sees how many votes each player got
@@ -1166,6 +1180,7 @@ function Final({ v, clips = [], host = false, hostName = "the host", onRematch }
               </span>
               <span className={`relative z-10 -mt-1 truncate rounded-full border bg-ember font-medium ${z.tag} ${me ? "border-2 border-jade text-jade-soft" : "border-brass/60 text-stock"}`}>{p.name}</span>
               <span className={`mt-0.5 truncate rounded px-1.5 font-[family-name:var(--font-engraved)] text-[10px] font-bold uppercase tracking-wide ${thief ? "bg-crimson-deep text-ink" : "bg-[#3a240c] text-[#f3c66b]"}`}>{r.role}</span>
+              {firstRole(r.seat) && firstRole(r.seat) !== r.role && <span className="truncate text-[10px] text-stock/70">was {firstRole(r.seat)}</span>}
               </div>
             </div>
           );
@@ -1193,6 +1208,32 @@ function Final({ v, clips = [], host = false, hostName = "the host", onRematch }
       </div>
 
       <StonePaths v={v} reveal={reveal} />
+
+      {/* every Dal Badal: who shuffled with whom, each role before → after */}
+      {swaps.some((d) => d.swaps.length) && (
+        <div className="mt-3 rounded-2xl border border-brass/40 bg-black/30 p-3">
+          <p className="mb-2 text-center font-[family-name:var(--font-engraved)] text-[11px] font-semibold uppercase tracking-[0.2em] text-brass">Dal Badal</p>
+          {swaps.filter((d) => d.swaps.length).map((d) => (
+            <div key={d.n} className="mb-2 last:mb-0">
+              <p className="text-[13px] text-stock/80">{plainName(name(d.actor))} shuffled roles with {d.swaps.filter((x) => x.seat !== d.actor).map((x) => plainName(name(x.seat))).join(" and ")}</p>
+              <ul className="mt-1 flex flex-col gap-0.5">
+                {d.swaps.map((x) => (
+                  <li key={x.seat} className="flex items-center gap-1.5 text-[13px]">
+                    <span className="min-w-0 flex-1 truncate font-display text-stock">{plainName(name(x.seat))}</span>
+                    {x.from.role === x.to.role ? (
+                      <span className={x.to.side === "T" ? "text-crimson-soft" : "text-[#f3c66b]"}>kept {x.to.role}</span>
+                    ) : (<>
+                      <span className={x.from.side === "T" ? "text-crimson-soft" : "text-[#f3c66b]"}>{x.from.role}</span>
+                      <span className="text-stock/50">→</span>
+                      <span className={`font-bold ${x.to.side === "T" ? "text-crimson-soft" : "text-[#f3c66b]"}`}>{x.to.role}</span>
+                    </>)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* the best voice moments of the game, as this phone heard them */}
       {clips.length > 0 && (
@@ -1230,6 +1271,27 @@ function Final({ v, clips = [], host = false, hostName = "the host", onRematch }
   );
 }
 
+
+/** ROLE HISTORY (designer 2026-10-14: "the end must mention the original role as well as the new one, and explain how
+ *  the thieves won because a role was X and then changed to Y"). At the end every secret is open: each seat's deal and
+ *  every Dal Badal it was part of. */
+interface DalBadalSwap { actor: number; n: number; swaps: { seat: number; from: { role: string; side: Side }; to: { role: string; side: Side } }[] }
+function dalBadalHistory(v: PlayerView): DalBadalSwap[] {
+  const roleAt = (seat: number, before: number) => {
+    const r = v.events.findLast((e) => e.type === "role" && e.n < before && Array.isArray(e.to) && e.to[0] === seat);
+    return r ? { role: String(r.data?.role), side: r.data?.side as Side } : null;
+  };
+  return v.events.filter((e) => e.type === "dal_badal").map((e) => {
+    const seats = (e.data?.seats as number[]) ?? [];
+    const done = v.events.find((x) => x.n > e.n && x.type === "dal_badal_done")?.n ?? Infinity;
+    const swaps = seats.flatMap((seat) => {
+      const from = roleAt(seat, e.n);
+      const after = v.events.find((x) => x.type === "role" && x.n > e.n && x.n < done && x.data?.swapped && Array.isArray(x.to) && x.to[0] === seat);
+      return from && after ? [{ seat, from, to: { role: String(after.data?.role), side: after.data?.side as Side } }] : [];
+    });
+    return { actor: e.data?.seat as number, n: e.n, swaps };
+  });
+}
 
 /** SEAT HISTORY (designer 2026-10-12, research: ProAvalon's row per seat): everything that involved one player —
  *  what they played and at whom, what was played on them, what was said about them and by them, how they voted —
