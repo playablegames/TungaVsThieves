@@ -7,7 +7,7 @@ import { SKILLS, type Skill } from "./belief";
 import { personalised, type Personality } from "./personality";
 import { botReactions, playsDoubleAgent, tieSpill } from "./reactions";
 import { THIEF_ROLES } from "@/engine/setup";
-import { ledger, partnersOf } from "./reason";
+import { ledger, partnersOf, ruleVote } from "./reason";
 
 const game = (): GameState => start(["Asha", "Raju", "Munna", "Pappu", "Chintu", "Shyam", "Babu", "Golu"], 4242);
 const push = (s: GameState, type: string, to: "all" | number[], data: Record<string, unknown>, msg = "") => {
@@ -195,4 +195,34 @@ describe("defend or blame (designer 2026-10-14)", () => {
       expect(ledger(s, w, SKILLS.average).why.get(liar.seat)!.some((x) => x.startsWith("+0.5 changed their story"))).toBe(true);
     }
   });
+});
+
+describe("thief skills on their switches (designer 2026-10-14)", () => {
+  const withSkills = (k: string, f: () => void) => { const was = process.env.BOT_FLAGS; process.env.BOT_FLAGS = `tskill=${k}`; try { f(); } finally { process.env.BOT_FLAGS = was; } };
+  it("B: an average thief defends instead of blaming", () => withSkills("B", () => {
+    const s = game();
+    const t = s.players.find((p) => p.side === "T" && p.seat !== 0)!.seat;
+    botReactions(s, push(s, "claim", "all", { seat: 0, kind: "accuse", target: t, role: null, side: "T" }), skills("open"), () => 0.5);
+    expect(s.events.find((e) => e.data?.seat === t && e.data?.answer === true)?.data?.kind).toBe("self");
+  }));
+  it("C: a known partner leads the ballot — the thief backs the leading non-partner", () => withSkills("C", () => {
+    const s = game();
+    const [t1, t2] = s.players.filter((p) => p.side === "T").map((p) => p.seat);
+    const vs = s.players.filter((p) => p.side === "V").map((p) => p.seat);
+    // t1 knows t2 (a Kundli read)
+    push(s, "kundli_private", [t1], { target: t2, role: s.players[t2].role, side: "T" });
+    s.phase = { kind: "vote", reason: "faisla", caller: vs[0], voters: s.players.map((p) => p.seat), ballots: { [vs[0]]: t2, [vs[1]]: t2, [vs[2]]: vs[3] }, debate: false, ready: [] };
+    const v = ruleVote(s, t1, SKILLS.average, () => 0.5);
+    expect(v.target).toBe(vs[3]);
+  }));
+  it("D: in the mandatory vote a thief steers at a villager it believes holds a Stone", () => withSkills("D", () => {
+    const s = game();
+    const t = s.players.find((p) => p.side === "T")!.seat;
+    const v = s.players.find((p) => p.side === "V" && p.seat !== t)!.seat;
+    // it searched v and saw a Stone
+    push(s, "talashi_private", [t], { seat: t, target: v, hand: ["STONE_1", "FAISLA"] });
+    s.round = s.rounds + 1;
+    s.phase = { kind: "vote", reason: "final", caller: null, voters: s.players.map((p) => p.seat), ballots: {}, debate: false, ready: [] };
+    expect(ruleVote(s, t, SKILLS.average, () => 0.5).target).toBe(v);
+  }));
 });

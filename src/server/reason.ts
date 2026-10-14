@@ -76,6 +76,18 @@ export function selfClaims(events: GameEvent[], me: number): { seat: number; rol
   return [...last.values()];
 }
 
+/** THIEF SKILLS (designer 2026-10-14: "can't we model thief skills into the game to make the balance better?") — each
+ *  on its own switch until the designer picks (BOT_FLAGS="tskill=B,C,D" in a simulation; the live game uses LIVE_TSKILLS):
+ *    B  an AVERAGE thief defends like a villager when accused (only a beginner blames — the tell)
+ *    C  SPLIT THE VOTE: a known partner leads the ballot → vote the leading non-partner (an honest-looking disagreement)
+ *    D  STEER THE MANDATORY VOTE at a villager believed to hold a Stone (voted out, their Stone goes to the thieves)
+ *    E  BELIEVED PARTNER BY EVIDENCE: a player with a strong case (2+) is most likely my partner — protected like one */
+export const LIVE_TSKILLS: string[] = [];
+export const tskill = (k: string): boolean => {
+  const m = typeof process !== "undefined" ? /tskill=([A-Z,]+)/.exec(process.env.BOT_FLAGS ?? "") : null;
+  return (m ? m[1].split(",") : LIVE_TSKILLS).includes(k);
+};
+
 /** measured 2026-10-14 (scripts/_counterclaims.mts, 16,000 games): the share of counterclaims where the FIRST claimer lied */
 export const FIRST_CLAIMER_LIES = 0.641;
 
@@ -270,7 +282,11 @@ export function ledger(s: GameState, seat: number, skill: Skill): Ledger {
 export function partnersOf(s: GameState, seat: number, skill: Skill | null): Set<number> {
   const out = new Set<number>();
   if (s.players[seat]?.side !== "T") return out;
-  if (skill) for (const [x, k] of ledger(s, seat, skill).known) if (x !== seat && k.side === "T") out.add(x);
+  const l = skill ? ledger(s, seat, skill) : null;
+  if (l) for (const [x, k] of l.known) if (x !== seat && k.side === "T") out.add(x);
+  // E (thief skill switch) · BELIEVED BY EVIDENCE: "unless he found his teammate or BELIEVES he's his teammate" — a
+  // player my own reasoning gives a strong case of being a thief (2+, not a known villager) is most likely my partner
+  if (l && tskill("E")) for (const [x, v] of l.score) if (v >= 2 && x !== seat && s.players[x]?.alive && l.known.get(x)?.side !== "V") out.add(x);
   for (const e of s.events) {
     if (e.type !== "whisper_private" || e.data?.believe !== true) continue;
     const a = e.data.seat as number, b = e.data.to as number;
@@ -402,6 +418,21 @@ export function ruleVote(s: GameState, seat: number, skill: Skill, r: R): { targ
     if (sure.length) { const t = best(r, sure, stone)!; return { target: t, why: l.known.get(t)!.why }; }
     let pool = alive.filter((x) => (thief ? !partners.has(x) : l.known.get(x)?.side !== "V"));
     if (!pool.length) return { target: null, why: "everyone left is a known villager" };
+    if (thief) {
+      const tally = new Map<number, number>();
+      if (ph.kind === "vote") for (const [vtr, b] of Object.entries(ph.ballots)) if (b !== null && b !== undefined && Number(vtr) !== seat) tally.set(b, (tally.get(b) ?? 0) + (s.players[Number(vtr)]?.votes ?? 1));
+      const lead = Math.max(0, ...tally.values());
+      // C · SPLIT THE VOTE: my partner leads the ballot — I back the leading non-partner, so it ties or tips away
+      if (tskill("C") && lead > 0 && [...partners].some((x) => (tally.get(x) ?? 0) === lead)) {
+        const t = best(r, pool, (x) => (tally.get(x) ?? 0) * 100 + sc(x))!;
+        return { target: t, why: `thief: my partner leads the vote — I back ${plain(s, t)} instead` };
+      }
+      // D · STEER THE MANDATORY VOTE: a villager believed to hold a Stone — voted out, their Stone comes to us
+      if (tskill("D") && final) {
+        const holders = pool.filter((x) => stone(x) >= 0.5);
+        if (holders.length) { const t = best(r, holders, (x) => stone(x) * 10 + sc(x))!; return { target: t, why: `thief: ${plain(s, t)} holds a Stone — voted out, it comes to us` }; }
+      }
+    }
     // the mandatory vote is about the Stones: a Stone holder I have a case against (1+) goes first — if they're a thief
     // that Stone comes to the village; one I have nothing against stays (its Stone would go to the thieves)
     const val = (x: number) => sc(x) + (final && stone(x) >= 0.5 && sc(x) >= 1 ? 1 : 0);

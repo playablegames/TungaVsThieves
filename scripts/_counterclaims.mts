@@ -15,7 +15,7 @@ let firstLiar = 0, laterLiar = 0;
 for (const n of (process.argv[3] ?? "5,6,7,8,9,10,12").split(",").map(Number)) {
   let vw = 0, outT = 0, outV = 0;
   for (let g = 0; g < G; g++) {
-    const s = playTable(n, 400_000 + 1000 * n + g + OFFSET, rnd, { skillOf: (x) => personalised(SK[(x + g) % 3], PS[(x + 3 * g) % 4]), table });
+    const s = playTable(n, 400_000 + 1000 * n + g + OFFSET, rnd, { skillOf: (x) => personalised(SK[(x + g) % 3], PS[(x + 3 * g) % 4]), table, dbShield: /shield/.test(process.env.BOT_FLAGS ?? "") });
     if (s.phase.kind === "over" && s.phase.winner === "V") vw++;
     for (const e of s.events) if (e.type === "vote_result" && typeof e.data?.out === "number") s.players[e.data.out as number].side === "T" ? outT++ : outV++;
     // the first moment each player claimed each role

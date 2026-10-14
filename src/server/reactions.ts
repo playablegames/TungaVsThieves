@@ -4,7 +4,7 @@
 import type { GameState } from "@/engine/types";
 import { readsOf } from "@/engine/decisions";
 import { keptMyStone, roleFor, RULES, thiefWord, type Skill } from "./belief";
-import { ledger, partnersOf, stoneMemory, wordAboutRole, wordAboutSearch } from "./reason";
+import { ledger, partnersOf, stoneMemory, tskill, wordAboutRole, wordAboutSearch } from "./reason";
 import { THIEF_ROLES } from "@/engine/setup";
 import { viewFor } from "@/engine/view";
 import type { LineClaim } from "./botmind";
@@ -386,7 +386,8 @@ function reactOnce(s: GameState, from: number, botSkill: (seat: number) => Skill
             continue;
           }
         }
-        const defends = villager || sk.name === "sharp";
+        // B (thief skill switch): an average thief defends too — only a beginner blames
+        const defends = villager || sk.name === "sharp" || (sk.name === "average" && tskill("B"));
         const said = s.events.some((c) => c.type === "claim" && c.to === "all" && c.data?.kind === "self" && c.data?.seat === me);
         if (defends) {
           if (!said) {
