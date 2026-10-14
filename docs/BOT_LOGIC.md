@@ -74,6 +74,10 @@ A bot remembers the last place it saw each Stone: its own hand, a Talashi, a Her
 Bhukamp pass, a hand-off, or a Stone claim from someone it doesn't take for a liar. A sighting holds until a newer one
 replaces it.
 
+**The quiet Stone tell (sharp only, designer 2026-10-14):** a player who passed on each of their last 3 turns without
+playing a pair is probably sitting on a Stone. When a sharp bot has no idea where a Stone is, it puts it with them. This
+says nothing about their side (villagers sit on Stones too). A search that shows their hand without a Stone clears it.
+
 ## 6. Your turn
 
 Playing a pair means passing **all** your other cards. If you hold a Stone, playing any pair sends the Stone on.
@@ -106,10 +110,10 @@ knows, otherwise the neighbour the table suspects more. Dal Badal follows the sa
 
 ## 8. Skill = how much a person notices
 
-| | catches lies against its own facts | reads silence after a Kundli | counts thieves | thief lies |
-|---|---|---|---|---|
-| casual | no (believes what it hears) | no | no | sometimes stays silent |
-| average | yes | no | no | always |
-| sharp | yes | yes | yes | always |
+| | catches lies against its own facts | reads silence after a Kundli | counts thieves | quiet Stone tell | thief lies |
+|---|---|---|---|---|---|
+| casual | no (believes what it hears) | no | no | no | sometimes stays silent |
+| average | yes | no | no | no | always |
+| sharp | yes | yes | yes | yes | always |
 
 No random noise anywhere. The only coin flip is between options that are truly equal.

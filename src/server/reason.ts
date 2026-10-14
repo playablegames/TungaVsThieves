@@ -165,15 +165,20 @@ export function stoneMemory(s: GameState, seat: number, skill: Skill, l: Ledger 
   const put = (c: Card, x: number) => at.set(c, new Set([x]));
   const moveFrom = (x: number, to: number) => { for (const [c, set] of at) if (set.size === 1 && set.has(x)) at.set(c, new Set([to])); };
   let hp: { seat: number; target: number } | null = null;
+  // THE QUIET STONE TELL (designer 2026-10-14, sharp only): turns in a row a player passed without playing a pair
+  const quiet = new Map<number, number>();
   for (const e of v.events) {
     if (Array.isArray(e.to) && !e.to.includes(seat)) continue;
     const d = e.data;
+    if (e.type === "pass") quiet.set(num(d, "seat")!, (quiet.get(num(d, "seat")!) ?? 0) + 1);
+    if (e.type === "play" || (e.type === "dal_badal" && d?.when === "turn")) quiet.set(num(d, "seat")!, 0);
     switch (e.type) {
       case "pickup_private": for (const c of (d?.cards as Card[]) ?? []) if (isStone(c)) put(c, seat); break;
       case "talashi_private": {
         const t = num(d, "target")!;
         const hand = (d?.hand as Card[]) ?? [];
         for (const c of ["STONE_1", "STONE_2"] as Card[]) if (hand.includes(c)) put(c, t); else at.get(c)!.delete(t);
+        if (!hand.some(isStone)) quiet.set(t, 0); // I saw their hand: no Stone there
         break;
       }
       case "hera_pheri": hp = { seat: num(d, "seat")!, target: num(d, "target")! }; break;
@@ -204,6 +209,13 @@ export function stoneMemory(s: GameState, seat: number, skill: Skill, l: Ledger 
         }
         break;
     }
+  }
+  // sharp: a Stone I have no idea about is probably with whoever has passed their last 3 turns — people sit on a Stone
+  if (sharp(skill)) {
+    const sitters = [...quiet].filter(([x, k]) => k >= 3 && x !== seat && aliveAt.has(x)).map(([x]) => x);
+    const placed = new Set([...at.values()].filter((set) => set.size === 1).flatMap((set) => [...set]));
+    const open = sitters.filter((x) => !placed.has(x));
+    if (open.length) for (const [c, set] of at) if (set.size === 0 && !v.me.hand.includes(c)) at.set(c, new Set(open));
   }
   // my own hand is the last word
   for (const c of ["STONE_1", "STONE_2"] as Card[]) {
