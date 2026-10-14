@@ -31,6 +31,14 @@ A Dal Badal wipes every fact about the seats in its shuffle.
 
 A Kundli claim and a plain suspicion weigh the same: one point each.
 
+**What the table saw also counts** (designer 2026-10-14, "bots are stupid": games 9KXLW, QJW9J and Z76KH):
+- a **known thief's** words point the other way: whom it accuses −1 (likely a villager), whom it vouches for +1
+- the dying vote of a known thief goes to a partner: +2 on whoever got it (a thief bot gives its dying vote only to a partner it knows, otherwise
+  to nobody)
+- a Teer Kaman that hit a thief was a villager's shot: −2 on the shooter (+2 if it hit a villager)
+- a speaker proven right about someone is more believable: −1 (average and sharp)
+- an accused player's answer "X is lying" counts as an accusation back
+
 ## 3. Talking (in each debate, one new thing)
 
 **Villager:** says only what it saw: who it put out ("X was Police"), who it read ("X is Chor", thieves first), what
@@ -58,9 +66,10 @@ added to a claim the speaker didn't make: a human's spoken "X is a thief" stays 
 - never a villager it knows
 - otherwise the strongest case
 - in a Faisla, no case (nothing above 0) or a tie at the top means it doesn't vote
-- in the mandatory vote, someone it believes holds a Stone goes out only on a strong case (2+), because their Stones
-  would go to the thieves
-- a mandatory-vote tie goes to the most accused
+- in the mandatory vote the Stones decide. A Stone holder I have any case against (1+) comes first: if they're a thief,
+  the Stone comes to the village. One I have nothing against is left alone, because their Stone would go to the thieves.
+- a mandatory-vote tie goes to the ballot the table is already gathering on, then to the most accused (a split vote
+  puts nobody out)
 
 **Thief:**
 - never a partner it knows
@@ -91,7 +100,7 @@ Playing a pair means passing **all** your other cards. If you hold a Stone, play
 
 | Pair | Villager plays it when… / aims at | Thief plays it when… / aims at |
 |---|---|---|
-| Teer Kaman | a thief I know (my read), naming its role; or an **open-Kundli accusation** — a role named by someone the table saw do a Kundli with them, from a speaker I don't doubt, not answered by the target accusing them back (the designer's table plays it this way); or a strong case (3+ points, alone at the top) where a role was named for them | a villager I read who I believe holds a Stone, in the last round |
+| Teer Kaman | a thief I know (my read), naming its role; or an **open-Kundli accusation** — a role named by someone the table saw do a Kundli with them, from a speaker I don't doubt, **not contested** (nobody else has called the speaker a thief, and the target hasn't accused the speaker back or said "you're lying"). The designer's table plays it this way; or a strong case (3+ points, alone at the top) where a role was named for them | a villager I read who I believe holds a Stone, in the last round |
 | Faisla | I know a thief, or someone has a case (2+, alone at the top) | the table already has a case against a villager, or a villager I know holds a Stone (the caller takes the cards) |
 | Hera Pheri | a suspect (1+) I believe holds a Stone | someone I believe holds a Stone |
 | Talashi | the suspect most likely to hold a Stone; otherwise the top suspect | where I think a Stone is; otherwise the most trusted player |
@@ -100,8 +109,8 @@ Playing a pair means passing **all** your other cards. If you hold a Stone, play
 
 4. **No pair with a clear purpose: play the pair you hold anyway** (designer 2026-10-14, from 39 human games: without
    a Stone people played their pair about 88% of the time). The reasoning picks the target, not whether to play:
-   - **Villager:** Hera Pheri on my top suspect, Faisla (let the table talk), Bhukamp, or Teer Kaman on my top suspect,
-     naming the role the table named for them.
+   - **Villager:** Hera Pheri on my top suspect, Faisla (let the table talk), or Bhukamp. **Never a blind Teer Kaman.**
+     A miss puts me out, so I hold that pair until there's a case.
    - **Thief:** blends in with Hera Pheri on the table's suspect, Faisla or Bhukamp. Never Kundli (it shows my role
      back) and never Teer Kaman (naming village roles out loud gives me away) without a reason from the table above.
 5. **No pair at all:** pass. Keep a Stone first, then Dal Badal, then the cards that could make a pair.

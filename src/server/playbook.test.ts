@@ -56,14 +56,18 @@ describe("THE PLAYBOOK — beginners gamble, skilled players hold", () => {
     const shots = runs(s, SKILLS.casual).filter((a) => a.type === "play" && a.card === "TEER_KAMAN");
     expect(shots.some((a) => a.type === "play" && a.target === 2 && a.roles?.includes(s.players[2].role))).toBe(true);
   });
-  // (designer 2026-10-14) PLAY THE PAIR YOU HOLD: a Teer Kaman pair with no sure target still fires — at the top
-  // suspect, naming the role the table named for them
-  it("a villager holding only a Teer Kaman pair shoots its top suspect, naming the role the table named", () => {
+  // (designer 2026-10-14, "bots are stupid") never a blind Teer Kaman — a miss puts the shooter out
+  it("a villager holds its Teer Kaman pair when there's no case — a bare word with no Kundli behind it isn't one", () => {
     const s = tkTable();
     s.events.push({ n: s.events.length, type: "claim", to: "all", msg: "", data: { seat: 3, target: 2, kind: "kundli", role: s.players[2].role, side: "T" } });
-    const shots = runs(s, SKILLS.average).filter((a) => a.type === "play" && a.card === "TEER_KAMAN");
-    expect(shots.length).toBeGreaterThan(0);
-    expect(shots.every((a) => a.type === "play" && a.target === 2 && a.roles?.[0] === s.players[2].role)).toBe(true);
+    expect(runs(s, SKILLS.average).some((a) => a.type === "play" && a.card === "TEER_KAMAN")).toBe(false);
+  });
+  it("a CONTESTED open-Kundli accusation draws no arrow: someone else called the speaker a thief", () => {
+    const s = tkTable();
+    s.events.push({ n: s.events.length, type: "kundli", to: "all", msg: "", data: { seat: 3, target: 2 } });
+    s.events.push({ n: s.events.length, type: "claim", to: "all", msg: "", data: { seat: 3, target: 2, kind: "kundli", role: s.players[2].role, side: "T" } });
+    s.events.push({ n: s.events.length, type: "claim", to: "all", msg: "", data: { seat: 5, target: 3, kind: "accuse", role: null, side: "T" } });
+    expect(runs(s, SKILLS.average).some((a) => a.type === "play" && a.card === "TEER_KAMAN")).toBe(false);
   });
   it("A STRONG CASE: three voices on one player, a role named for them → the shot, naming that role", () => {
     const s = tkTable();

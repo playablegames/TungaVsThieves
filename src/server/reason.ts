@@ -45,7 +45,9 @@ export interface Ledger {
 function latestClaims(events: GameEvent[], me: number | null = null): GameEvent[] {
   const last = new Map<string, GameEvent>();
   for (const e0 of events) {
-    const e = e0.type === "whisper_private" && me !== null && num(e0.data, "to") === me && e0.data?.side ? { ...e0, type: "claim" } : e0;
+    const e = e0.type === "whisper_private" && me !== null && num(e0.data, "to") === me && e0.data?.side ? { ...e0, type: "claim" }
+      // an accused player's answer "X is lying" is an accusation back (designer's Defend, 2026-10-14)
+      : e0.type === "defend" && e0.data?.kind === "liar" ? { ...e0, type: "claim", data: { ...e0.data, side: "T", kind: "accuse", role: null } } : e0;
     if (e.type !== "claim" || e.data?.kind === "stone") continue;
     const a = num(e.data, "seat"), t = num(e.data, "target");
     if (a === null || t === null || a === t) continue;
@@ -124,9 +126,31 @@ export function ledger(s: GameState, seat: number, skill: Skill): Ledger {
       continue;
     }
     if (liars.has(a)) continue;
-    if (known.get(a)?.side === "T" && v.me.side === "V") continue; // a thief's word is worth nothing to a villager
+    // a KNOWN thief's word points the other way: whom it accuses is likely a villager, whom it vouches for a partner
+    if (known.get(a)?.side === "T" && v.me.side === "V") {
+      if (side === "T") add(t, -1, `accused by ${name(a)}, a known thief`);
+      else if (side === "V") add(t, 1, `vouched for by ${name(a)}, a known thief`);
+      continue;
+    }
     if (side === "T") add(t, 1, `${name(a)} called them a thief`);
     else if (side === "V") add(t, -1, `${name(a)} called them a villager`);
+  }
+  // what the table SAW: a known thief's dying vote goes to a partner; a Teer Kaman that hit a thief was a villager's shot
+  for (const e of v.events) {
+    if (e.type === "gift") {
+      const a = num(e.data, "seat"), t = num(e.data, "target");
+      if (a !== null && t !== null && known.get(a)?.side === "T" && v.me.side === "V") add(t, 2, `got the dying vote of ${name(a)}, a known thief`);
+    }
+    if (e.type === "teer_kaman" && e.data?.hit === true) {
+      const a = num(e.data, "seat"), t = num(e.data, "target");
+      if (a !== null && t !== null && known.get(t)?.side) add(a, known.get(t)!.side === "T" ? -2 : 2, `shot ${name(t)}, ${known.get(t)!.side === "T" ? "a thief" : "a villager"}`);
+    }
+  }
+  // a speaker proven RIGHT about someone is more believable (average and sharp keep that record)
+  if (noticesLies(skill)) for (const e of claims) {
+    const a = num(e.data, "seat")!, t = num(e.data, "target")!;
+    if (a === seat || t === seat || liars.has(a) || !known.get(t)) continue;
+    if (e.data?.side === known.get(t)!.side && known.get(a)?.side !== "T") add(a, -1, `was right about ${name(t)}`);
   }
   for (const a of liars) add(a, 2, "caught lying");
   // sharp: a Kundli, and then silence — a villager who saw something says it
@@ -247,17 +271,22 @@ export function ruleVote(s: GameState, seat: number, skill: Skill, r: R): { targ
     if (sure.length) { const t = best(r, sure, stone)!; return { target: t, why: l.known.get(t)!.why }; }
     let pool = alive.filter((x) => l.known.get(x)?.side !== "V");
     if (!pool.length) return { target: null, why: "everyone left is a known villager" };
-    // their Stones would go to the thieves: a Stone holder goes out only on a strong case
-    if (final) { const safe = pool.filter((x) => stone(x) < 0.5 || sc(x) >= 2); if (safe.length) pool = safe; }
-    const top = Math.max(...pool.map(sc));
-    const leaders = pool.filter((x) => sc(x) === top);
+    // the mandatory vote is about the Stones: a Stone holder I have a case against (1+) goes first — if they're a thief
+    // that Stone comes to the village; one I have nothing against stays (its Stone would go to the thieves)
+    const val = (x: number) => sc(x) + (final && stone(x) >= 0.5 && sc(x) >= 1 ? 1 : 0);
+    if (final) { const safe = pool.filter((x) => stone(x) < 0.5 || sc(x) >= 1); if (safe.length) pool = safe; }
+    const top = Math.max(...pool.map(val));
+    const leaders = pool.filter((x) => val(x) === top);
     if (!final) {
       if (top <= 0) return { target: null, why: "no case against anyone" };
       if (leaders.length > 1) return { target: null, why: `a tie between ${leaders.map((x) => plain(s, x)).join(", ")}` };
       return { target: leaders[0], why: reasonFor(l, leaders[0]) };
     }
-    const t = best(r, leaders, (x) => l.accused.get(x) ?? 0)!;
-    return { target: t, why: `${reasonFor(l, t)}${leaders.length > 1 ? " — tie, the most accused" : ""}` };
+    // a tie: go with the ballot the table is already gathering on, then the most accused — a split vote puts nobody out
+    const tally = new Map<number, number>();
+    if (ph.kind === "vote") for (const [vtr, b] of Object.entries(ph.ballots)) if (b !== null && b !== undefined && Number(vtr) !== seat) tally.set(b, (tally.get(b) ?? 0) + 1);
+    const t = best(r, leaders, (x) => (tally.get(x) ?? 0) * 100 + (l.accused.get(x) ?? 0))!;
+    return { target: t, why: `${reasonFor(l, t)}${final && stone(t) >= 0.5 ? " + holds a Stone" : ""}${leaders.length > 1 ? " — tie: with the table's ballot" : ""}` };
   }
   // A THIEF
   const pool = alive.filter((x) => l.known.get(x)?.side !== "T");
@@ -441,6 +470,8 @@ export function ruleTurn(s: GameState, seat: number, skill: Skill, r: R): Decisi
         const a = num(e.data, "seat")!, t = num(e.data, "target")!;
         if (e.data?.side !== "T" || typeof e.data?.role !== "string" || !others.includes(t) || ally(t) || a === seat) return false;
         if (l.liars.has(a) || foe(a) || l.ruledOut.get(t)?.has(e.data.role)) return false;
+        // contested: someone else has called the SPEAKER a thief (the target answering back is the standoff below)
+        if (all.some((c) => num(c.data, "target") === a && c.data?.side === "T" && num(c.data, "seat") !== t && !foe(num(c.data, "seat")!))) return false;
         const sawKundli = s.events.some((k) => k.type === "kundli" && k.n < e.n && ((num(k.data, "seat") === a && num(k.data, "target") === t) || (num(k.data, "seat") === t && num(k.data, "target") === a)));
         const standoff = all.some((c) => num(c.data, "seat") === t && num(c.data, "target") === a && c.data?.side === "T");
         return sawKundli && !standoff;
@@ -486,11 +517,8 @@ export function ruleTurn(s: GameState, seat: number, skill: Skill, r: R): Decisi
     if (can("HERA_PHERI")) { const t = suspect(withCards); if (t !== undefined) return play("HERA_PHERI", `steal from ${name(t)} — my top suspect`, t); }
     if (can("FAISLA")) return play("FAISLA", "call a vote — let the table talk");
     if (can("BATWARA")) return play("BATWARA", "shake the table");
-    if (can("TEER_KAMAN")) {
-      const t = suspect(others);
-      if (t !== undefined) return play("TEER_KAMAN", `shoot ${name(t)} — my top suspect (${reasonFor(l, t)})`, t, tkRoles(s, seat, l, t, null));
-    }
-    return pass("no pair to play");
+    // Teer Kaman is the exception: a miss puts ME out — never a blind shot; hold the pair until there's a case
+    return pass(can("TEER_KAMAN") ? "hold my Teer Kaman — no case against anyone yet" : "no pair to play");
   }
 
   // A THIEF
@@ -626,11 +654,12 @@ export function ruleGift(s: GameState, seat: number, skill: Skill, r: R): Decisi
   const sc = (x: number) => l.score.get(x) ?? 0;
   const friends = alive.filter((x) => l.known.get(x)?.side === me.side);
   if (friends.length) { const t = best(r, friends, (x) => -sc(x))!; return { action: { type: "gift", target: t }, why: `my vote to ${plain(s, t)} — on my side for sure` }; }
+  // a thief that knows no partner gives it to nobody — a vote thrown at a stranger may arm a villager
+  if (me.side === "T") return { action: { type: "gift", target: null }, why: "thief: no partner I know" };
   const pool = alive.filter((x) => l.known.get(x)?.side === undefined);
-  // a villager: the player it trusts most; a thief: the one the table suspects most (likeliest a partner)
-  const t = best(r, pool, (x) => (me.side === "V" ? -sc(x) : sc(x)));
-  if (t === undefined || (me.side === "V" && sc(t) > 0)) return { action: { type: "gift", target: null }, why: "nobody I trust" };
-  return { action: { type: "gift", target: t }, why: `my vote to ${plain(s, t)} — ${me.side === "V" ? "the player I trust most" : "the table's suspect, maybe a partner"}` };
+  const t = best(r, pool, (x) => -sc(x));
+  if (t === undefined || sc(t) > 0) return { action: { type: "gift", target: null }, why: "nobody I trust" };
+  return { action: { type: "gift", target: t }, why: `my vote to ${plain(s, t)} — the player I trust most` };
 }
 
 export function ruleHandoff(s: GameState, seat: number, skill: Skill, r: R): Decision {
