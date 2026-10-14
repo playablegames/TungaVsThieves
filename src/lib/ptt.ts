@@ -4,10 +4,10 @@
 import { useSyncExternalStore } from "react";
 
 const PREF = "tunga:ptt";
-// (designer 2026-10-14: "voice should not be always on" — research: push-to-talk is the default most voice games and
-// apps settle on; open mic is a choice in ☰). Only an explicit "off" in this phone's memory opens the mic.
-let on = true, down = false;
-try { on = localStorage.getItem(PREF) !== "off"; } catch {}
+// (designer 2026-10-14, later: "voice chat should be on by default" — a table of friends talks freely; push-to-talk
+// is the fix for noisy rooms and public tables, a choice in ☰). Only an explicit "on" in this phone's memory turns it on.
+let on = false, down = false;
+try { on = localStorage.getItem(PREF) === "on"; } catch {}
 const listeners = new Set<() => void>();
 let snap = { on, down };
 const emit = () => { snap = { on, down }; listeners.forEach((f) => f()); };
@@ -16,5 +16,5 @@ export function setPtt(v: boolean) { on = v; down = false; try { localStorage.se
 export function setTalking(v: boolean) { if (down !== v) { down = v; emit(); } }
 
 const subscribe = (f: () => void) => { listeners.add(f); return () => { listeners.delete(f); }; };
-const OFF = { on: true, down: false };
+const OFF = { on: false, down: false };
 export const usePtt = () => useSyncExternalStore(subscribe, () => snap, () => OFF);

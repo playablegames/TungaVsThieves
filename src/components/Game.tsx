@@ -80,7 +80,7 @@ export default function Game({ code }: { code: string }) {
   // (designer 2026-10-12) a player who is out watches in silence — their mic stays shut, except for their last words
   // your own floor (an accusation answered, a debate turn) or your last words open the mic by themselves — no button to hold
   const ownFloor = Boolean((fl && fl.seat === me) || (lw && lw.seat === me));
-  const held = Boolean((fl && fl.seat !== me) || (lw && lw.seat !== me) || (ptt.on && !ptt.down && !ownFloor) || reading === "update" || (reading === "talk" && !ptt.down && !ownFloor));
+  const held = Boolean((fl && fl.seat !== me) || (lw && lw.seat !== me) || (ptt.on && !ptt.down && !ownFloor && st?.status === "playing") || reading === "update" || (reading === "talk" && !ptt.down && !ownFloor));
   const duckTable = voice.duck;
   useEffect(() => { duckTable(reading === "update"); }, [reading, duckTable]);
   const setHeld = voice.setHeld;
