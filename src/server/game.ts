@@ -5,7 +5,7 @@ import { randomBytes, randomInt } from "node:crypto";
 import { apply, closeVote, start, waitingOn } from "@/engine/engine";
 import { defaultAction } from "@/engine/decisions";
 import { botTalk } from "./botmind";
-import { botReactions, pushStoneClaim, pushTalkClaims } from "./reactions";
+import { botReactions, pushStoneClaim, pushTalkClaims, tieSpill } from "./reactions";
 import { personalised, personalityOf } from "./personality";
 import { botDecision, botTieBreak, pushBotClaim, RULES, SKILLS } from "./belief";
 import { listen } from "./hear";
@@ -475,7 +475,10 @@ export async function tick(code: string) {
     // open voting: time is up — the vote stands as it is now. NOT when it was the DEBATE's clock that ran out: that
     // only opens the ballots (bug in playtest LLE3Q 2026-10-09: the vote opened and closed in one step, zero ballots)
     if (!floorClosing && s.voteUntilClock && s.phase.kind === "vote" && !s.phase.debate) {
-      // a tie as the clock ends: bots move to break it, one at a time, until it is broken (designer 2026-10-12)
+      // THE TIE MOMENT (designer 2026-10-14): bots with a secret about a tied player spill it first — then every bot
+      // re-weighs, and moves to break the tie, one at a time (designer 2026-10-12)
+      { const at = s.events.length; const skill = (x: number) => (r.lobby[x]?.bot ? botSkill(r, x) : null);
+        tieSpill(s, skill); botReactions(s, at, skill); }
       for (const seat of s.phase.voters.filter((x) => isBot(r, x)).sort(() => Math.random() - 0.5)) {
         const to = botTieBreak(s, seat, s.seed, botSkill(r, seat));
         if (to !== null) s = apply(s, seat, { type: "vote", target: to });

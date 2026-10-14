@@ -2,12 +2,12 @@
 // (instinct, or the flowsheet), then the same reactions the server runs after a move — marks, whispers, bluffs, the
 // claims in their lines. The scorecard, the tells and the balance probes all use this, so what they measure is what
 // people play against.
-import { apply, start, waitingOn } from "@/engine/engine";
+import { apply, closeVote, start, waitingOn } from "@/engine/engine";
 import { ROLE_TABLE } from "@/engine/setup";
 import type { GameState } from "@/engine/types";
-import { botDecision, pushBotClaim, RULES, skilledAction, type Skill } from "./belief";
+import { botDecision, botTieBreak, pushBotClaim, RULES, skilledAction, type Skill } from "./belief";
 import { botTalk } from "./botmind";
-import { botReactions, pushTalkClaims } from "./reactions";
+import { botReactions, pushTalkClaims, tieSpill } from "./reactions";
 import { plannedAction } from "./flowsheet";
 
 type R = () => number;
@@ -27,8 +27,24 @@ export interface SimOptions {
 export function playTable(n: number, seed: number, r: R, o: SimOptions): GameState {
   let s: GameState = start(Array.from({ length: n }, (_, i) => `P${i}`), seed, o.table ?? ROLE_TABLE);
   if (o.dbShield) s.dbShield = true;
+  // (2026-10-14) open voting, as online: the ballot stays open until "the clock" — so a tie gets its moment
+  s.voteUntilClock = true;
   const all = Array.from({ length: n }, (_, i) => i);
   for (let k = 0; k < 20000 && s.phase.kind !== "over"; k++) {
+    if (s.phase.kind === "vote" && !s.phase.debate && waitingOn(s).length === 0) {
+      // the clock ends: THE TIE MOMENT (tieSpill), then each bot may move its ballot to break a tie (game.ts tick)
+      const from = s.events.length;
+      tieSpill(s, o.skillOf, r);
+      botReactions(s, from, o.skillOf, r);
+      for (const v of [...s.phase.voters].sort(() => r() - 0.5)) {
+        const to = botTieBreak(s, v, s.seed, o.skillOf(v));
+        if (to !== null) s = apply(s, v, { type: "vote", target: to });
+      }
+      const at = s.events.length;
+      s = closeVote(s);
+      if (s.phase.kind !== "over") botReactions(s, at, o.skillOf, r);
+      continue;
+    }
     const seat = waitingOn(s)[0];
     const sk = o.skillOf(seat);
     if (s.phase.kind === "vote" && s.phase.debate) pushBotClaim(s, seat, s.seed, r, sk);

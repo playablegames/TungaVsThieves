@@ -160,9 +160,12 @@ export function ledger(s: GameState, seat: number, skill: Skill): Ledger {
       // (real games 2026-10-14: bots hunted honest villagers who merely suspected them) a ROLE named for me that's wrong
       // is a certain lie; a plain suspicion of me is only a wrong guess — it counts like any accusation
       if (side === "T" && v.me.side === "V") {
-        if (typeof e.data?.role === "string") { add(a, 3, `said I'm ${String(e.data.role)} — a lie, I'm a villager`); liars.add(a); }
+        // "X told me they're Chor" about me, after I posed as a thief to them (a double agent) — I know why they said it
+        const posed = e.data?.kind === "told" && v.events.some((w) => w.type === "whisper_private" && w.data?.handshake === true && w.data?.seat === seat && w.data?.to === a);
+        if (posed) add(a, 1, "repeated what I told them as a double agent");
+        else if (typeof e.data?.role === "string") { add(a, 3, `said I'm ${String(e.data.role)} — a lie, I'm a villager`); liars.add(a); }
         else add(a, 1, "suspects me — wrong, I'm a villager");
-      }
+      } else if (side === "T") add(a, 1, "suspects me"); // (2026-10-14) a thief weighs its accuser as a villager would
       continue;
     }
     if (liars.has(a)) continue;
@@ -172,8 +175,11 @@ export function ledger(s: GameState, seat: number, skill: Skill): Ledger {
       else if (side === "V") add(t, 1, `vouched for by ${name(a)}, a known thief`);
       continue;
     }
-    if (side === "T") add(t, 1, `${name(a)} called them a thief`);
-    else if (side === "V") add(t, -1, `${name(a)} called them a villager`);
+    // a word that names a ROLE ("I read X: Chor", "X told me they're Lootera") is an eyewitness's word: 1.5; a plain
+    // "I suspect X": 1
+    const seen = typeof e.data?.role === "string" ? 1.5 : 1;
+    if (side === "T") add(t, seen, `${name(a)} called them ${typeof e.data?.role === "string" ? String(e.data.role) : "a thief"}`);
+    else if (side === "V") add(t, -seen, `${name(a)} called them ${typeof e.data?.role === "string" ? String(e.data.role) : "a villager"}`);
   }
   // what the table SAW: a known thief's dying vote goes to a partner; a Teer Kaman that hit a thief was a villager's shot
   for (const e of v.events) {
@@ -194,17 +200,15 @@ export function ledger(s: GameState, seat: number, skill: Skill): Ledger {
   }
   for (const a of liars) add(a, 2, "caught lying");
   for (const [a, w] of selfLie) add(a, 1, w);
-  // a COUNTERCLAIM: two players say they're the same role — one of them is lying. (designer 2026-10-14: "arey, he said
-  // he's Teacher but this other guy is saying he's Teacher — most probably the OLD one is lying") A thief volunteers a
-  // role nobody has claimed yet; the real owner speaks up later, when asked or pressed — so the FIRST claimer +2, the
-  // later +1.
+  // a COUNTERCLAIM: two players say they're the same role — one of them is lying: the LATER claimer +1, the earlier +0.5
   const byRole = new Map<string, { seat: number; n: number }[]>();
   for (const c of selfs) if (c.seat !== seat && !selfLie.has(c.seat) && c.side === "V") byRole.set(c.role, [...(byRole.get(c.role) ?? []), { seat: c.seat, n: c.n }]);
   for (const [role, xs] of byRole) if (xs.length >= 2) {
-    // SIM-ONLY A/B (BOT_FLAGS=counter=later): the LATER claimer as the likelier liar — measured, for the designer to choose
-    const later = typeof process !== "undefined" && (process.env.BOT_FLAGS ?? "").includes("counter=later");
-    const first = [...xs].sort((a, b) => (later ? b.n - a.n : a.n - b.n))[0].seat;
-    for (const x of xs) add(x.seat, x.seat === first ? 2 : 1, x.seat === first ? `claimed ${role} first — ${xs.filter((y) => y.seat !== x.seat).map((y) => name(y.seat)).join(", ")} says the same` : `also claims ${role}, after ${name(first)}`);
+    // (designer 2026-10-14, after 4,061 contested roles in bot games: the LATER claimer lied 64% of the time) the one who
+    // claimed it LAST is the likelier liar
+    const first = [...xs].sort((a, b) => b.n - a.n)[0].seat;
+    // one of the two lies — weaker than a word about what someone SAW (+1): the later claimer +1, the earlier +0.5
+    for (const x of xs) add(x.seat, x.seat === first ? 1 : 0.5, x.seat === first ? `claimed ${role} after ${xs.filter((y) => y.seat !== x.seat).map((y) => name(y.seat)).join(", ")} already had` : `claimed ${role} — ${name(first)} says it too, later`);
   }
   // the open table, cross-checked: "Y is Teacher" (said by A) and "I'm Teacher" (said by Z) can't both be true — A or Z lies
   for (const e of claims) {
@@ -216,7 +220,9 @@ export function ledger(s: GameState, seat: number, skill: Skill): Ledger {
   for (const c of selfs) {
     if (c.seat === seat || selfLie.has(c.seat)) continue;
     // owning up to a thief role is a strange thing to say — a joke, or the truth
-    if (c.side === "T") add(c.seat, 1, `says they're ${c.role}`);
+    // "I'm also Chor" said to ME (the handshake): to a villager, the speaker has as good as owned up (+3 — a sharp
+    // villager may be posing, so not a fact). Said to the table: a strange thing to say (+1)
+    if (c.side === "T") { if (v.me.side === "V") add(c.seat, c.toMe ? 3 : 1, c.toMe ? `told me they're ${c.role}` : `says they're ${c.role}`); }
     // told ME their role privately: a small bond (a thief may use it — so do people)
     else if (c.toMe && (byRole.get(c.role)?.length ?? 0) < 2) add(c.seat, -0.5, `told me they're ${c.role}`);
   }
@@ -235,6 +241,21 @@ export function ledger(s: GameState, seat: number, skill: Skill): Ledger {
   }
   for (const [x, who] of shuffled) if (!known.has(x)) add(x, 1, `in ${who}'s Dal Badal shuffle`);
   return { known, ruledOut, score, why, liars, accused, talk };
+}
+
+/** WHO MY PARTNERS ARE (a thief): known (a Kundli read either way, a role shown) — or BELIEVED, after a handshake
+ *  (designer 2026-10-14): a player I took at their word ("I'm also Chor") or who took me at mine */
+export function partnersOf(s: GameState, seat: number, skill: Skill | null): Set<number> {
+  const out = new Set<number>();
+  if (s.players[seat]?.side !== "T") return out;
+  if (skill) for (const [x, k] of ledger(s, seat, skill).known) if (x !== seat && k.side === "T") out.add(x);
+  for (const e of s.events) {
+    if (e.type !== "whisper_private" || e.data?.believe !== true) continue;
+    const a = e.data.seat as number, b = e.data.to as number;
+    if (a === seat) out.add(b);
+    else if (b === seat) out.add(a);
+  }
+  return out;
 }
 
 export function reasonFor(l: Ledger, x: number): string {
@@ -350,10 +371,14 @@ export function ruleVote(s: GameState, seat: number, skill: Skill, r: R): { targ
   const alive = s.players.filter((p) => p.alive && p.seat !== seat).map((p) => p.seat);
   if (!alive.length) return { target: null, why: "nobody to vote" };
   const sc = (x: number) => l.score.get(x) ?? 0;
-  if (s.players[seat].side === "V") {
-    const sure = alive.filter((x) => l.known.get(x)?.side === "T");
+  // (designer 2026-10-14) A THIEF VOTES EXACTLY LIKE A VILLAGER — its partners (known or believed) stand where a
+  // villager's known villagers stand, and it knows no "thief" to vote for
+  const thief = s.players[seat].side === "T";
+  const partners = thief ? partnersOf(s, seat, skill) : new Set<number>();
+  {
+    const sure = thief ? [] : alive.filter((x) => l.known.get(x)?.side === "T");
     if (sure.length) { const t = best(r, sure, stone)!; return { target: t, why: l.known.get(t)!.why }; }
-    let pool = alive.filter((x) => l.known.get(x)?.side !== "V");
+    let pool = alive.filter((x) => (thief ? !partners.has(x) : l.known.get(x)?.side !== "V"));
     if (!pool.length) return { target: null, why: "everyone left is a known villager" };
     // the mandatory vote is about the Stones: a Stone holder I have a case against (1+) goes first — if they're a thief
     // that Stone comes to the village; one I have nothing against stays (its Stone would go to the thieves)
@@ -379,23 +404,14 @@ export function ruleVote(s: GameState, seat: number, skill: Skill, r: R): { targ
     const t = best(r, leaders, (x) => (tally.get(x) ?? 0) * 100 + (l.accused.get(x) ?? 0))!;
     return { target: t, why: `${reasonFor(l, t)}${final && stone(t) >= 0.5 ? " + holds a Stone" : ""}${leaders.length > 1 ? " — tie: with the table's ballot" : ""}` };
   }
-  // A THIEF
-  const pool = alive.filter((x) => l.known.get(x)?.side !== "T");
-  if (!pool.length) return { target: null, why: "only partners left" };
-  const accusers = new Set(latestClaims(s.events).filter((e) => num(e.data, "target") === seat && e.data?.side === "T").map((e) => num(e.data, "seat")!));
-  const want = (x: number) => sc(x) + (accusers.has(x) ? 2 : 0) + (l.known.get(x)?.side === "V" ? 1 : 0) + (final ? 3 * stone(x) : 0);
-  const top = Math.max(...pool.map(want));
-  if (!final && top <= 0) return { target: null, why: "thief: no case against anyone — blend in" };
-  const t = best(r, pool, want)!;
-  const bits = [accusers.has(t) ? "accused me" : "", l.known.get(t)?.side === "V" ? "a villager I know" : "", final && stone(t) >= 0.5 ? "holds a Stone" : ""].filter(Boolean);
-  return { target: t, why: `thief: ${reasonFor(l, t)}${bits.length ? " + " + bits.join(", ") : ""}` };
 }
 
 /** the clock is ending on a tie: move to the tied leader the rulebook wants out, or stay */
 export function ruleTieBreak(s: GameState, seat: number, skill: Skill, leaders: number[], current: number | null | undefined): number | null {
   const l = ledger(s, seat, skill);
   const thief = s.players[seat].side === "T";
-  const ok = leaders.filter((x) => (thief ? l.known.get(x)?.side !== "T" : l.known.get(x)?.side !== "V"));
+  const partners = thief ? partnersOf(s, seat, skill) : new Set<number>();
+  const ok = leaders.filter((x) => (thief ? !partners.has(x) : l.known.get(x)?.side !== "V"));
   const sure = thief ? [] : ok.filter((x) => l.known.get(x)?.side === "T");
   const pick = sure[0] ?? [...ok].sort((x, y) => (l.score.get(y) ?? 0) - (l.score.get(x) ?? 0))[0];
   return pick === undefined || current === pick ? null : pick;
@@ -419,35 +435,22 @@ export function ruleClaim(s: GameState, seat: number, skill: Skill, r: R): RuleC
   const name = (x: number) => plain(s, x);
   const accusers = latestClaims(v.events, seat).filter((e) => num(e.data, "target") === seat && e.data?.side === "T").map((e) => num(e.data, "seat")!);
 
-  if (me.side === "V") {
-    for (const o of outs) if (fresh(o.target)) return { kind: "was", ...o, why: `I put ${name(o.target)} out and saw ${o.role}` };
-    for (const k of [...reads].sort((a, b) => (a.side === "T" ? 0 : 1) - (b.side === "T" ? 0 : 1)))
-      if (fresh(k.target) && alive(k.target)) return { kind: "kundli", ...k, why: `I read ${name(k.target)}` };
-    // accused: answer by naming the accuser
-    for (const a of accusers) if (fresh(a) && alive(a)) return { kind: "accuse", target: a, role: null, side: "T", why: `${name(a)} called me a thief — I'm a villager` };
-    const pool = s.players.filter((p) => p.alive && p.seat !== seat && l.known.get(p.seat)?.side !== "V").map((p) => p.seat);
-    const top = Math.max(-Infinity, ...pool.map((x) => l.score.get(x) ?? 0));
-    const leaders = pool.filter((x) => (l.score.get(x) ?? 0) === top);
-    if (top >= 2 && leaders.length === 1 && fresh(leaders[0])) return { kind: "accuse", target: leaders[0], role: null, side: "T", why: reasonFor(l, leaders[0]) };
-    return null;
+  // (designer 2026-10-14) A THIEF TALKS EXACTLY LIKE A VILLAGER: it says what it saw — except about a partner (known or
+  // believed), whom it covers with a village role — and never accuses a partner
+  const partners = me.side === "T" ? partnersOf(s, seat, skill) : new Set<number>();
+  const cover = (x: number) => fittingRole(l, rolesBut(s, me.role).villageRoles, x, s.events);
+  for (const o of outs) if (fresh(o.target)) return { kind: "was", ...o, why: `I put ${name(o.target)} out and saw ${o.role}` };
+  for (const k of [...reads].sort((a, b) => (a.side === "T" ? 0 : 1) - (b.side === "T" ? 0 : 1))) {
+    if (!fresh(k.target) || !alive(k.target)) continue;
+    if (partners.has(k.target)) return { kind: "kundli", target: k.target, role: cover(k.target), side: "V", why: `cover ${name(k.target)}, a partner I read` };
+    return { kind: "kundli", ...k, why: `I read ${name(k.target)}` };
   }
-  // A THIEF — lies that fit the facts on the table. A casual thief sometimes keeps quiet instead.
-  if (skill.name === "casual" && r() >= skill.lie) return null;
-  const roleFor = (pool: string[], t: number) => fittingRole(l, pool, t, s.events);
-  const { thiefRoles, villageRoles } = rolesBut(s, me.role);
-  for (const o of outs) if (fresh(o.target))
-    return o.side === "V" ? { kind: "was", target: o.target, role: roleFor(thiefRoles, o.target), side: "T", why: "thief: call a villager I put out a thief" }
-      : { kind: "was", target: o.target, role: roleFor(villageRoles, o.target), side: "V", why: "thief: cover a partner I put out" };
-  for (const k of reads) if (fresh(k.target) && alive(k.target))
-    return k.side === "V" ? { kind: "kundli", target: k.target, role: roleFor(thiefRoles, k.target), side: "T", why: `thief: lie about ${name(k.target)}, a villager I read` }
-      : { kind: "kundli", target: k.target, role: roleFor(villageRoles, k.target), side: "V", why: `thief: cover ${name(k.target)}, a partner I read` };
-  for (const a of accusers) if (fresh(a) && alive(a)) {
-    const read = reads.find((k) => k.target === a);
-    return { kind: read ? "kundli" : "accuse", target: a, role: read ? roleFor(thiefRoles, a) : null, side: "T", why: `thief: hit back at ${name(a)}` };
-  }
-  const pool = s.players.filter((p) => p.alive && p.seat !== seat && l.known.get(p.seat)?.side !== "T" && (l.accused.get(p.seat) ?? 0) >= 1).map((p) => p.seat);
-  const t = best(r, pool, (x) => l.score.get(x) ?? 0);
-  if (t !== undefined && fresh(t)) return { kind: "accuse", target: t, role: null, side: "T", why: `thief: join the table on ${name(t)}` };
+  // accused: answer by naming the accuser
+  for (const a of accusers) if (fresh(a) && alive(a) && !partners.has(a)) return { kind: "accuse", target: a, role: null, side: "T", why: `${name(a)} called me a thief` };
+  const pool = s.players.filter((p) => p.alive && p.seat !== seat && !partners.has(p.seat) && !(me.side === "V" && l.known.get(p.seat)?.side === "V")).map((p) => p.seat);
+  const top = Math.max(-Infinity, ...pool.map((x) => l.score.get(x) ?? 0));
+  const leaders = pool.filter((x) => (l.score.get(x) ?? 0) === top);
+  if (top >= 2 && leaders.length === 1 && fresh(leaders[0])) return { kind: "accuse", target: leaders[0], role: null, side: "T", why: reasonFor(l, leaders[0]) };
   return null;
 }
 
@@ -523,8 +526,11 @@ export function ruleTurn(s: GameState, seat: number, skill: Skill, r: R): Decisi
   const thief = me.side === "T";
   const others = s.players.filter((p) => p.alive && p.seat !== seat).map((p) => p.seat);
   const sc = (x: number) => l.score.get(x) ?? 0;
-  const ally = (x: number) => l.known.get(x)?.side === me.side;
-  const foe = (x: number) => l.known.get(x)?.side !== undefined && l.known.get(x)!.side !== me.side;
+  // (designer 2026-10-14) A THIEF PLAYS EXACTLY LIKE A VILLAGER — its partners (known, or believed after a handshake) are
+  // its "village"; it knows no "thief" to hunt, so it hunts whoever the evidence points at, as a villager would
+  const partners = thief ? partnersOf(s, seat, skill) : new Set<number>();
+  const ally = (x: number) => (thief ? partners.has(x) : l.known.get(x)?.side === "V");
+  const foe = (x: number) => !thief && l.known.get(x)?.side === "T";
   const name = (x: number) => plain(s, x);
   const lastRound = s.round >= s.rounds;
   const n = s.players.length;
@@ -567,7 +573,25 @@ export function ruleTurn(s: GameState, seat: number, skill: Skill, r: R): Decisi
   const withCards = others.filter((x) => s.players[x].hand.length > 0);
   const hp = (x: number) => holds(mem, x);
 
-  if (!thief) {
+  // A THIEF'S OWN GOALS (they look like any villager's move): bus an exposed partner, shoot a Stone-holding villager
+  if (thief && can("TEER_KAMAN")) {
+    // (designer 2026-10-14: "a thief can try to eliminate another thief") BUS A PARTNER: a partner I know whom the
+    // table has already caught (called a thief by 2+) goes out anyway — my arrow takes their cards and buys me the
+    // table's trust. Average and sharp thieves only.
+    const exposed = others.filter((x) => l.known.get(x)?.side === "T" && l.known.get(x)?.role && (l.accused.get(x) ?? 0) >= 2);
+    if (exposed.length && skill.name !== "casual") {
+      const t = best(r, exposed, (x) => (l.accused.get(x) ?? 0) + hp(x))!;
+      return play("TEER_KAMAN", `thief: shoot my partner ${name(t)} — the table caught them anyway; I take the cards and look like a villager`, t, tkRoles(s, seat, l, t, l.known.get(t)!.role!, "T"));
+    }
+    if (lastRound) {
+      // a villager whose role I know — my read, or what they told me (bot talk) — holding a Stone
+      const told = new Map(selfClaims(s.events, seat).filter((c) => c.toMe && c.side === "V").map((c) => [c.seat, c.role]));
+      const roleOf = (x: number) => (l.known.get(x)?.side === "V" ? l.known.get(x)!.role : undefined) ?? told.get(x);
+      const t = best(r, others.filter((x) => roleOf(x) && !ally(x) && hp(x) >= 0.5), hp);
+      if (t !== undefined) return play("TEER_KAMAN", `thief: shoot ${name(t)}, a villager (${roleOf(t)}) who holds a Stone — the cards come to me`, t, tkRoles(s, seat, l, t, roleOf(t)!, "V"));
+    }
+  }
+  {
     if (can("TEER_KAMAN")) {
       const sure = others.filter((x) => foe(x));
       if (sure.length) { const t = best(r, sure, hp)!; return play("TEER_KAMAN", `shoot ${name(t)} — ${l.known.get(t)!.why}`, t, tkRoles(s, seat, l, t, l.known.get(t)!.role ?? null)); }
@@ -611,7 +635,7 @@ export function ruleTurn(s: GameState, seat: number, skill: Skill, r: R): Decisi
       const hunt = best(r, withCards.filter((x) => sc(x) >= 1 && hp(x) > 0 && hp(x) < 1), (x) => hp(x) * 10 + sc(x));
       if (hunt !== undefined) return play("TALASHI", `search ${name(hunt)} — a suspect who may hold a Stone`, hunt);
     }
-    if (can("KUNDLI")) {
+    if (can("KUNDLI") && !(thief && skill.name !== "casual")) {
       const unread = others.filter((x) => !l.known.has(x));
       const t = best(r, unread.length ? unread : others, (x) => (l.talk.get(x) ?? 0) * 10 + sc(x));
       if (t !== undefined) return play("KUNDLI", `read ${name(t)} — the most talked-about player I haven't read`, t);
@@ -632,53 +656,6 @@ export function ruleTurn(s: GameState, seat: number, skill: Skill, r: R): Decisi
     return pass(can("TEER_KAMAN") ? "hold my Teer Kaman — no case against anyone yet" : "no pair to play");
   }
 
-  // A THIEF
-  if (can("TEER_KAMAN")) {
-    // (designer 2026-10-14: "a thief can try to eliminate another thief") BUS A PARTNER: a partner I know whom the
-    // table has already caught (called a thief by 2+) goes out anyway — my arrow takes their cards and buys me the
-    // table's trust. Average and sharp thieves only.
-    const exposed = others.filter((x) => l.known.get(x)?.side === "T" && l.known.get(x)?.role && (l.accused.get(x) ?? 0) >= 2);
-    if (exposed.length && skill.name !== "casual") {
-      const t = best(r, exposed, (x) => (l.accused.get(x) ?? 0) + hp(x))!;
-      return play("TEER_KAMAN", `thief: shoot my partner ${name(t)} — the table caught them anyway; I take the cards and look like a villager`, t, tkRoles(s, seat, l, t, l.known.get(t)!.role!, "T"));
-    }
-    if (lastRound) {
-      // a villager whose role I know — my read, or what they told me (bot talk) — holding a Stone
-      const told = new Map(selfClaims(s.events, seat).filter((c) => c.toMe && c.side === "V").map((c) => [c.seat, c.role]));
-      const roleOf = (x: number) => (l.known.get(x)?.side === "V" ? l.known.get(x)!.role : undefined) ?? told.get(x);
-      const t = best(r, others.filter((x) => roleOf(x) && !ally(x) && hp(x) >= 0.5), hp);
-      if (t !== undefined) return play("TEER_KAMAN", `thief: shoot ${name(t)}, a villager (${roleOf(t)}) who holds a Stone — the cards come to me`, t, tkRoles(s, seat, l, t, roleOf(t)!, "V"));
-    }
-  }
-  if (can("FAISLA")) {
-    const holder = others.filter((x) => l.known.get(x)?.side === "V" && hp(x) >= 0.5);
-    if (holder.length) return play("FAISLA", `thief: call a vote — ${name(holder[0])} is a villager holding a Stone (the caller takes the cards)`);
-    if (clearTop !== undefined && top >= 2) return play("FAISLA", `thief: the table has a case against ${name(clearTop)}`);
-  }
-  if (can("HERA_PHERI")) {
-    const t = best(r, withCards.filter((x) => !ally(x) && hp(x) > 0), hp);
-    if (t !== undefined) return play("HERA_PHERI", `thief: steal from ${name(t)} — they may hold a Stone`, t);
-  }
-  if (can("BATWARA") && !holding) {
-    const near = [next, prev].filter((x) => x !== seat && !ally(x) && hp(x) >= 0.5);
-    if (near.length) return play("BATWARA", `thief: shake ${name(near[0])}'s Stone loose`);
-  }
-  if (can("TALASHI")) {
-    const seen = withCards.filter((x) => !ally(x) && hp(x) > 0 && hp(x) < 1);
-    const t = best(r, seen, hp) ?? best(r, withCards.filter((x) => !ally(x)), (x) => -sc(x));
-    if (t !== undefined) return play("TALASHI", `thief: look for a Stone with ${name(t)}`, t);
-  }
-  if (can("KUNDLI") && skill.name === "casual") {
-    const unread = others.filter((x) => !l.known.has(x));
-    const t = best(r, unread.length ? unread : others, (x) => (l.talk.get(x) ?? 0) * 10 + sc(x));
-    if (t !== undefined) return play("KUNDLI", `thief (casual): read ${name(t)}`, t);
-  }
-  // PLAY THE PAIR YOU HOLD — a thief plays like everyone else (blending in). Not Kundli (it shows my role back) and not
-  // Teer Kaman (naming village roles out loud gives me away), unless the rules above found a reason.
-  if (can("HERA_PHERI")) { const t = best(r, withCards.filter((x) => !ally(x)), (x) => sc(x)); if (t !== undefined) return play("HERA_PHERI", `thief: steal from ${name(t)} — the table's suspect`, t); }
-  if (can("FAISLA")) return play("FAISLA", "thief: call a vote — blend in");
-  if (can("BATWARA")) return play("BATWARA", "thief: shake the table — blend in");
-  return pass("thief: no pair I can play safely");
 }
 
 // ------------------------------------------------------------------ DAL BADAL (thief)

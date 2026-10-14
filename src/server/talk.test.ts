@@ -5,8 +5,9 @@ import { start } from "@/engine/engine";
 import type { GameState } from "@/engine/types";
 import { SKILLS, type Skill } from "./belief";
 import { personalised, type Personality } from "./personality";
-import { botReactions } from "./reactions";
-import { ledger } from "./reason";
+import { botReactions, playsDoubleAgent, tieSpill } from "./reactions";
+import { THIEF_ROLES } from "@/engine/setup";
+import { ledger, partnersOf } from "./reason";
 
 const game = (): GameState => start(["Asha", "Raju", "Munna", "Pappu", "Chintu", "Shyam", "Babu", "Golu"], 4242);
 const push = (s: GameState, type: string, to: "all" | number[], data: Record<string, unknown>, msg = "") => {
@@ -49,7 +50,8 @@ describe("bot talk", () => {
   it("someone tells a bot their role privately: it answers with its own", () => {
     const s = game();
     const v = s.players.find((p) => p.side === "V" && p.seat !== 0)!.seat;
-    botReactions(s, push(s, "claim", [v], { seat: 0, kind: "self", target: 0, role: s.players[0].role, side: s.players[0].side, heard: true }), skills("open"), () => 0.5);
+    const village = s.rolesInPlay.find((r) => s.players.find((p) => p.role === r)?.side === "V")!;
+    botReactions(s, push(s, "claim", [v], { seat: 0, kind: "self", target: 0, role: village, side: "V", heard: true }), skills("open"), () => 0.5);
     expect(said(s, v, 0)[0]?.data).toMatchObject({ kind: "self" });
   });
 
@@ -62,7 +64,9 @@ describe("bot talk", () => {
     // every other bot now knows: claiming the owner's role, then being contradicted
     const third = s.players.find((p) => p.seat !== 0 && p.seat !== owner.seat)!.seat;
     const l = ledger(s, third, SKILLS.average);
-    expect(l.score.get(0)!).toBeGreaterThan(l.score.get(owner.seat)!); // the first claimer is the likelier liar
+    // (designer 2026-10-14) two claims of one role: both are suspect — the LATER claimer more
+    expect(l.score.get(0)!).toBeGreaterThan(0);
+    expect(l.why.get(owner.seat)!.some((w) => /claimed .* after/.test(w))).toBe(true);
   });
 
   it("claiming MY role is a certain lie to me", () => {
@@ -86,5 +90,67 @@ describe("bot talk", () => {
     // and not again in the same round
     botReactions(s, push(s, "faisla", "all", { seat: 1 }), skills("open"), () => 0.5);
     expect(s.events.filter((e) => e.type === "whisper_private" && e.data?.ask === true)).toHaveLength(7);
+  });
+});
+
+describe("the handshake and the tie moment (designer 2026-10-14)", () => {
+  /** seat a reads x (the table sees the Kundli), then names x with a thief role out loud */
+  const out = (s: GameState, a: number, x: number, role: string, sk: (x: number) => Skill | null) => {
+    push(s, "kundli", "all", { seat: a, target: x });
+    botReactions(s, push(s, "claim", "all", { seat: a, kind: "kundli", target: x, role, side: "T" }), sk, () => 0.5);
+  };
+  // bot seats only (seat 0 is the person at these test tables)
+  const thieves = (s: GameState) => s.players.filter((p) => p.side === "T" && p.seat !== 0).map((p) => p.seat);
+  const villagers = (s: GameState) => s.players.filter((p) => p.side === "V" && p.seat !== 0).map((p) => p.seat);
+
+  it("an outed thief: its partner reaches out with its REAL role, and the outed thief tells it about the Stone — partners from then on", () => {
+    const s = game();
+    const [x, t] = thieves(s), accuser = villagers(s).find((v) => v !== 0)!;
+    out(s, accuser, x, s.players[x].role, skills("open"));
+    const hello = said(s, t, x).find((e) => e.data?.handshake);
+    expect(hello?.data).toMatchObject({ role: s.players[t].role, side: "T" });
+    const reply = said(s, x, t).find((e) => e.data?.handshake);
+    expect(reply?.data).toMatchObject({ believe: true, role: s.players[x].role });
+    expect(partnersOf(s, x, SKILLS.average).has(t)).toBe(true);
+    expect(partnersOf(s, t, SKILLS.average).has(x)).toBe(true);
+  });
+
+  it("a villager outed wrongly: a thief reaching out has given itself away — an average villager says so out loud", () => {
+    const s = game();
+    const [t] = thieves(s), [v, accuser] = villagers(s).filter((x) => x !== 0);
+    out(s, accuser, v, s.rolesInPlay.find((r) => THIEF_ROLES.includes(r) && r !== s.players[t].role)!, skills("open"));
+    expect(s.events.some((e) => e.type === "claim" && e.to === "all" && e.data?.seat === v && e.data?.target === t && e.data?.told === true)).toBe(true);
+  });
+
+  it("a SHARP villager plays double agent: it poses as a thief to an outed thief, which spills where the Stone is", () => {
+    const s = game();
+    const [x] = thieves(s), [agent, accuser] = villagers(s).filter((v) => v !== 0);
+    const sk = (y: number) => (y === 0 ? null : y === agent ? personalised(SKILLS.sharp, "quiet") : personalised(SKILLS.average, "open"));
+    out(s, accuser, x, s.players[x].role, sk);
+    const pose = said(s, agent, x).find((e) => e.data?.handshake);
+    expect(pose?.data?.side).toBe("T");
+    expect(pose?.data?.role).not.toBe(s.players[x].role);
+    expect(said(s, x, agent).some((e) => e.data?.believe === true)).toBe(true);
+  });
+
+  it("double agents by personality: sharp Quiet always, sharp Detective about its top suspect, Hothead and Open Book never", () => {
+    const s = game();
+    const [x] = thieves(s), [v] = villagers(s);
+    expect(playsDoubleAgent(s, v, personalised(SKILLS.sharp, "quiet"), x)).toBe(true);
+    expect(playsDoubleAgent(s, v, personalised(SKILLS.average, "quiet"), x)).toBe(false);
+    expect(playsDoubleAgent(s, v, personalised(SKILLS.sharp, "hothead"), x)).toBe(false);
+    expect(playsDoubleAgent(s, v, personalised(SKILLS.sharp, "open"), x)).toBe(false);
+    expect(playsDoubleAgent(s, v, personalised(SKILLS.sharp, "detective"), x)).toBe(false); // nothing against x yet
+    push(s, "claim", "all", { seat: villagers(s)[1], kind: "accuse", target: x, role: null, side: "T" });
+    expect(playsDoubleAgent(s, v, personalised(SKILLS.sharp, "detective"), x)).toBe(true);
+  });
+
+  it("a tied vote: a villager a tied player confided in reads the confession out; the poser gets punished the same way", () => {
+    const s = game();
+    const [t] = thieves(s), [v, w] = villagers(s).filter((x) => x !== 0);
+    push(s, "whisper_private", [t, v], { seat: t, to: v, kind: "self", target: t, role: s.players[t].role, side: "T", handshake: true });
+    s.phase = { kind: "vote", reason: "faisla", caller: w, voters: [t, v, w], ballots: { [v]: t, [t]: w }, debate: false, ready: [] };
+    tieSpill(s, skills("open"), () => 0.5);
+    expect(s.events.some((e) => e.type === "claim" && e.data?.seat === v && e.data?.target === t && e.data?.told === true)).toBe(true);
   });
 });
