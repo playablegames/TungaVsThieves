@@ -1,6 +1,6 @@
 // Redaction: what one seat may see, and what everyone may see. Nothing else ever leaves the server.
 import type { Card, GameEvent, GameState, Side } from "./types";
-import { waitingOn } from "./engine";
+import { canDalBadalOutOfTurn, waitingOn } from "./engine";
 import { decisionFor, type Decision } from "./decisions";
 
 export interface PublicPlayer {
@@ -38,6 +38,8 @@ export interface PublicView {
 export interface PlayerView extends PublicView {
   me: { seat: number; name: string; role: string; side: Side; alive: boolean; votes: number; hand: Card[] };
   decision: Decision;
+  /** (designer 2026-10-14) a thief holding Dal Badal may use it right now, out of turn */
+  dalBadalNow?: boolean;
   /** (designer 2026-10-14, reversing 2026-10-12) NEVER SENT any more: a player who is out stays IN the game — they talk,
    *  accuse and bluff like anyone — so they must not see a single secret. Kept in the type for old phones. */
   spectate?: { seat: number; role: string; side: Side; hand: Card[] }[];
@@ -92,5 +94,6 @@ export function viewFor(s: GameState, seat: number): PlayerView {
     events: s.phase.kind === "over" ? s.events.filter((e) => !(Array.isArray(e.to) && e.to.length === 0)) : s.events.filter((e) => visibleTo(e, seat)),
     me: { seat, name: me.name, role: me.role, side: me.side, alive: me.alive, votes: me.votes, hand: [...me.hand] },
     decision: decisionFor(s, seat),
+    ...(canDalBadalOutOfTurn(s, seat) ? { dalBadalNow: true } : {}),
   };
 }

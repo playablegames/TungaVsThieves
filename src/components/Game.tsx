@@ -17,7 +17,7 @@ import type { PlayerView, PublicPlayer } from "@/engine/view";
 import type { ClientState } from "@/server/game";
 import { useStage } from "@/lib/stage";
 import { Stage } from "./Stage";
-import { Decide } from "./Decide";
+import { DalBadalNow, Decide } from "./Decide";
 import { HandRow } from "./Hand";
 import { CARD_BACK, CardIcon, roleArt } from "./CardIcon";
 import { Eject, thievesRemaining } from "./Eject";
@@ -28,7 +28,7 @@ import { narrate, narratorOn, setNarrator } from "@/lib/narrator";
 import { REACTIONS, ThrowQueue, reactionText, type Throw } from "@/lib/reactions";
 import { setPtt, setTalking, usePtt } from "@/lib/ptt";
 import { RoleReveal, revealSeen } from "./RoleReveal";
-import { TimerRing } from "./ui";
+import { TimerRing, YourClock } from "./ui";
 import { useVoice } from "@/lib/voice";
 import { MessageSheet, VoiceNoteSheet, WhisperBubble } from "./Whisper";
 import { useBotSpeech } from "@/lib/botspeech";
@@ -537,8 +537,10 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
     return () => { document.title = was; };
   }, [myMove]);
 
-  if (s.status === "over") return (<><Stage stage={stage} skip={stage.skip} names={v.players.map((p) => p.name)} /><Final v={v} clips={voice.clips ?? []} host={s.you.host} hostName={(s.view?.players[s.host]?.name ?? "the host").replace(/\s*🤖$/, "")}
-    onRematch={() => api.rematch(code, token)} /></>);
+  // (designer 2026-10-14: "multiple screens pop up after the end screen is launched") the end screen stands alone —
+  // whatever moments were still queued are dropped
+  if (s.status === "over") return (<Final v={v} host={s.you.host} hostName={(s.view?.players[s.host]?.name ?? "the host").replace(/\s*🤖$/, "")}
+    onRematch={() => api.rematch(code, token)} />);
 
   const living = v.players.filter((p) => p.alive);
   const ejected = beat?.type === "eliminated" && beat.target !== undefined ? v.players[beat.target] : null;
@@ -588,7 +590,7 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
       <StreamerBadge v={v} />
       {!solo && <TalkButton up={Boolean(myMove && myMove !== "debate")} />}
       {/* the coach (a guided first game) or a first-time tip sits INSIDE the tray, so the cards never cover it */}
-      <Tray v={v} act={act} live={live} waitForExit={myExitPending} ready={() => act({ type: "ready" })} banner={coach
+      <Tray v={v} act={act} live={live} waitForExit={myExitPending} ready={() => act({ type: "ready" })} deadline={s.deadline} now={now} banner={coach
         ? <Coach key={coach.id} text={coach.text} onNext={() => setCoachSeen((xs) => [...xs, coach.id])} onSkip={() => setCoachOff(true)} />
         // (designer 2026-10-13: "remove this — everything has to be nudges") no text tips: the thing to tap glows green
         // (designer 2026-10-14) no Defend panel: the accused answers like anyone — tap the accuser to message them or
@@ -929,13 +931,15 @@ function Seat({ p, me, size, face, got, tag, spot, voted, picked, speaking, micO
 /** The framed panel in the middle: what just happened, whose move it is, and the vote when one is open. */
 /** The ballot (designer 2026-10-06: an Among Us-style vote grid): while ballots are open your cards make way for one
  *  big tile per living player with their live count. Tap to vote; tap another to change — until the clock runs out. */
-function Ballot({ v, mine, live, act }: { v: PlayerView; mine: number | null | undefined; live: Record<string, number>; act: (a: Action) => void }) {
+function Ballot({ v, mine, live, act, clock = null }: { v: PlayerView; mine: number | null | undefined; live: Record<string, number>; act: (a: Action) => void; clock?: React.ReactNode }) {
   const ini = initialsOf(v.players.map((p) => p.name));
   const living = v.players.filter((p) => p.alive);
   const cast = (target: number | null) => { if (target !== mine) act({ type: "vote", target }); };
   return (
     <section className="sticky bottom-0 z-20 flex flex-col gap-2 rounded-t-3xl border-t border-brass/30 bg-ember px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-14px_30px_-6px_rgba(0,0,0,.75)]">
+      {clock}
       <h2 className="text-center font-display text-[24px] font-bold leading-tight text-stock">Who goes out?</h2>
+      {v.dalBadalNow && <DalBadalNow v={v} act={act} />}
       <p className="-mt-1 text-center text-[12px] text-stock/60">{mine === undefined ? "Tap a player to vote." : "Tap another player to change your vote."}</p>
       <ul className="grid max-h-[38dvh] grid-cols-3 gap-2 overflow-y-auto pt-2" role="radiogroup" aria-label="Your vote">
         {living.map((p) => {
@@ -1100,14 +1104,19 @@ function Divider() {
 }
 
 /** "Your Cards": the tiles, and — when it's your move — the pair buttons or the next step. */
-function Tray({ v, act, live, banner = null, waitForExit = false, ready }: { v: PlayerView; act: (a: Action) => void; live: Record<string, number> | null; banner?: React.ReactNode; waitForExit?: boolean; ready?: () => void }) {
+function Tray({ v, act, live, banner = null, waitForExit = false, ready, deadline = null, now = Date.now }: { v: PlayerView; act: (a: Action) => void; live: Record<string, number> | null; banner?: React.ReactNode; waitForExit?: boolean; ready?: () => void; deadline?: number | null; now?: () => number }) {
   const d = v.decision;
+  // (designer 2026-10-14) YOUR CLOCK — only while the clock runs on you (not the open debate: that clock is everyone's)
+  const myClock = d && d.kind !== "debate"
+    ? <YourClock deadline={deadline} now={now} label={d.kind === "vote" ? "Your vote" : d.kind === "turn" || d.kind === "pass_on" ? "Your turn" : "Your move"} />
+    : null;
   const exitFirst = waitForExit && (d?.kind === "gift" || d?.kind === "handoff" || d?.kind === "dal_badal_out");
-  if (d?.kind === "vote") return <>{banner && <div className="relative z-20">{banner}</div>}<Ballot v={v} mine={d.mine} live={live ?? {}} act={act} /></>;
+  if (d?.kind === "vote") return <>{banner && <div className="relative z-20">{banner}</div>}<Ballot v={v} mine={d.mine} live={live ?? {}} act={act} clock={myClock} /></>;
   const inTray = d && d.kind !== "debate";
   return (
     <section className="sticky bottom-0 z-20 flex flex-col gap-2 rounded-t-3xl border-t border-brass/30 bg-ember px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-14px_30px_-6px_rgba(0,0,0,.75)]">
       {banner && <div className="-mx-3">{banner}</div>}
+      {myClock}
       {/* (2026-10-12) on your move the top line already says "Your turn" — the heading makes way so the cards and the
           buttons sit higher on a small phone */}
       {!v.me.alive && (
@@ -1123,6 +1132,8 @@ function Tray({ v, act, live, banner = null, waitForExit = false, ready }: { v: 
             : <HandRow cards={v.me.hand} />}
           {/* (2026-10-12) the mandatory debate: a thief holding Dal Badal may use it here */}
           {d?.kind === "debate" && d.dalBadal && <Decide key={v.phase} v={v} act={act} />}
+          {/* (designer 2026-10-14) Dal Badal anytime — while anyone else is deciding */}
+          {!d && v.dalBadalNow && <DalBadalNow key={v.phase} v={v} act={act} />}
           {/* (2026-10-14) READY lives in the tray: a big moment playing in the centre used to hide it */}
           {d?.kind === "debate" && ready && (
             <button type="button" onClick={ready} className="nudge btn-primary min-h-12 w-full rounded-full border-2 border-brass/70 px-3 font-[family-name:var(--font-engraved)] text-[14px] font-bold uppercase tracking-wide text-stock">
@@ -1135,27 +1146,16 @@ function Tray({ v, act, live, banner = null, waitForExit = false, ready }: { v: 
 }
 
 
-function Story({ v }: { v: PlayerView }) {
-  const items = [...v.events].reverse().filter((e) => !["analytics_deal", "analytics_turn"].includes(e.type)).slice(0, 120);
-  return (
-    <ul className="flex max-h-[55dvh] flex-col gap-1.5 overflow-y-auto text-[14px]">
-      {items.map((e) => (
-        <li key={e.n} className={e.to === "all" ? "text-ink-2" : "rounded-lg bg-jade/10 px-2 py-1 text-jade-soft"}>
-          {e.to === "all" ? "" : "Private · "}{e.msg}
-        </li>
-      ))}
-    </ul>
-  );
-}
 
 // ---------------------------------------------------------------- the end: every role flips, the whole story opens
 /** Game over (2026-10-07): the verdict, then the whole table turns its role cards over, round the same ring, with
  *  the two Stones in the middle saying where they ended up — the question the whole game was about. */
-function Final({ v, clips = [], host = false, hostName = "the host", onRematch }: {
-  v: PlayerView; clips?: { label: string; url: string }[]; host?: boolean; hostName?: string; onRematch?: () => Promise<unknown>;
+function Final({ v, host = false, hostName = "the host", onRematch }: {
+  v: PlayerView; host?: boolean; hostName?: string; onRematch?: () => Promise<unknown>;
 }) {
   const [again, setAgain] = useState<"idle" | "busy" | "error">("idle");
-  const [story, setStory] = useState(false);
+  const [actions, setActions] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setActions(true), 5000); return () => clearTimeout(t); }, []);
   const reveal = v.finalReveal!;
   const village = v.winner === "V";
   const mine = reveal.find((r) => r.seat === v.me.seat)!;
@@ -1173,24 +1173,8 @@ function Final({ v, clips = [], host = false, hostName = "the host", onRematch }
     const r = reveal.find((x) => x.hand.includes(c) && v.players[x.seat].alive);
     return r ? { who: name(r.seat), side: r.side as Side, role: r.role } : { who: "The village", side: "V" as Side, role: null };
   };
-  // WHY (2026-10-09 — Among Us players ask the end screen for the reason, not just the result): Thieves win only if a
-  // living thief holds a Stone
-  const STONES: Card[] = ["STONE_1", "STONE_2"];
-  const held = STONES.map((c) => ({ c, ...stoneAt(c) }));
   const plainName = (w: string) => w.replace(/\s*🤖$/, "");
   const swaps = dalBadalHistory(v);
-  /** "Chirag was Police (Tunga) until Circuit's Dal Badal made them Lootera" — the last swap that changed this seat's side */
-  const turned = (who: string) => {
-    const seat = v.players.findIndex((p) => p.name === who);
-    for (const d of [...swaps].reverse()) {
-      const w = d.swaps.find((x) => x.seat === seat && x.from.side !== x.to.side);
-      if (w) return `${plainName(who)} was ${w.from.role} (${w.from.side === "V" ? "Tunga" : "Thief"}) until ${plainName(name(d.actor))}'s Dal Badal made them ${w.to.role}`;
-    }
-    return "";
-  };
-  const why = !village
-    ? held.filter((h) => h.side === "T").map((h) => { const t = turned(h.who); return `${plainName(h.who)}${h.role ? ` (${h.role})` : ""} kept the ${STONE_NAME[h.c]}${t ? `. ${t}` : ""}`; }).join(" · ")
-    : held.every((h) => h.role === null) ? "Both Stones ended with the village." : `No thief kept a Stone.${held.map((h) => turned(h.who)).filter(Boolean).map((t) => ` ${t}.`).join("")}`;
   const firstRole = (seat: number) => {
     const r = v.events.find((e) => e.type === "role" && !e.data?.swapped && Array.isArray(e.to) && e.to[0] === seat);
     return r ? String(r.data?.role) : null;
@@ -1213,7 +1197,10 @@ function Final({ v, clips = [], host = false, hostName = "the host", onRematch }
         <h1 className={`mt-1 font-display text-[clamp(34px,11vw,46px)] font-bold uppercase leading-none tracking-wide ${village ? "text-[#f3c66b]" : "text-crimson-soft"}`}>
           {village ? "Tunga wins" : "Thieves win"}
         </h1>
-        <p className="mt-2 font-display text-[16px] text-stock/90">{why}</p>
+        {/* (designer 2026-10-14) one line each way — no other explanation */}
+        <p className="mt-2 font-display text-[16px] italic text-stock/90">{village
+          ? "Thieves couldn't find the stone & the villagers protected their own."
+          : "The village turned on their own & the thief got away with the stone."}</p>
         <p className={`mt-1 font-display text-[15px] ${won ? "text-jade-soft" : "text-stock/70"}`}>{won ? "You won" : "You lost"} — you were {mine.role}</p>
       </header>
 
@@ -1295,22 +1282,9 @@ function Final({ v, clips = [], host = false, hostName = "the host", onRematch }
         </div>
       )}
 
-      {/* the best voice moments of the game, as this phone heard them */}
-      {clips.length > 0 && (
-        <div className="mt-3 rounded-2xl border border-brass/40 bg-black/30 p-3">
-          <p className="mb-2 text-center font-[family-name:var(--font-engraved)] text-[11px] font-semibold uppercase tracking-[0.2em] text-brass">Highlights</p>
-          <ul className="flex flex-col gap-1.5">
-            {clips.map((c) => (
-              <li key={c.url}>
-                <button type="button" onClick={() => void new Audio(c.url).play().catch(() => {})}
-                  className="flex min-h-10 w-full items-center gap-2 rounded-xl border border-brass/30 px-3 text-left text-[14px] text-stock active:translate-y-px">▶ {c.label}</button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
       {won && <Confetti />}
-      <div className="mt-3 grid grid-cols-2 gap-2">
+      {/* (designer 2026-10-14) the buttons arrive once the end screen has had its moment */}
+      {actions && <div className="stage-in mt-3 grid grid-cols-2 gap-2">
         <ShareResult won={won} village={village} role={mine.role} thief={mine.side === "T"} caught={reveal.filter((r) => r.side === "T" && !v.players[r.seat].alive).length} />
         {host && onRematch ? (
           // PLAY AGAIN keeps the table: same group, back to the lobby (everyone's phone follows)
@@ -1321,12 +1295,8 @@ function Final({ v, clips = [], host = false, hostName = "the host", onRematch }
         ) : (
           <Link href="/" className={`${btn} inline-flex items-center justify-center border-brass/40 text-stock/80`}>Leave</Link>
         )}
-      </div>
-      {!host && <p className="mt-2 text-center text-[14px] text-stock/70">Waiting for {hostName} to start the next game…</p>}
-      <div className="mt-2 flex justify-center gap-6 text-[13px] text-stock/60">
-        <button type="button" onClick={() => setStory(true)} className="min-h-10 underline-offset-2 hover:underline">The whole story</button>
-      </div>
-      {story && <Sheet title="The whole story — every secret" onClose={() => setStory(false)}><Story v={v} /></Sheet>}
+      </div>}
+      {actions && !host && <p className="mt-2 text-center text-[14px] text-stock/70">Waiting for {hostName} to start the next game…</p>}
     </section>
   );
 }

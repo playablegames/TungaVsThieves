@@ -88,6 +88,16 @@ export const canDalBadal = (s: GameState, seat: number) =>
     || (s.phase.kind === "react" && s.phase.seat === seat))
   && Boolean(P(s, seat).alive) && P(s, seat).side === "T" && P(s, seat).hand.includes("DAL_BADAL") && living(s).length >= 3;
 
+/** DAL BADAL OUT OF TURN (designer 2026-10-14: "Dal Badal should be played anytime, out of turn"): with Dal Badal
+ *  anytime on (state.dbShield), a thief holding it may use it while ANYONE ELSE is deciding — their turn, their pass, or
+ *  while the ballots are open. Not in the middle of someone else's Bhukamp pick, an exit, or another shuffle. */
+export const canDalBadalOutOfTurn = (s: GameState, seat: number) => {
+  const ph = s.phase;
+  if (!s.dbShield || waitingOn(s).includes(seat)) return false;
+  const open = ((ph.kind === "turn" || ph.kind === "pass_on") && ph.seat !== seat) || (ph.kind === "vote" && !ph.debate);
+  return open && Boolean(P(s, seat).alive) && P(s, seat).side === "T" && P(s, seat).hand.includes("DAL_BADAL") && living(s).length >= 3;
+};
+
 /** how many other living players a Dal Badal takes in: 2, fewer only if fewer are left */
 export const dalBadalPick = (s: GameState, seat: number) => Math.min(2, living(s).filter((p) => p.seat !== seat).length);
 
@@ -251,6 +261,7 @@ export function apply(prev: GameState, seat: number, action: Action): GameState 
   // events are append-only and never mutated, so share them instead of deep-copying a growing log
   const { events, ...rest } = prev;
   const s: GameState = { ...structuredClone(rest), events: [...events] };
+  if (action.type === "dal_badal" && canDalBadalOutOfTurn(s, seat)) return doDalBadal(s, seat, action.seats, []);
   if (!waitingOn(s).includes(seat) && !(action.type === "vote" && canRevote(s, seat))) throw new RuleError("It is not your decision right now");
   const ph = s.phase;
 
@@ -461,7 +472,8 @@ function finishReact(s: GameState, ph: Extract<GameState["phase"], { kind: "reac
 function doDalBadal(s: GameState, seat: number, chosen: number[], pass: Card[]): GameState {
   const ph = s.phase;
   const votedOut = ph.kind === "elim" && ph.step === "dal_badal" && ph.seat === seat;
-  if (!votedOut && !canDalBadal(s, seat)) throw new RuleError("Only a thief holding Dal Badal can use it — on their turn, or in the mandatory vote");
+  const outOfTurn = canDalBadalOutOfTurn(s, seat);
+  if (!votedOut && !outOfTurn && !canDalBadal(s, seat)) throw new RuleError("Only a thief holding Dal Badal can use it — on their turn, or in the mandatory vote");
   if (ph.kind === "react" && ph.on.kind === "faisla_out" && living(s).length < 3) throw new RuleError("Not enough players left to shuffle with");
   const p = P(s, seat);
   const seats = [...new Set(chosen)];
@@ -470,14 +482,14 @@ function doDalBadal(s: GameState, seat: number, chosen: number[], pass: Card[]):
   const n = s.players.length;
   const pickers = [seat, ...seats].sort((x, y) => ((x - seat + n) % n) - ((y - seat + n) % n));
   const pool = shuffle(s, pickers.map((x) => ({ role: P(s, x).role, side: P(s, x).side })));
-  const onTurn = ph.kind === "turn";
+  const onTurn = ph.kind === "turn" && ph.seat === seat;
   if (!onTurn && pass?.length) throw new RuleError("In the mandatory vote Dal Badal passes nothing");
   removeCards(p.hand, ["DAL_BADAL"]); // Dal Badal is out of the game — never reshuffled
   // (2026-10-14) on a turn: the shuffle first, then pass 3 and draw back up to 2 (`pass` is only a bot's plan)
   if (onTurn) s.passDue = { seat, held: [], ...(pass?.length ? { plan: [...pass] } : {}) };
   emit(s, "dal_badal", "all",
     `DAL BADAL — ${p.name} shows ${p.role} (Thief) and shuffles roles with ${seats.map((x) => P(s, x).name).join(", ").replace(/, ([^,]*)$/, " and $1")}. Each picks one back, face down.`,
-    { seat, role: p.role, seats: pickers, when: onTurn ? "turn" : votedOut || (ph.kind === "react" && ph.on.kind === "faisla_out") ? "voted_out" : ph.kind === "react" ? (ph.on.kind === "tk" ? "shot_at" : "read") : "debate" });
+    { seat, role: p.role, seats: pickers, when: onTurn ? "turn" : outOfTurn ? "anytime" : votedOut || (ph.kind === "react" && ph.on.kind === "faisla_out") ? "voted_out" : ph.kind === "react" ? (ph.on.kind === "tk" ? "shot_at" : "read") : "debate" });
   // (2026-10-12) in the mandatory vote the game goes back where it was once everyone has picked: the debate goes on,
   // or the thief who was voted out carries on going out — with the role they picked (sides count after the shuffle)
   const resume = onTurn ? undefined : votedOut ? { kind: "elim" as const, seat, step: "dying" as const } : ph;
@@ -499,7 +511,7 @@ function doDalPick(s: GameState, a: Action): GameState {
   if (ph.resume) {
     // the mandatory vote: no end of turn. In the debate the thief draws back up to 2 (designer 2026-10-12:
     // everyone holds 2); a thief being voted out draws nothing — their hand is about to go.
-    const debate = ph.resume.kind === "vote" || ph.resume.kind === "react";
+    const debate = ph.resume.kind !== "elim"; // (2026-10-14) a debate, a shield, or out of turn: draw back up to 2
     if (debate) P(s, ph.actor).hand.push(...draw(s, Math.max(0, 2 - P(s, ph.actor).hand.length)));
     emit(s, "dal_badal_done", "all", debate ? `Dal Badal is done. ${P(s, ph.actor).name} draws back to 2.` : "Dal Badal is done.", { seat: ph.actor, inVote: true });
     s.phase = ph.resume;
@@ -615,7 +627,9 @@ function runElims(s: GameState) {
         { seat: p.seat, killer: job.killer });
       // (designer 2026-10-12) a thief the MANDATORY VOTE puts out may still use Dal Badal, before the reveal — the
       // sides count after the shuffle, so this comes before "every thief is out"
-      if (s.after?.kind === "finalReveal" && p.side === "T" && p.hand.includes("DAL_BADAL") && living(s).length >= 2) {
+      // (designer 2026-10-14: "not after the final mandatory vote has been cast, else there will be no end") — once the
+      // mandatory vote is decided, no more Dal Badal: the reveal follows. (The step stays only for games saved before.)
+      if (false && s.after?.kind === "finalReveal" && p.side === "T" && p.hand.includes("DAL_BADAL") && living(s).length >= 2) {
         s.phase = { kind: "elim", seat: p.seat, step: "dal_badal" };
         return;
       }

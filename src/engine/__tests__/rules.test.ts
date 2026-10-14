@@ -356,6 +356,25 @@ describe("DAL BADAL (2026-10-09) — a thief's whole turn", () => {
   });
 });
 
+describe("DAL BADAL ANYTIME (designer 2026-10-14: out of turn)", () => {
+  it("a thief holding it uses it on someone else's turn — the shuffle, then play goes back exactly where it was", () => {
+    const s = rig(6, { sides: ["V", "V", "T", "V", "T", "V"], hands: [[F, F, T, K, H], [B], [DB, K], [T], [K], [B]] });
+    expect(() => apply(s, 2, { type: "dal_badal", seats: [3, 5], pass: [] })).toThrow(RuleError); // the rule is off
+    const on = { ...s, dbShield: true };
+    expect(viewFor(on, 2).dalBadalNow).toBe(true);
+    expect(viewFor(on, 3).dalBadalNow).toBeUndefined(); // a villager can't
+    let n = apply(on, 2, { type: "dal_badal", seats: [3, 5], pass: [] });
+    expect(n.phase).toMatchObject({ kind: "dal_badal", actor: 2 });
+    expect(n.events.find((e) => e.type === "dal_badal")!.data!.when).toBe("anytime");
+    n = apply(n, 2, { type: "dal_pick", index: 0 });
+    n = apply(n, 3, { type: "dal_pick", index: 0 });
+    expect(n.phase).toEqual({ kind: "turn", seat: 0 }); // seat 0's turn goes on
+    expect(n.players[2].hand).toHaveLength(2); // drew back up to 2
+    expect(n.players[0].hand).toEqual([F, F, T, K, H]); // nothing changed for the player whose turn it was
+    expect(totalCards(n)).toBe(totalCards(s) - 1);
+  });
+});
+
 describe("THE END — Surrender, Mandatory Vote, then everyone reveals", () => {
   function toFinal(s: GameState): GameState {
     let n = s;
@@ -463,28 +482,32 @@ describe("DAL BADAL IN THE MANDATORY VOTE (2026-10-12) — during the debate, or
     expect(n.players[thief].hand).toHaveLength(hand - 1); // the card left, nothing drawn
     expect(n.players.filter((p) => p.side === "T")).toHaveLength(2); // the thief count never changes
   });
-  it("a thief the mandatory vote puts out may use it before the reveal — sides count AFTER the shuffle; or keep it", () => {
-    for (const use of [true, false]) {
-      let n = toFinal(start(NAMES(6), 33));
-      const thief = n.players.find((p) => p.alive && p.side === "T")!.seat;
-      giveDB(n, thief);
-      for (const p of n.players.filter((x) => x.alive)) n = apply(n, p.seat, { type: "ready" });
-      for (const p of n.players.filter((x) => x.alive)) n = apply(n, p.seat, { type: "vote", target: thief });
-      expect(n.phase).toMatchObject({ kind: "elim", seat: thief, step: "dal_badal" });
-      expect(decisionFor(n, thief)).toMatchObject({ kind: "dal_badal_out" });
-      const two = n.players.filter((p) => p.alive).slice(0, 2).map((p) => p.seat);
-      n = apply(n, thief, { type: "dal_badal", seats: use ? two : [], pass: [] });
-      if (use) {
-        expect(n.events.some((e) => e.type === "dal_badal" && e.data?.when === "voted_out")).toBe(true);
-        n = pickAll(n);
-      } else expect(n.events.some((e) => e.type === "dal_badal")).toBe(false);
-      if (n.phase.kind === "elim") n = apply(n, thief, { type: "gift", target: null });
-      expect(n.phase.kind).toBe("over");
-      // the player who went out counts with the role card they ended up holding
-      const out = n.players[thief];
-      // (Stones go to the thieves only from a VILLAGER voted out)
-      if (n.events.some((e) => e.type === "to_thieves")) expect(out.side).toBe("V");
-    }
+  it("(designer 2026-10-14) once the mandatory vote is decided there is no more Dal Badal — the thief goes out, the game ends", () => {
+    let n = toFinal(start(NAMES(6), 33));
+    const thief = n.players.find((p) => p.alive && p.side === "T")!.seat;
+    giveDB(n, thief);
+    for (const p of n.players.filter((x) => x.alive)) n = apply(n, p.seat, { type: "ready" });
+    for (const p of n.players.filter((x) => x.alive)) n = apply(n, p.seat, { type: "vote", target: thief });
+    expect(n.phase).toMatchObject({ kind: "elim", seat: thief, step: "dying" });
+    n = apply(n, thief, { type: "gift", target: null });
+    expect(n.phase.kind).toBe("over");
+    expect(n.events.some((e) => e.type === "dal_badal")).toBe(false);
+  });
+  it("(designer 2026-10-14) while the mandatory ballots are still open, a thief may use it — Dal Badal anytime", () => {
+    let n = toFinal(start(NAMES(6), 33));
+    n.dbShield = true; n.voteUntilClock = true;
+    const thief = n.players.find((p) => p.alive && p.side === "T")!.seat;
+    giveDB(n, thief);
+    for (const p of n.players.filter((x) => x.alive)) n = apply(n, p.seat, { type: "ready" });
+    for (const p of n.players.filter((x) => x.alive)) n = apply(n, p.seat, { type: "vote", target: thief });
+    expect(n.phase).toMatchObject({ kind: "vote", reason: "final", debate: false }); // the ballots are open until the clock
+    const two = n.players.filter((p) => p.alive && p.seat !== thief).slice(0, 2).map((p) => p.seat);
+    n = apply(n, thief, { type: "dal_badal", seats: two, pass: [] });
+    n = pickAll(n);
+    expect(n.phase).toMatchObject({ kind: "vote", reason: "final", debate: false }); // back to the open ballots
+    n = closeVote(n);
+    if (n.phase.kind === "elim") n = apply(n, (n.phase as { seat: number }).seat, { type: "gift", target: null });
+    expect(n.phase.kind).toBe("over");
   });
   it("not in a Faisla vote, and never for a villager", () => {
     const s = rig(6, { sides: ["T", "V", "V", "V", "T", "V"], hands: [[F, F, K, H, T], [DB], [F], [T], [K], [B]] });

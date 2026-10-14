@@ -76,6 +76,30 @@ export function TimerRing({ deadline, now, size = 40, brass = false }: { deadlin
   );
 }
 
+/** YOUR CLOCK (designer 2026-10-14: "a special timer to indicate it's your turn — the timer at the top is for the
+ *  entire game"): only while the clock runs on YOU — a labelled bar that drains, amber under 20 s, red and pulsing under 10 */
+export function YourClock({ deadline, now, label }: { deadline: number | null; now: () => number; label: string }) {
+  const [, force] = useState(0);
+  useEffect(() => { const t = setInterval(() => force((x) => x + 1), 1000); return () => clearInterval(t); }, []);
+  if (!deadline) return null;
+  const left = Math.max(0, deadline - now());
+  if (!FULL.has(deadline)) FULL.set(deadline, Math.max(left, 1));
+  const frac = Math.min(1, left / FULL.get(deadline)!);
+  const secs = Math.ceil(left / 1000);
+  const tone = secs <= 10 ? "bg-crimson" : secs <= 20 ? "bg-[#f0a32e]" : "bg-jade";
+  return (
+    <div role="timer" aria-label={`${label} — ${secs} seconds left`} className={`flex flex-col gap-1 ${secs <= 10 ? "animate-pulse" : ""}`}>
+      <div className="flex items-baseline justify-between px-1">
+        <span className="font-[family-name:var(--font-engraved)] text-[13px] font-bold uppercase tracking-[0.18em] text-stock">{label}</span>
+        <span className={`font-display text-[22px] font-bold tabular-nums ${secs <= 10 ? "text-crimson-soft" : secs <= 20 ? "text-[#f3c66b]" : "text-jade-soft"}`}>{secs}s</span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-black/40 ring-1 ring-brass/30" aria-hidden>
+        <div className={`h-full rounded-full ${tone}`} style={{ width: `${frac * 100}%`, transition: "width 1s linear" }} />
+      </div>
+    </div>
+  );
+}
+
 /** A bottom sheet over the table (talk, the story so far). */
 export function Sheet({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: React.ReactNode }) {
   if (!open) return null;

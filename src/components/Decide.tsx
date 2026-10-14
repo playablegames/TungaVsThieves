@@ -182,6 +182,9 @@ function BhukampTwo({ hand, left, right, act }: { hand: Card[]; left: string; ri
 }
 
 /** DAL BADAL in the mandatory vote (2026-10-12): during the debate a thief may use it — no cards passed, nothing drawn */
+/** (designer 2026-10-14) Dal Badal out of turn — the same two taps as in a debate */
+export function DalBadalNow({ v, act }: { v: PlayerView; act: (a: Action) => void }) { return <DebateDalBadal v={v} act={act} />; }
+
 function DebateDalBadal({ v, act }: { v: PlayerView; act: (a: Action) => void }) {
   const [open, setOpen] = useState(false);
   const [swap, setSwap] = useState<number[]>([]);

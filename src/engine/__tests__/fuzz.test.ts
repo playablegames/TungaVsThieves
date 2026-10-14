@@ -2,7 +2,7 @@
 // plus redaction checks on every player's view — since 2026-10-09 no role ever reaches the table before the end.
 // Zero violations required.
 import { describe, expect, it } from "vitest";
-import { apply, start, waitingOn } from "../engine";
+import { apply, canDalBadalOutOfTurn, start, waitingOn } from "../engine";
 import { randomAction, defaultAction } from "../decisions";
 import { isStone, type GameState } from "../types";
 import { viewFor } from "../view";
@@ -70,11 +70,21 @@ describe("fuzz: random legal games, every count 5-30", () => {
       for (let g = 0; g < GAMES_PER_COUNT; g++) {
         const r = mulberry(n * 100003 + g);
         let s = start(NAMES(n), n * 7919 + g);
+        // (2026-10-14) half the games play Dal Badal anytime — including a thief cutting in out of turn
+        if (g % 2) s = { ...s, dbShield: true };
         const thieves = s.players.filter((p) => p.side === "T").length;
         const roles = s.players.map((p) => p.role).sort().join();
         const activity = [0.2, 0.6, 0.95][g % 3];
         let steps = 0, firstPickupDone = false;
         while (s.phase.kind !== "over" && steps < 20000) {
+          const cutIn = s.players.find((p) => canDalBadalOutOfTurn(s, p.seat));
+          if (cutIn && r() < 0.05) {
+            const others = s.players.filter((p) => p.alive && p.seat !== cutIn.seat).map((p) => p.seat);
+            s = apply(s, cutIn.seat, { type: "dal_badal", seats: [others[0], others[others.length - 1]], pass: [] });
+            check(s, thieves, roles, true, bad);
+            steps++; actions++;
+            continue;
+          }
           const seat = waitingOn(s)[0];
           // occasionally a phone times out: the default must always be legal
           const a = r() < 0.1 ? defaultAction(s, seat) : randomAction(s, seat, r, activity);
