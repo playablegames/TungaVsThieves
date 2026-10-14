@@ -76,6 +76,9 @@ export function selfClaims(events: GameEvent[], me: number): { seat: number; rol
   return [...last.values()];
 }
 
+/** measured 2026-10-14 (scripts/_counterclaims.mts, 16,000 games): the share of counterclaims where the FIRST claimer lied */
+export const FIRST_CLAIMER_LIES = 0.641;
+
 export function ledger(s: GameState, seat: number, skill: Skill): Ledger {
   const v = viewFor(s, seat);
   const name = (x: number) => plain(s, x);
@@ -218,15 +221,16 @@ export function ledger(s: GameState, seat: number, skill: Skill): Ledger {
     if (blamed && !defended) add(b, 1, `blamed ${name(a)} back instead of defending`);
   }
   for (const [a, w] of selfLie) add(a, 1, w);
-  // a COUNTERCLAIM: two players say they're the same role — one of them is lying: the LATER claimer +1, the earlier +0.5
+  // a COUNTERCLAIM: two players say they're the same role — one of them is lying (who, more often: FIRST_CLAIMER_LIES)
   const byRole = new Map<string, { seat: number; n: number }[]>();
   for (const c of selfs) if (c.seat !== seat && !selfLie.has(c.seat) && c.side === "V") byRole.set(c.role, [...(byRole.get(c.role) ?? []), { seat: c.seat, n: c.n }]);
   for (const [role, xs] of byRole) if (xs.length >= 2) {
-    // (designer 2026-10-14, after 4,061 contested roles in bot games: the LATER claimer lied 64% of the time) the one who
-    // claimed it LAST is the likelier liar
-    const first = [...xs].sort((a, b) => b.n - a.n)[0].seat;
-    // one of the two lies — weaker than a word about what someone SAW (+1): the later claimer +1, the earlier +0.5
-    for (const x of xs) add(x.seat, x.seat === first ? 1 : 0.5, x.seat === first ? `claimed ${role} after ${xs.filter((y) => y.seat !== x.seat).map((y) => name(y.seat)).join(", ")} already had` : `claimed ${role} — ${name(first)} says it too, later`);
+    // WHO LIES IN A COUNTERCLAIM — measured, not guessed (designer 2026-10-14: "do whatever the data says"): 16,000 bot
+    // games, 72,179 contested roles, the FIRST claimer lied 64.1% of the time (a cover story told early; the real owner
+    // corrects it later). One of the two lies: 1.5 points of suspicion split by that share
+    const firstIn = [...xs].sort((a, b) => a.n - b.n)[0].seat;
+    for (const x of xs) add(x.seat, x.seat === firstIn ? +(1.5 * FIRST_CLAIMER_LIES).toFixed(2) : +(1.5 * (1 - FIRST_CLAIMER_LIES)).toFixed(2),
+      x.seat === firstIn ? `claimed ${role} first — ${xs.filter((y) => y.seat !== x.seat).map((y) => name(y.seat)).join(", ")} says the same` : `claimed ${role} after ${name(firstIn)}`);
   }
   // the open table, cross-checked: "Y is Teacher" (said by A) and "I'm Teacher" (said by Z) can't both be true — A or Z lies
   for (const e of claims) {
@@ -438,7 +442,7 @@ export function ruleTieBreak(s: GameState, seat: number, skill: Skill, leaders: 
 // ------------------------------------------------------------------ 3. TALKING
 export type RuleClaim = { kind: "kundli" | "accuse" | "was"; target: number; role: string | null; side: Side; why: string };
 
-export function ruleClaim(s: GameState, seat: number, skill: Skill, r: R): RuleClaim | null {
+export function ruleClaim(s: GameState, seat: number, skill: Skill): RuleClaim | null {
   const me = s.players[seat];
   if (!me.alive) return null;
   const v = viewFor(s, seat);

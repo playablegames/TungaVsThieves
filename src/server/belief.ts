@@ -571,7 +571,7 @@ export function thiefWord(s: GameState, seat: number, target: number, role: stri
  *  points at whoever the table already suspects. */
 export function botClaim(s: GameState, seat: number, seed: number, r: R, skill: Skill = DEFAULT_SKILL): ClaimData | null {
   const me = s.players[seat];
-  if (RULES) return ruleClaim(s, seat, skill, r); // a bot says what it saw — no dice on whether it speaks
+  if (RULES) return ruleClaim(s, seat, skill); // a bot says what it saw — no dice on whether it speaks
   if (!me.alive || r() > skill.claimRate) return null;
   const v = viewFor(s, seat);
   const said = new Set(v.events.filter((e) => e.type === "claim" && e.data?.seat === seat).map((e) => `${e.data?.kind}:${e.data?.target}`));
