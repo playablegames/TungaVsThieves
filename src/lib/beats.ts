@@ -125,7 +125,7 @@ function rawBeat(e: GameEvent, names: string[], history: GameEvent[]): Beat | nu
       return { ...base, target: actor, role: String(d?.role ?? ""), title: `${nm(actor)} was ${String(d?.role)}`, detail: d?.side === "T" ? "A thief. Only you know." : "A villager. Only you know.", tone: d?.side === "T" ? "relic" : "lethal", big: true, hold: BIG };
     case "dal_badal": {
       const others = ((d?.seats as number[]) ?? []).filter((x) => x !== actor).map((x) => nm(x));
-      const when = d?.when === "voted_out" ? " Voted out — before the reveal." : "";
+      const when = d?.when === "voted_out" ? " Voted out — before the reveal." : d?.when === "shot_at" ? " Shot at — before the arrow lands." : d?.when === "read" ? " Read — before the Kundli lands." : "";
       return { ...base, seats: (d?.seats as number[]) ?? [], title: `Dal Badal — ${nm(actor)} is ${String(d?.role)}!`, detail: `A thief. Role cards shuffled with ${others.join(" and ")} — each picks one back, face down.${when}`, tone: "lethal", big: true, hold: BIG };
     }
     case "dal_badal_done":

@@ -10,7 +10,9 @@ import { shuffle } from "./rng";
  *  About one thief in three; 13-30 follow that ratio (not measured). Rounds fixed at 3. */
 export const ROLE_TABLE: Record<number, [number, number, number]> = {
   // (designer 2026-10-14) 7 players back to 5 villagers + 2 thieves: with the rule-based bots 4+3 left the village 36%, 5+2 gives 60% (300 games)
-  5: [3, 2, 3], 6: [4, 2, 3], 7: [5, 2, 3], 8: [5, 3, 3], 9: [6, 3, 3], 10: [6, 4, 3], 11: [7, 4, 3], 12: [8, 4, 3], 13: [9, 4, 3], 14: [9, 5, 3], 15: [10, 5, 3], 16: [11, 5, 3], 17: [11, 6, 3], 18: [12, 6, 3], 19: [13, 6, 3], 20: [13, 7, 3], 21: [14, 7, 3], 22: [15, 7, 3], 23: [15, 8, 3], 24: [16, 8, 3], 25: [17, 8, 3], 26: [17, 9, 3], 27: [18, 9, 3], 28: [19, 9, 3], 29: [19, 10, 3], 30: [20, 10, 3],
+  // (designer 2026-10-14: "we can have 4 round games if the balance is too thief-leaning") — measured with the live bots,
+  // 2,000 games each: 5p 41.8% → 47.2% · 8p 44.1% → 48.6% · 10p 40.8% → 46.5% village with a 4th round
+  5: [3, 2, 4], 6: [4, 2, 3], 7: [5, 2, 3], 8: [5, 3, 4], 9: [6, 3, 3], 10: [6, 4, 4], 11: [7, 4, 3], 12: [8, 4, 3], 13: [9, 4, 3], 14: [9, 5, 3], 15: [10, 5, 3], 16: [11, 5, 3], 17: [11, 6, 3], 18: [12, 6, 3], 19: [13, 6, 3], 20: [13, 7, 3], 21: [14, 7, 3], 22: [15, 7, 3], 23: [15, 8, 3], 24: [16, 8, 3], 25: [17, 8, 3], 26: [17, 9, 3], 27: [18, 9, 3], 28: [19, 9, 3], 29: [19, 10, 3], 30: [20, 10, 3],
 };
 export const MIN_PLAYERS = 5;
 export const MAX_PLAYERS = 30;

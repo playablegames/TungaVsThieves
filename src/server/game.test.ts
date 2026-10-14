@@ -364,6 +364,7 @@ describe("voice moments (designer 2026-10-07)", () => {
       // the host's turn, holding a Teer Kaman pair: shoot the victim, naming their real role
       s.players[me].hand = ["TEER_KAMAN", "TEER_KAMAN", "FAISLA", "KUNDLI", "HERA_PHERI"];
       s.phase = { kind: "turn", seat: me }; s.turnSeat = me;
+      s.dbShield = false; // this test is about last words — not a thief's Dal Badal shield before the arrow lands
       await memoryStore.update({ ...row, version: row.version + 1 }, row.version);
       const t0 = Date.now();
       const other = s.rolesInPlay.find((r) => r !== s.players[victim].role)!;

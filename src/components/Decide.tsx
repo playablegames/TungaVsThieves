@@ -67,6 +67,7 @@ export function Decide({ v, act }: { v: PlayerView; act: (a: Action) => void }) 
     case "debate": return d.dalBadal ? <DebateDalBadal v={v} act={act} /> : null;
     case "vote": return null;
     case "dal_badal_out": return <DalBadalOut v={v} act={act} />;
+    case "dal_badal_shield": return <DalBadalShield v={v} on={d.on} act={act} />;
     case "batwara": return <Bhukamp v={v} act={act} />;
     case "surrender": return <Surrender stones={d.stones as Card[]} act={act} />;
     case "dal_pick": return <DalPick count={d.count} act={act} />;
@@ -207,6 +208,30 @@ function DebateDalBadal({ v, act }: { v: PlayerView; act: (a: Action) => void })
 }
 
 /** DAL BADAL when the mandatory vote puts you out (2026-10-12): before the reveal — sides count after the shuffle */
+/** DAL BADAL AS A SHIELD (designer 2026-10-14, "why can't a thief use Dal Badal anytime"): shot at, read or voted out —
+ *  shuffle role cards with 2 players FIRST, and the shot, the read or the exit lands on the role card you hold then */
+function DalBadalShield({ v, on, act }: { v: PlayerView; on: "tk" | "kundli" | "faisla_out"; act: (a: Action) => void }) {
+  const [swap, setSwap] = useState<number[]>([]);
+  const others = v.players.filter((p) => p.alive && p.seat !== v.me.seat);
+  const title = on === "tk" ? "An arrow is coming — Dal Badal first?" : on === "kundli" ? "They're reading you — Dal Badal first?" : "You're voted out — Dal Badal first?";
+  return (
+    <div className="flex flex-col gap-3">
+      <Head title={title} />
+      <p className="-mt-2 text-[12px] text-stock/60">Pick 2 to shuffle role cards with. Everyone sees your role; then it lands on the card you hold.</p>
+      <div className="grid grid-cols-2 gap-2">
+        {others.map((p) => (
+          <PlayerChip key={p.seat} p={p} selected={swap.includes(p.seat)} onClick={() => {
+            const next = swap.includes(p.seat) ? swap.filter((x) => x !== p.seat) : swap.length < 2 ? [...swap, p.seat] : swap;
+            setSwap(next);
+            if (next.length === 2) act({ type: "dal_badal", seats: next, pass: [] });
+          }} />
+        ))}
+      </div>
+      <Btn voice="ghost" onClick={() => act({ type: "ready" })}>Let it happen</Btn>
+    </div>
+  );
+}
+
 function DalBadalOut({ v, act }: { v: PlayerView; act: (a: Action) => void }) {
   const [swap, setSwap] = useState<number[]>([]);
   const others = v.players.filter((p) => p.alive && p.seat !== v.me.seat);

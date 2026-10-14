@@ -197,6 +197,7 @@ export async function createBotGame(name: unknown, count: unknown, timers?: Part
     };
     const first = start(row.lobby.map((p) => p.name), randomInt(2 ** 31));
     first.voteUntilClock = true;
+    first.dbShield = true; // (designer 2026-10-14) Dal Badal anytime: any debate, and as a shield
     const next = commitState(row, first);
     if (next.deadline !== null) next.deadline += INTRO_MS;
     if (await store.create(next)) return { code: next.code, token };
@@ -292,6 +293,7 @@ export async function createTutorial(name: unknown) {
   }
   if (!first) first = start(names, randomInt(2 ** 31));
   first.voteUntilClock = true;
+  first.dbShield = true; // (designer 2026-10-14) Dal Badal anytime: any debate, and as a shield
   first.tutorial = true;
   for (let i = 0; i < 10; i++) {
     const row: GameRow = {
@@ -339,6 +341,7 @@ export async function startGame(code: string, token: string | null) {
     for (let i = row.lobby.length - 1; i > 0; i--) { const j = randomInt(i + 1); [row.lobby[i], row.lobby[j]] = [row.lobby[j], row.lobby[i]]; }
     const first = start(row.lobby.map((p) => p.name), randomInt(2 ** 31));
     first.voteUntilClock = true; // open voting: change your vote until the clock runs out
+    first.dbShield = true; // (designer 2026-10-14) Dal Badal anytime: any debate, and as a shield
     const next = commitState(row, first);
     // every phone opens on the intro (role, then the Stones), so the first clock waits for it
     if (next.deadline !== null) next.deadline += INTRO_MS;

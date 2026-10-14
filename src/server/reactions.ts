@@ -41,7 +41,8 @@ export function trustedFriends(s: GameState, seat: number, skill: Skill | null, 
   const sure = s.players.filter((p) => ok(p.seat) && known.get(p.seat)?.side === me.side).map((p) => p.seat);
   if (me.side === "T" || !skill) return sure.slice(0, 2);
   const l = ledger(s, seat, skill);
-  const clean = s.players.filter((p) => ok(p.seat) && !sure.includes(p.seat) && known.get(p.seat)?.side !== "T" && (l.score.get(p.seat) ?? 0) < 0)
+  // (2026-10-14, quiet tables) a secret goes only to a player it is SURE of — a "clean" score is no longer enough
+  const clean = s.players.filter((p) => ok(p.seat) && !sure.includes(p.seat) && known.get(p.seat)?.side !== "T" && (l.score.get(p.seat) ?? 0) < 0 && false)
     .map((p) => p.seat).sort((a, b) => (l.score.get(a) ?? 0) - (l.score.get(b) ?? 0));
   return [...sure, ...clean].slice(0, 2);
 }
@@ -337,7 +338,9 @@ function reactOnce(s: GameState, from: number, botSkill: (seat: number) => Skill
     }
     // a new round, or a debate: the bots talk among themselves
     if ((e.type === "pickup" && (s.events.slice(0, e.n).findLast((x) => x.type === "pickup")?.data?.round ?? 0) !== d?.round) || e.type === "faisla" || e.type === "final_vote")
-      for (const p of s.players) if (bot(p.seat)) roundTalk(s, p.seat, botSkill(p.seat)!, bot);
+      // (designer 2026-10-14: "in our game people hardly talk" — 137 real games: 0.27 public claims per person per game,
+      // almost no private chat) no proactive role trading each round any more; bots still answer when asked
+      void roundTalk; void bot;
   }
   const mark = (seat: number, kind: "kundli" | "was", target: number, role: string | null, side: "V" | "T") => {
     if (s.events.some((e) => e.type === "claim" && e.data?.seat === seat && e.data?.target === target && e.data?.kind === kind)) return;
@@ -369,7 +372,9 @@ function reactOnce(s: GameState, from: number, botSkill: (seat: number) => Skill
     if (RULES && e.type === "claim" && e.to === "all" && e.data?.side === "T" && e.data?.kind !== "stone" && bot(e.data?.target)) {
       const me = e.data!.target as number, accuser = e.data!.seat as number;
       const answered = s.events.some((c) => c.n > e.n && c.data?.answer === true && c.data?.seat === me && c.data?.to === accuser);
-      if (accuser !== me && s.players[me]?.alive && s.players[accuser]?.alive && !answered
+      const pressing = new Set(s.events.filter((c) => c.type === "claim" && c.to === "all" && c.data?.target === me && c.data?.side === "T" && c.data?.seat !== me).map((c) => c.data!.seat)).size;
+      const danger = s.phase.kind === "vote" || pressing >= 2;
+      if (danger && accuser !== me && s.players[me]?.alive && s.players[accuser]?.alive && !answered
         && !s.events.some((c) => c.data?.answer === true && c.data?.seat === me && c.data?.to === accuser)) {
         const sk = botSkill(me)!;
         const villager = s.players[me].side === "V";
@@ -445,7 +450,8 @@ function reactOnce(s: GameState, from: number, botSkill: (seat: number) => Skill
         const target = e.data?.target as number;
         const found = ((e.data?.hand as string[]) ?? []).find((c) => c === "STONE_1" || c === "STONE_2");
         const says = wordAboutSearch(s, seen, skill, Boolean(found));
-        if (s.players[target]?.alive) pushStoneClaim(s, seen, target, says, says ? found : null);
+        // (2026-10-14, quiet tables) only a Stone found is worth saying; a search that found nothing goes unmentioned
+        if (says && s.players[target]?.alive) pushStoneClaim(s, seen, target, true, found);
         continue;
       }
       const target = (e.type === "eliminated_private" ? e.data?.seat : e.data?.target) as number;
@@ -453,7 +459,11 @@ function reactOnce(s: GameState, from: number, botSkill: (seat: number) => Skill
       const kind = e.type === "eliminated_private" ? "was" : "kundli";
       if (kind === "kundli" && !s.players[target].alive) continue;
       const w = wordAboutRole(s, seen, skill, r, target, e.data?.role as string, e.data?.side as "V" | "T");
-      if (w) { mark(seen, kind, target, w.role, w.side); if (w.role && (!thief || skill.name !== "casual")) botWhisper(s, seen, target, w.role, w.side, skill); }
+      // (2026-10-14, quiet tables: people said only 43% of their Kundli reads, mostly in a debate) a villager says what it
+      // read in the next debate, and only about a thief (ruleClaim) — but it tells a friend it is SURE of, privately.
+      // A thief in a mutual read with a villager answers at once: THE STANDOFF (it knows it is about to be outed)
+      if (!thief) { if (kind === "was" || e.data?.side === "T") botWhisper(s, seen, target, String(e.data?.role), e.data?.side as "V" | "T", skill); continue; }
+      if (w) { mark(seen, kind, target, w.role, w.side); if (w.role && skill.name !== "casual") botWhisper(s, seen, target, w.role, w.side, skill); }
       continue;
     }
     const speaks = r() < skill.claimRate;

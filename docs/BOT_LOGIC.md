@@ -221,3 +221,26 @@ Detective only about its top suspect, the Hothead and the Open Book never.
 - "Y is Teacher" (A) and "I'm Teacher" (Z) → A or Z lies, +1 each
 - "I'm also <thief role>" said to a villager +3 (a sharp villager may be posing, so not a fact)
 - someone who told me their role privately, uncontested −0.5
+
+## 11. Quiet tables, own-evidence votes, thief skills (designer 2026-10-14)
+
+*"The voting ganging logic is back and bots reveal info too soon — in our game people hardly talk."* Measured from 137
+real online games (258 people): 0.27 public claims per person per game, almost no private chat, 43% of Kundli reads
+ever said out loud. Bots now speak only when it changes something:
+- no role trading each round (they still answer when asked)
+- a villager's Kundli read is said in the next debate, and only when it read a THIEF; it tells privately only a player
+  it is SURE of (a read). A thief in a mutual read with a villager answers at once (the standoff)
+- a search that found nothing goes unmentioned
+- an accusation is answered only when it's dangerous: a debate or vote is on, or two players are pressing
+- "I suspect X" only from the bot's OWN evidence
+
+**Own-evidence votes.** An average or sharp bot votes from what it saw, read or was told — the table's bare words
+(accusations nobody backed with a visible Kundli or an exit) only break a tie. A beginner still follows the crowd.
+Bots now: 0.93 public claims and 0.21 private lines per game, 40% of reads said, 27% of votes with ¾ on one player.
+
+**Thief skills (live):** B average thieves defend instead of blaming · C split the vote off a known partner · D steer
+the mandatory vote at a villager's Stone · E a strong case (2+) is a believed partner. **Dal Badal anytime** (any
+debate, and as a shield when shot at, read or voted out).
+
+**Balance, live bots, 2,000 games each** (village %): 5p 47.2 (4 rounds) · 6p 47.1 · 7p 53.3 · 8p 48.6 (4 rounds) ·
+9p 49.6 · 10p 46.5 (4 rounds) · 11p 47.0 · 12p 51.8.

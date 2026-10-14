@@ -77,19 +77,10 @@ describe("bot talk", () => {
     expect(l.liars.has(0)).toBe(true);
   });
 
-  it("a new round: every bot asks one player it doesn't suspect, telling its own role first; a bot asked answers", () => {
+  it("(2026-10-14, quiet tables) a new round brings NO role trading — people hardly talk; bots answer only when asked", () => {
     const s = game();
-    const from = push(s, "pickup", "all", { seat: 1, round: 2 });
-    botReactions(s, from, skills("open"), () => 0.5);
-    const asks = s.events.filter((e) => e.type === "whisper_private" && e.data?.ask === true);
-    expect(asks.length).toBe(7); // each bot, once
-    for (const a of asks) {
-      const to = a.data!.to as number;
-      if (to !== 0) expect(s.events.some((e) => e.type === "whisper_private" && e.data?.seat === to && e.data?.to === a.data!.seat)).toBe(true);
-    }
-    // and not again in the same round
-    botReactions(s, push(s, "faisla", "all", { seat: 1 }), skills("open"), () => 0.5);
-    expect(s.events.filter((e) => e.type === "whisper_private" && e.data?.ask === true)).toHaveLength(7);
+    botReactions(s, push(s, "pickup", "all", { seat: 1, round: 2 }), skills("open"), () => 0.5);
+    expect(s.events.filter((e) => e.type === "whisper_private")).toHaveLength(0);
   });
 });
 
@@ -156,15 +147,19 @@ describe("the handshake and the tie moment (designer 2026-10-14)", () => {
 });
 
 describe("defend or blame (designer 2026-10-14)", () => {
-  const accuse = (s: GameState, a: number, b: number, sk: (x: number) => Skill | null) =>
+  /** (2026-10-14, quiet tables) a bot answers an accusation when it's dangerous — so these accusations come in a debate */
+  const debate = (s: GameState) => { s.phase = { kind: "vote", reason: "faisla", caller: 0, voters: s.players.map((p) => p.seat), ballots: {}, debate: true, ready: [] }; };
+  const accuse = (s: GameState, a: number, b: number, sk: (x: number) => Skill | null) => {
+    debate(s);
     botReactions(s, push(s, "claim", "all", { seat: a, kind: "accuse", target: b, role: null, side: "T" }), sk, () => 0.5);
+  };
   const answers = (s: GameState, b: number) => s.events.filter((e) => e.data?.seat === b && e.data?.answer === true);
   it("a villager defends (says its role); a cornered thief blames; a SHARP thief defends like a villager", () => {
     const s = game();
     const v = s.players.find((p) => p.side === "V" && p.seat !== 0)!.seat, t = s.players.find((p) => p.side === "T" && p.seat !== 0)!.seat;
     accuse(s, 0, v, skills("open"));
     expect(answers(s, v)[0].data).toMatchObject({ kind: "self", role: s.players[v].role });
-    accuse(s, 0, t, skills("open"));
+    accuse(s, 0, t, skills("open", SKILLS.casual)); // (skill B, live) only a BEGINNER thief blames
     expect(answers(s, t)[0].data).toMatchObject({ kind: "accuse", target: 0 });
     const s2 = game();
     const t2 = s2.players.find((p) => p.side === "T" && p.seat !== 0)!.seat;
@@ -175,7 +170,7 @@ describe("defend or blame (designer 2026-10-14)", () => {
   it("the blame tell: blamed back without a word of defence → suspect (average and sharp notice)", () => {
     const s = game();
     const t = s.players.find((p) => p.side === "T" && p.seat !== 0)!.seat, w = s.players.find((p) => p.side === "V" && p.seat !== 0)!.seat;
-    accuse(s, 0, t, skills("open"));
+    accuse(s, 0, t, skills("open", SKILLS.casual));
     expect(ledger(s, w, SKILLS.average).why.get(t)!.some((x) => x.includes("instead of defending"))).toBe(true);
     expect(ledger(s, w, SKILLS.casual).why.get(t)!.some((x) => x.includes("instead of defending"))).toBe(false);
   });
@@ -185,7 +180,8 @@ describe("defend or blame (designer 2026-10-14)", () => {
       const liar = s.players.find((p) => p.side === side && p.seat !== 0)!;
       const owner = s.players.find((p) => p.side === "V" && p.seat !== 0 && p.seat !== liar.seat)!;
       const sk = (x: number) => (x === 0 ? null : personalised(SKILLS.sharp, "quiet"));
-      // the liar told the table it's the owner's role
+      // the liar told the table it's the owner's role — in a debate (a bot answers when it's dangerous)
+      debate(s);
       botReactions(s, push(s, "claim", "all", { seat: liar.seat, kind: "self", target: liar.seat, role: owner.role, side: "V" }), sk, () => 0.5);
       const fix = s.events.find((e) => e.data?.seat === liar.seat && typeof e.data?.retract === "string");
       expect(fix?.data?.retract).toBe(owner.role);
@@ -202,6 +198,7 @@ describe("thief skills on their switches (designer 2026-10-14)", () => {
   it("B: an average thief defends instead of blaming", () => withSkills("B", () => {
     const s = game();
     const t = s.players.find((p) => p.side === "T" && p.seat !== 0)!.seat;
+    s.phase = { kind: "vote", reason: "faisla", caller: 0, voters: s.players.map((p) => p.seat), ballots: {}, debate: true, ready: [] };
     botReactions(s, push(s, "claim", "all", { seat: 0, kind: "accuse", target: t, role: null, side: "T" }), skills("open"), () => 0.5);
     expect(s.events.find((e) => e.data?.seat === t && e.data?.answer === true)?.data?.kind).toBe("self");
   }));

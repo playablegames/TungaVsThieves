@@ -82,7 +82,8 @@ export function selfClaims(events: GameEvent[], me: number): { seat: number; rol
  *    C  SPLIT THE VOTE: a known partner leads the ballot → vote the leading non-partner (an honest-looking disagreement)
  *    D  STEER THE MANDATORY VOTE at a villager believed to hold a Stone (voted out, their Stone goes to the thieves)
  *    E  BELIEVED PARTNER BY EVIDENCE: a player with a strong case (2+) is most likely my partner — protected like one */
-export const LIVE_TSKILLS: string[] = [];
+// (designer 2026-10-14: "yes") all four on in the live game
+export const LIVE_TSKILLS: string[] = ["B", "C", "D", "E"];
 export const tskill = (k: string): boolean => {
   const m = typeof process !== "undefined" ? /tskill=([A-Z,]+)/.exec(process.env.BOT_FLAGS ?? "") : null;
   return (m ? m[1].split(",") : LIVE_TSKILLS).includes(k);
@@ -400,8 +401,25 @@ export function holds(mem: Map<Card, Set<number>>, x: number): number {
 }
 
 // ------------------------------------------------------------------ 4. VOTING
+/** what I could vouch for myself: the table's bare words removed — an accusation nobody backed (a Kundli the table saw
+ *  between speaker and target, or the speaker putting the target out) is only someone else's opinion */
+function ownView(s: GameState, seat: number): GameState {
+  const backed = (e: GameEvent) => {
+    const a = e.data?.seat, t = e.data?.target;
+    return s.events.some((k) => k.n < e.n && ((k.type === "kundli" && ((k.data?.seat === a && k.data?.target === t) || (k.data?.seat === t && k.data?.target === a)))
+      || (k.type === "eliminated" && k.data?.seat === t && k.data?.killer === a)));
+  };
+  const bare = (e: GameEvent) => e.type === "claim" && e.to === "all" && e.data?.seat !== seat && e.data?.kind !== "stone" && e.data?.kind !== "self" && e.data?.target !== seat && !backed(e);
+  return { ...s, events: s.events.filter((e) => !bare(e)) };
+}
+
 export function ruleVote(s: GameState, seat: number, skill: Skill, r: R): { target: number | null; why: string } {
-  const l = ledger(s, seat, skill);
+  // (designer 2026-10-14: "the voting ganging logic is back") every bot hears the same accusations, so they all reached
+  // the same top suspect and piled on. An average or sharp bot now votes from ITS OWN evidence — what it saw, read or
+  // was told — and the table's bare words only break a tie. A beginner still follows the loudest voice.
+  const full = ledger(s, seat, skill);
+  const own = skill.followAnyAccusation ? full : ledger(ownView(s, seat), seat, skill);
+  const l: Ledger = { ...own, score: new Map([...own.score].map(([x, v]) => [x, v + (skill.followAnyAccusation ? 0 : 0.01 * (full.score.get(x) ?? 0))])) };
   const ph = s.phase;
   const final = ph.kind === "vote" && ph.reason === "final";
   const mem = final ? stoneMemory(s, seat, skill, l) : null;
@@ -496,14 +514,19 @@ export function ruleClaim(s: GameState, seat: number, skill: Skill): RuleClaim |
   for (const k of [...reads].sort((a, b) => (a.side === "T" ? 0 : 1) - (b.side === "T" ? 0 : 1))) {
     if (!fresh(k.target) || !alive(k.target)) continue;
     if (partners.has(k.target)) return { kind: "kundli", target: k.target, role: cover(k.target), side: "V", why: `cover ${name(k.target)}, a partner I read` };
+    // (2026-10-14, quiet tables) a read worth saying out loud is a thief; a villager read stays private
+    if (k.side !== "T") continue;
     return { kind: "kundli", ...k, why: `I read ${name(k.target)}` };
   }
   // accused: answer by naming the accuser
   for (const a of accusers) if (fresh(a) && alive(a) && !partners.has(a)) return { kind: "accuse", target: a, role: null, side: "T", why: `${name(a)} called me a thief` };
   const pool = s.players.filter((p) => p.alive && p.seat !== seat && !partners.has(p.seat) && !(me.side === "V" && l.known.get(p.seat)?.side === "V")).map((p) => p.seat);
-  const top = Math.max(-Infinity, ...pool.map((x) => l.score.get(x) ?? 0));
-  const leaders = pool.filter((x) => (l.score.get(x) ?? 0) === top);
-  if (top >= 2 && leaders.length === 1 && fresh(leaders[0])) return { kind: "accuse", target: leaders[0], role: null, side: "T", why: reasonFor(l, leaders[0]) };
+  // (2026-10-14, anti-ganging) "I suspect X" only from MY OWN evidence — never an echo of the table's bare words
+  // (a beginner still echoes the loudest voice)
+  const lo = skill.followAnyAccusation ? l : ledger(ownView(s, seat), seat, skill);
+  const top = Math.max(-Infinity, ...pool.map((x) => lo.score.get(x) ?? 0));
+  const leaders = pool.filter((x) => (lo.score.get(x) ?? 0) === top);
+  if (top >= 2 && leaders.length === 1 && fresh(leaders[0])) return { kind: "accuse", target: leaders[0], role: null, side: "T", why: reasonFor(lo, leaders[0]) };
   return null;
 }
 
