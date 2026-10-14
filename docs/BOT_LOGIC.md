@@ -24,7 +24,8 @@ A Dal Badal wipes every fact about the seats in its shuffle.
 | Situation | Conclusion |
 |---|---|
 | a word contradicts a fact I hold (wrong side, a role I know is someone else's, a ruled-out role) | the speaker **lied** → I ignore their words from then on, and I suspect them |
-| "X is a thief" about me, and I'm a villager | the speaker is lying (+3 against them) |
+| a **role** named for me that's wrong ("you're Chor"), and I'm a villager | the speaker **lied** (+3 against them) |
+| a plain suspicion of me, and I'm a villager | a wrong guess, not a lie: +1, like any accusation (real games: bots were hunting honest villagers) |
 | a Kundli was done between A and B, and A never spoke about B afterwards | **silence** is suspicious (+1 against A) — sharp only |
 | every thief is accounted for | everyone else is a villager — sharp only |
 | anything else | one voice = one point: "X is a thief" +1 against X, "X is a villager" −1 |
@@ -65,7 +66,8 @@ added to a claim the speaker didn't make: a human's spoken "X is a thief" stays 
 - a thief it knows, always
 - never a villager it knows
 - otherwise the strongest case
-- in a Faisla, no case (nothing above 0) or a tie at the top means it doesn't vote
+- in a Faisla, no case (nothing above 0) means it doesn't vote. A **tie** with a case goes to the ballot the table is
+  gathering on, then the most accused (real games: bots sat out half the Faisla ballots, so the thieves' votes decided)
 - in the mandatory vote the Stones decide. A Stone holder I have any case against (1+) comes first: if they're a thief,
   the Stone comes to the village. One I have nothing against is left alone, because their Stone would go to the thieves.
 - a mandatory-vote tie goes to the ballot the table is already gathering on, then to the most accused (a split vote
@@ -91,8 +93,10 @@ says nothing about their side (villagers sit on Stones too). A search that shows
 
 Playing a pair means passing **all** your other cards. If you hold a Stone, playing any pair sends the Stone on.
 
-1. **Holding a Stone:** play a pair only if the next player is someone I know is on my side. Otherwise pass and keep
-   the Stone.
+1. **Holding a Stone** (a pair sends it to the next player): a **thief** plays only if the next player is a partner it
+   knows. A **villager** never sends it to someone it suspects (score above 0) or knows is a thief. To someone it has
+   nothing against, it plays only a pair that does something (from the table below), not a filler. Real games
+   (2026-10-14): villagers holding a Stone still played their pair 46% of the time, against bots' 5%, so the Stones froze.
 2. **Thief with Dal Badal:** use it when exposed — 2+ points against me, or someone named my TRUE role (I know it's
    true, so the table may believe it) — with those accusers. In the last round, if no
    Stone has reached a thief, shuffle onto the players I believe hold the Stones (sharp only).

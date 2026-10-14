@@ -122,7 +122,12 @@ export function ledger(s: GameState, seat: number, skill: Skill): Ledger {
     if (side === "T") accused.set(t, (accused.get(t) ?? 0) + 1);
     if (a === seat) continue; // my own words are not evidence to me
     if (t === seat) {
-      if (side === "T" && v.me.side === "V") { add(a, 3, "called me a thief — I'm a villager"); liars.add(a); }
+      // (real games 2026-10-14: bots hunted honest villagers who merely suspected them) a ROLE named for me that's wrong
+      // is a certain lie; a plain suspicion of me is only a wrong guess — it counts like any accusation
+      if (side === "T" && v.me.side === "V") {
+        if (typeof e.data?.role === "string") { add(a, 3, `said I'm ${String(e.data.role)} — a lie, I'm a villager`); liars.add(a); }
+        else add(a, 1, "suspects me — wrong, I'm a villager");
+      }
       continue;
     }
     if (liars.has(a)) continue;
@@ -279,7 +284,14 @@ export function ruleVote(s: GameState, seat: number, skill: Skill, r: R): { targ
     const leaders = pool.filter((x) => val(x) === top);
     if (!final) {
       if (top <= 0) return { target: null, why: "no case against anyone" };
-      if (leaders.length > 1) return { target: null, why: `a tie between ${leaders.map((x) => plain(s, x)).join(", ")}` };
+      // (real games 2026-10-14: bots sat out half the Faisla ballots on ties, and the thieves' ballots decided) a tie
+      // with a case goes to the ballot the table is gathering on, then the most accused
+      if (leaders.length > 1) {
+        const tallyF = new Map<number, number>();
+        if (ph.kind === "vote") for (const [vtr, b] of Object.entries(ph.ballots)) if (b !== null && b !== undefined && Number(vtr) !== seat) tallyF.set(b, (tallyF.get(b) ?? 0) + 1);
+        const t = best(r, leaders, (x) => (tallyF.get(x) ?? 0) * 100 + (l.accused.get(x) ?? 0))!;
+        return { target: t, why: `${reasonFor(l, t)} — tie: with the table's ballot` };
+      }
       return { target: leaders[0], why: reasonFor(l, leaders[0]) };
     }
     // a tie: go with the ballot the table is already gathering on, then the most accused — a split vote puts nobody out
@@ -443,9 +455,15 @@ export function ruleTurn(s: GameState, seat: number, skill: Skill, r: R): Decisi
   const db = ruleDalBadal(s, seat, skill, r, "turn", l, mem);
   if (db) return db;
 
-  // 1. holding a Stone: a pair would send it to the next player — only if they are on my side
+  // 1. holding a Stone: a pair sends it to the next player. (Real games 2026-10-14: villagers holding a Stone still
+  // played their pair 46% of the time, bots 5% — the Stones froze.) Never to a player I suspect or know is the other
+  // side; to a player I have nothing against, only for a pair that does something (not Bhukamp, not Faisla without a case)
   const holding = hand.some(isStone);
-  if (holding && !ally(next)) return pass(`keep my Stone — ${name(next)} is next and I don't know their side`);
+  const nextSuspect = foe(next) || (l.score.get(next) ?? 0) > 0;
+  if (holding && !ally(next) && nextSuspect) return pass(`keep my Stone — ${name(next)} is next and I suspect them`);
+  const stoneRisk = holding && !ally(next);
+  // a thief keeps its Stone unless the next player is a partner it knows — a Stone in a villager's hand is lost
+  if (thief && stoneRisk) return pass(`thief: keep my Stone — ${name(next)} is next and I don't know they're a partner`);
 
   const play = (card: ActionCard, why: string, target?: number, roles?: string[]): Decision => {
     const rest = withoutPair(hand, card);
@@ -511,6 +529,8 @@ export function ruleTurn(s: GameState, seat: number, skill: Skill, r: R): Decisi
       const t = best(r, withCards.filter((x) => !ally(x)), (x) => sc(x) * 10 + (l.talk.get(x) ?? 0));
       if (t !== undefined) return play("TALASHI", `search ${name(t)} — my top suspect`, t);
     }
+    // with my Stone at stake, only a pair that does something — not a filler move that hands it on
+    if (stoneRisk) return pass(`keep my Stone — no pair worth sending it to ${name(next)}`);
     // PLAY THE PAIR YOU HOLD (designer 2026-10-14, from 39 human games: without a Stone people played their pair ~88% of
     // the time) — the reasoning picks the target, not whether to play
     const suspect = (xs: number[]) => best(r, xs.filter((x) => !ally(x)), (x) => sc(x) * 10 + (l.talk.get(x) ?? 0));
