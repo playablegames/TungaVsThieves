@@ -22,7 +22,7 @@ describe("the centre feed", () => {
     expect(t).toEqual([
       ["event", "Vik read a Kundli"],
       ["claim", 'Raju: "Asha is a thief."'],
-      ["talk", "Asha is lying"],
+      ["chat", "Asha is lying"],
       ["caption", "no way"],
       ["talk", "Not me!"],
       ["react", "Asha threw 🍅 at Raju"],
@@ -53,10 +53,15 @@ describe("the centre feed", () => {
     expect(heard[0].old).toBe(false);
   });
 
-  it("drops system traffic it cannot show (whispers come as game events instead)", () => {
-    const log = new FeedLog();
-    log.ingest([], [msg(1, 0, "\u0001w|2|t|secret")], null, names);
-    expect(log.items).toHaveLength(0);
+  // (designer 2026-10-14) a private message shows in the centre: the words to the two of them, "A → B, privately" to the rest
+  it("shows a private message to the two of them, and only who → whom to everyone else", () => {
+    const toVik = new FeedLog();
+    toVik.ingest([], [msg(1, 0, "\u0001w|2|t|secret")], null, names, true, 2);
+    expect(toVik.items[0]).toMatchObject({ kind: "private", privateText: "secret", mine: true });
+    const other = new FeedLog();
+    other.ingest([], [msg(1, 0, "\u0001w|2|")], null, names, true, 1);
+    expect(other.items[0]).toMatchObject({ kind: "private", privateText: null, mine: false });
+    expect(JSON.stringify(other.items)).not.toContain("secret");
   });
 
   it("holds talk until the stage has shown the play it answers", () => {

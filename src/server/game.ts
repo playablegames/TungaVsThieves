@@ -11,11 +11,11 @@ import { botDecision, botTieBreak, pushBotClaim, RULES, SKILLS } from "./belief"
 import { hear } from "./hear";
 import { sendPush, type Alert } from "./push";
 import { MIN_PLAYERS, ROLE_TABLE, THIEF_ROLES } from "@/engine/setup";
-import { RuleError, type Action, type Card, type GameState } from "@/engine/types";
+import { RuleError, type Action, type Card, type GameEvent, type GameState } from "@/engine/types";
 import { viewFor, type PlayerView } from "@/engine/view";
 import { LAST_WORDS_MS, holdFor } from "@/lib/beats";
 import { openAccusation, type DefendKind } from "@/lib/defend";
-import { CAPTION_PREFIX, isCaption, WHISPER_MAX_AUDIO, encodeWhisper, isWhisper, redactWhisper, decodeWhisper, type WhisperBody } from "@/lib/whisper";
+import { CAPTION_PREFIX, isCaption, isSystemMessage, WHISPER_MAX_AUDIO, encodeWhisper, isWhisper, redactWhisper, decodeWhisper, type WhisperBody } from "@/lib/whisper";
 import { ping, store, type ChatMessage, type GameRow, type Timers } from "./store";
 
 export class HttpError extends Error {
@@ -572,7 +572,9 @@ export async function getState(code: string, token: string | null, sinceMsg: num
 export async function chat(code: string, token: string | null, text: unknown) {
   const row = await load(code);
   const seat = seatOf(row, token);
-  const t = String(text ?? "").trim().slice(0, 300);
+  // (designer 2026-10-14) a chat line is what fits two lines of the centre — 50 characters (captions keep their length)
+  const raw = String(text ?? "").trim();
+  const t = isSystemMessage(raw) ? raw.slice(0, 300) : raw.slice(0, 50);
   if (!t) throw new HttpError(400, "Empty message");
   const s = row.state;
   // (designer 2026-10-14) a player who is OUT stays in the game and may say anything — they see no secrets
@@ -580,13 +582,15 @@ export async function chat(code: string, token: string | null, text: unknown) {
   // bots hear captions: a plain accusation / vouch / role read becomes the claim a tap would make — for the bots only
   // (humans already read the caption), so the table never sees it twice
   const botSeats = row.lobby.flatMap((p, i) => (p.bot ? [i] : []));
-  const h = s && s.phase.kind !== "over" && isCaption(t) && botSeats.length
-    ? hear(t.slice(CAPTION_PREFIX.length), seat, s.players.map((p) => ({ name: p.name, alive: p.alive })), s.rolesInPlay) : null;
+  // (designer 2026-10-14: voice AND chat) a typed line in the table chat is read the same way as a spoken one
+  const said = isCaption(t) ? t.slice(CAPTION_PREFIX.length) : isSystemMessage(t) ? null : t;
+  const h = s && s.phase.kind !== "over" && said !== null && botSeats.length
+    ? hear(said, seat, s.players.map((p) => ({ name: p.name, alive: p.alive })), s.rolesInPlay) : null;
   if (!h) { await ping(row.code, row.version); return; }
   await play(code, (r) => {
     const st = r.state;
     if (!st || st.phase.kind === "over" || !st.players[seat].alive || !st.players[h.target]?.alive) return r;
-    st.events.push({ n: st.events.length, type: "claim", to: botSeats, msg: `${st.players[seat].name} (said): "${t.slice(CAPTION_PREFIX.length)}"`,
+    st.events.push({ n: st.events.length, type: "claim", to: botSeats, msg: `${st.players[seat].name} (said): "${said}"`,
       // (2026-10-14) a role only if the player SAID one — never one invented for them
       data: { seat, kind: h.kind === "stone" ? "stone" : h.role ? "kundli" : "accuse", target: h.target, role: h.kind === "stone" ? null : h.role ?? null, side: h.side, ...(h.kind === "stone" ? { has: h.has } : {}), heard: true } });
     r.state = st;
@@ -599,7 +603,7 @@ export async function chat(code: string, token: string | null, text: unknown) {
 export type ClaimKind = "kundli" | "stone";
 /** (2026-10-09) "stone": after a Talashi (or any time — a claim may be a lie) — "X has a Stone" / "X has no Stone".
  *  It says nothing about sides, so `side` is null; the seat shows it as 💎✓ / 💎✗. */
-export async function claim(code: string, token: string | null, body: { kind?: unknown; target?: unknown; role?: unknown; has?: unknown }) {
+export async function claim(code: string, token: string | null, body: { kind?: unknown; target?: unknown; role?: unknown; has?: unknown; stone?: unknown }) {
   await play(code, (row) => {
     const s = row.state;
     if (!s || s.phase.kind === "over") throw new HttpError(409, "No game in progress");
@@ -622,10 +626,10 @@ export async function claim(code: string, token: string | null, body: { kind?: u
     // the same claim again from the same player adds nothing — but a CHANGED word is news (it replaces the old one)
     const last = [...s.events].reverse().find((e) => e.type === "claim" && e.data?.seat === seat && e.data?.target === target && (kind === "stone") === (e.data?.kind === "stone"));
     const same = (e: GameState["events"][number]) => e === last
-      && (kind === "stone" ? e.data?.has === Boolean(body.has) : e.data?.role === body.role);
+      && (kind === "stone" ? e.data?.has === Boolean(body.has) && (e.data?.stone ?? null) === (body.has && (body.stone === "STONE_1" || body.stone === "STONE_2") ? body.stone : null) : e.data?.role === body.role);
     if (s.events.some(same)) return row;
     if (kind === "stone") {
-      pushStoneClaim(s, seat, target, Boolean(body.has));
+      pushStoneClaim(s, seat, target, Boolean(body.has), body.stone === "STONE_1" || body.stone === "STONE_2" ? body.stone : null);
       row.state = s;
       return row;
     }
@@ -747,8 +751,8 @@ export async function whisper(code: string, token: string | null, body: { to?: u
     if (!s || s.phase.kind === "over") throw new HttpError(409, "No game in progress");
     const seat = seatOf(row, token);
     const to = Number(body.to);
-    if (!s.players[to]?.alive || to === seat) throw new HttpError(400, "Whisper to another living player");
-    if (s.events.some((e) => e.type === "whisper" && e.data?.seat === seat && e.data?.round === s.round)) throw new HttpError(409, "One whisper per round");
+    // (designer 2026-10-14) PRIVATE CHAT: unlimited, with anyone at the table — out players too
+    if (!s.players[to] || to === seat) throw new HttpError(400, "Pick another player");
     let b: WhisperBody;
     if (body.kind === "v") {
       const audio = String(body.audio ?? "");
@@ -759,15 +763,23 @@ export async function whisper(code: string, token: string | null, body: { to?: u
       if (!s.players[about] || !s.rolesInPlay.includes(role)) throw new HttpError(400, "Name a player and a role in this game");
       b = { kind: "k", about, role };
     } else {
-      const text = String(body.text ?? "").replace(/\s+/g, " ").trim().slice(0, 80);
+      const text = String(body.text ?? "").replace(/\s+/g, " ").trim().slice(0, 50);
       if (!text) throw new HttpError(400, "Say something");
       b = { kind: "t", text };
     }
     const me = s.players[seat].name, them = s.players[to].name;
-    s.events.push({ n: s.events.length, type: "whisper", to: "all", msg: `${me} whispered to ${them}.`, data: { seat, target: to, round: s.round } });
+    // the table sees WHO is chatting with whom (never what) — once per pair per round, so it never floods
+    const pair = (e: GameEvent) => e.type === "whisper" && e.data?.round === s.round && ((e.data?.seat === seat && e.data?.target === to) || (e.data?.seat === to && e.data?.target === seat));
+    if (!s.events.some(pair)) s.events.push({ n: s.events.length, type: "whisper", to: "all", msg: `${me} is chatting privately with ${them}.`, data: { seat, target: to, round: s.round } });
+    // a bot reads the claims in a private line written to it, as it would a whisper
+    if (b.kind === "t" && row.lobby[to]?.bot) {
+      const h = hear(b.text, seat, s.players.map((p) => ({ name: p.name, alive: p.alive })), s.rolesInPlay);
+      if (h && h.kind !== "stone" && h.side) s.events.push({ n: s.events.length, type: "claim", to: [to], msg: `${me} (private): "${b.text}"`,
+        data: { seat, target: h.target, role: h.role ?? null, side: h.side, kind: h.role ? "kundli" : "accuse", heard: true } });
+    }
     if (b.kind === "k") {
       const side = THIEF_ROLES.includes(b.role) ? "T" : "V";
-      s.events.push({ n: s.events.length, type: "whisper_private", to: [seat, to], msg: `${me} whispers: "I read ${s.players[b.about].name}'s Kundli — ${b.role}."`,
+      s.events.push({ n: s.events.length, type: "whisper_private", to: [seat, to], msg: `${me}: "I read ${s.players[b.about].name}'s Kundli — ${b.role}."`,
         data: { seat, target: b.about, role: b.role, side, kind: "kundli", to } });
     }
     stored = encodeWhisper(to, b);

@@ -232,6 +232,8 @@ export function stoneMemory(s: GameState, seat: number, skill: Skill, l: Ledger 
         if (d?.kind === "stone" && d?.has === true) {
           const a = num(d, "seat")!, t = num(d, "target")!;
           if (a === seat || l.liars.has(a) || (l.known.get(a)?.side === "T" && v.me.side === "V")) break;
+          const named = d?.stone === "STONE_1" || d?.stone === "STONE_2" ? (d.stone as Card) : null;
+          if (named) { put(named, t); break; }
           if ([...at.values()].some((set) => set.size === 1 && set.has(t))) break;
           const free = [...at].find(([, set]) => set.size !== 1);
           if (free) put(free[0], t);

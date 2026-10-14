@@ -1,10 +1,10 @@
 "use client";
-// Whispers (designer 2026-10-07): hold to record a voice note (≤10 s) — or tap a quick line, or pass on a Kundli read —
-// to ONE player, once per round. The table sees the 👂 fly; only they hear it, in their ear.
+// Messages and voice notes (designer 2026-10-14, replacing the 2026-10-07 whisper sheet): tap a player to type to them or
+// send a voice note (≤10 s); tap your own seat to type to everyone. The table sees the 👂 fly; only they get it.
 import { useRef, useState } from "react";
 import type { PlayerView } from "@/engine/view";
 import { api } from "@/lib/client";
-import { QUICK_LINES, WHISPER_SECONDS, type WhisperBody } from "@/lib/whisper";
+import { WHISPER_SECONDS, type WhisperBody } from "@/lib/whisper";
 import type { Incoming } from "@/lib/reactions";
 import { play } from "@/lib/sfx";
 
@@ -19,21 +19,63 @@ function recorderType(): string {
   return "";
 }
 
-export function WhisperSheet({ v, code, token, to, onClose }: { v: PlayerView; code: string; token: string; to: number; onClose: () => void }) {
+/** the most a chat line can say — what fits two lines of the centre (designer 2026-10-14: "100 if it fits, 50 if needed") */
+export const CHAT_MAX = 50;
+
+/** TYPE A MESSAGE (designer 2026-10-14): tap a player → private to them; tap your own seat → to everyone. Everything
+ *  lands in the centre: a public line for all, a private one only for the two of you (the rest see "A → B, privately"). */
+export function MessageSheet({ v, code, token, to, onClose, onHistory }: { v: PlayerView; code: string; token: string; to: number | null; onClose: () => void; onHistory?: () => void }) {
+  const [text, setText] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const them = to === null ? null : v.players[to]?.name.replace(/\s*🤖$/, "") ?? "?";
+  const priv = to !== null;
+  const send = async () => {
+    const t = text.replace(/\s+/g, " ").trim().slice(0, CHAT_MAX);
+    if (!t || busy) return;
+    setBusy(true); setErr(null);
+    try {
+      if (priv) await api.whisper(code, token, { to: to!, kind: "t", text: t });
+      else await api.chat(code, token, t);
+      play(priv ? "shh" : "tap"); onClose();
+    } catch (e) { setErr((e as Error).message); setBusy(false); }
+  };
+  const ring = priv ? "border-jade" : "border-brass";
+  return (
+    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/60" onClick={() => !busy && onClose()}>
+      <div role="dialog" aria-label={priv ? `Message ${them}` : "Message everyone"} onClick={(e) => e.stopPropagation()}
+        className="stage-in flex w-full max-w-md flex-col gap-2 rounded-t-3xl border-t-2 border-brass/70 bg-ember px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4">
+        <p className={`text-[13px] font-bold ${priv ? "text-jade-soft" : "text-[#f3c66b]"}`}>{priv ? `🤫 To ${them} — only ${them} sees this` : "💬 To everyone at the table"}</p>
+        <form className="flex items-center gap-2" onSubmit={(e) => { e.preventDefault(); void send(); }}>
+          <label className={`flex min-h-12 flex-1 items-center gap-2 rounded-full border-2 ${ring} bg-black/35 px-4`}>
+            <input autoFocus value={text} maxLength={CHAT_MAX} onChange={(e) => setText(e.target.value)} enterKeyHint="send"
+              placeholder={priv ? `Message ${them}…` : "Message everyone…"} aria-label="Your message"
+              className="min-w-0 flex-1 bg-transparent text-[16px] text-stock outline-none focus-visible:outline-none placeholder:text-stock/40" />
+            <span className="text-[12px] tabular-nums text-stock/60" aria-hidden>{text.length}/{CHAT_MAX}</span>
+          </label>
+          <button type="submit" disabled={busy || !text.trim()} aria-label="Send"
+            className={`grid h-12 w-12 shrink-0 place-items-center rounded-full text-[20px] font-black text-card-ink disabled:opacity-40 ${priv ? "bg-jade" : "bg-brass"}`}>➤</button>
+        </form>
+        {err && <p role="alert" className="rounded-xl bg-crimson-deep p-2 text-center text-[13px]">{err}</p>}
+        {onHistory && <button type="button" onClick={onHistory} className="mx-auto min-h-10 px-3 text-[13px] text-stock/70 underline-offset-2 hover:underline">📜 My history</button>}
+      </div>
+    </div>
+  );
+}
+
+/** A VOICE NOTE to one player: hold to record (up to 10 s), let go to send. Only they hear it. */
+export function VoiceNoteSheet({ v, code, token, to, onClose }: { v: PlayerView; code: string; token: string; to: number; onClose: () => void }) {
   const [rec, setRec] = useState<number | null>(null); // seconds recorded while holding
   const [err, setErr] = useState<string | null>(null);
-  const [about, setAbout] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const r = useRef<{ mr: MediaRecorder; stream: MediaStream; chunks: Blob[]; tick: ReturnType<typeof setInterval>; t0: number } | null>(null);
   const them = v.players[to]?.name.replace(/\s*🤖$/, "") ?? "?";
-  const others = v.players.filter((p) => p.alive && p.seat !== v.me.seat);
 
   const send = async (b: WhisperBody) => {
     setBusy(true); setErr(null);
     try { await api.whisper(code, token, { to, ...b } as Parameters<typeof api.whisper>[2]); play("shh"); onClose(); }
     catch (e) { setErr((e as Error).message); setBusy(false); }
   };
-
   async function start() {
     const type = recorderType();
     if (!type) { setErr("This phone can't record — send a line instead."); return; }
@@ -51,7 +93,7 @@ export function WhisperSheet({ v, code, token, to, onClose }: { v: PlayerView; c
       r.current = { mr, stream, chunks, tick, t0 };
       mr.start();
       setRec(0);
-    } catch { setErr("Allow the microphone to whisper a voice note."); }
+    } catch { setErr("Allow the microphone to send a voice note."); }
   }
 
   function stop() {
@@ -72,18 +114,15 @@ export function WhisperSheet({ v, code, token, to, onClose }: { v: PlayerView; c
     cur.mr.stop();
   }
 
-  const chip = "min-h-10 rounded-full border border-brass/40 bg-black/30 px-3 text-[13px] text-stock active:translate-y-px disabled:opacity-40";
   return (
     <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/60" onClick={() => !busy && rec === null && onClose()}>
-      <div role="dialog" aria-label={`Whisper to ${them}`} onClick={(e) => e.stopPropagation()}
-        className="stage-in flex w-full max-w-md flex-col gap-4 rounded-t-3xl border-t-2 border-brass/70 bg-ember px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-5">
-        <h2 className="text-center font-display text-[22px] font-bold text-stock">🤫 Whisper to {them}</h2>
-
-        {/* hold to talk */}
+      <div role="dialog" aria-label={`Voice note to ${them}`} onClick={(e) => e.stopPropagation()}
+        className="stage-in flex w-full max-w-md flex-col items-center gap-3 rounded-t-3xl border-t-2 border-brass/70 bg-ember px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-5">
+        <p className="text-[13px] font-bold text-jade-soft">🎙 Voice note to {them} — only {them} hears it</p>
         <button type="button" disabled={busy}
           onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); void start(); }}
           onPointerUp={stop} onPointerCancel={stop} onContextMenu={(e) => e.preventDefault()}
-          className={`relative mx-auto grid h-28 w-28 select-none place-items-center rounded-full border-4 text-[40px] [-webkit-touch-callout:none] ${rec !== null ? "border-crimson bg-crimson-deep shadow-[0_0_30px_6px_rgba(192,57,43,.5)]" : "border-brass/70 bg-[#3a240c]"}`}
+          className={`relative grid h-28 w-28 select-none place-items-center rounded-full border-4 text-[40px] [-webkit-touch-callout:none] ${rec !== null ? "border-crimson bg-crimson-deep shadow-[0_0_30px_6px_rgba(192,57,43,.5)]" : "border-jade/70 bg-[#0e2a18]"}`}
           aria-label="Hold to record a voice note">
           🎙️
           {rec !== null && (
@@ -92,25 +131,8 @@ export function WhisperSheet({ v, code, token, to, onClose }: { v: PlayerView; c
             </svg>
           )}
         </button>
-        <p className="-mt-2 text-center text-[13px] text-stock/60">{rec !== null ? `${Math.ceil(WHISPER_SECONDS - rec)}s — let go to send` : "Hold to talk"}</p>
-
-        <div className="flex flex-wrap justify-center gap-2">
-          {QUICK_LINES.map((t) => <button key={t} type="button" disabled={busy} onClick={() => void send({ kind: "t", text: t })} className={chip}>{t}</button>)}
-        </div>
-
-        {/* pass on a Kundli read: who, then what you saw */}
-        <div className="flex flex-col gap-2 rounded-2xl border border-brass/30 p-3">
-          <p className="text-center text-[12px] font-semibold uppercase tracking-[0.15em] text-brass">I read the Kundli of…</p>
-          <div className="flex flex-wrap justify-center gap-1.5">
-            {others.map((p) => <button key={p.seat} type="button" onClick={() => setAbout(p.seat)} className={`${chip} ${about === p.seat ? "border-[#f0a32e] text-[#f3c66b]" : ""}`}>{p.name.replace(/\s*🤖$/, "")}</button>)}
-          </div>
-          {about !== null && (
-            <div className="flex flex-wrap justify-center gap-1.5">
-              {v.rolesInPlay.map((role) => <button key={role} type="button" disabled={busy} onClick={() => void send({ kind: "k", about, role })} className={`${chip} bg-[#3a240c]`}>{role}</button>)}
-            </div>
-          )}
-        </div>
-        {err && <p role="alert" className="rounded-xl bg-crimson-deep p-3 text-center text-[14px]">{err}</p>}
+        <p className="text-[13px] text-stock/60">{busy ? "Sending…" : rec !== null ? `${Math.ceil(WHISPER_SECONDS - rec)}s left — let go to send` : "Hold to talk"}</p>
+        {err && <p role="alert" className="rounded-xl bg-crimson-deep p-2 text-center text-[13px]">{err}</p>}
       </div>
     </div>
   );
@@ -134,7 +156,7 @@ export function WhisperBubble({ w, names, onDone, up = false }: { w: Incoming; n
   return (
     <div className={`stage-in fixed inset-x-3 ${up ? "top-16" : "bottom-[42%]"} z-40 mx-auto max-w-sm rounded-2xl border-2 border-jade/70 bg-[#0e1a12]/95 p-4 text-center shadow-[0_12px_40px_rgba(0,0,0,.8)]`} role="status">
       <p className="font-[family-name:var(--font-engraved)] text-[11px] font-semibold uppercase tracking-[0.2em] text-jade-soft">Only you hear this</p>
-      <p className="mt-1 font-display text-[18px] font-bold text-stock">🤫 {who} whispers…</p>
+      <p className="mt-1 font-display text-[18px] font-bold text-stock">🎙 {who} sent you a voice note</p>
       {text && <p className="mt-2 font-display text-[17px] italic text-[#f3c66b]">&ldquo;{text}&rdquo;</p>}
       <div className="mt-3 flex justify-center gap-2">
         {b.kind === "v" && <button type="button" onClick={listen} className="min-h-11 rounded-full border-2 border-jade/70 px-5 text-[14px] font-bold text-jade-soft">{playing ? "🔊 …" : "▶ Listen"}</button>}

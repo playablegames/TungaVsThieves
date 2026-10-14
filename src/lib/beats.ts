@@ -75,28 +75,28 @@ function rawBeat(e: GameEvent, names: string[], history: GameEvent[]): Beat | nu
   const base = { n: e.n, type: e.type, actor, target, private: priv };
   switch (e.type) {
     case "pass":
-      return { ...base, title: `${nm(actor)} plays nothing`, detail: "Three cards go on face down.", tone: "neutral", big: false, hold: SMALL };
+      return { ...base, title: `${nm(actor)} passed`, detail: "Three cards go on face down.", tone: "neutral", big: false, hold: SMALL };
     case "kundli":
-      return { ...base, card: "KUNDLI", title: `${nm(actor)} reads ${nm(target)}'s Kundli`, tone: "relic", big: true, hold: BIG };
+      return { ...base, card: "KUNDLI", title: `${nm(actor)} played Kundli on ${nm(target)}`, tone: "relic", big: true, hold: BIG };
     case "kundli_private":
       return { ...base, card: "KUNDLI", role: String(d?.role ?? ""), title: `${nm(target)} is ${String(d?.role)}`, detail: `${d?.side === "T" ? "A thief." : "A villager."} They saw yours too.`, tone: "relic", big: true, hold: BIG };
     case "talashi":
-      return { ...base, card: "TALASHI", title: `${nm(actor)} searches ${nm(target)}`, detail: "Only they see the cards.", tone: "relic", big: true, hold: BIG };
+      return { ...base, card: "TALASHI", title: `${nm(actor)} played Talashi on ${nm(target)}`, detail: "Only they see the cards.", tone: "relic", big: true, hold: BIG };
     case "talashi_private":
       return { ...base, card: "TALASHI", title: `${nm(target)} holds`, cards: (d?.hand as Card[]) ?? [], tone: "relic", big: true, hold: BIG };
     case "hera_pheri":
-      return { ...base, card: "HERA_PHERI", title: `${nm(actor)} steals from ${nm(target)}`, detail: `${num(d, "k") ?? 2} cards, face down. ${nm(target)} draws back up.`, tone: "lethal", big: true, hold: BIG };
+      return { ...base, card: "HERA_PHERI", title: `${nm(actor)} played Hera Pheri on ${nm(target)}`, detail: `${num(d, "k") ?? 2} cards, face down. ${nm(target)} draws back up.`, tone: "lethal", big: true, hold: BIG };
     case "hera_pheri_private":
       return { ...base, card: "HERA_PHERI", title: "What moved", detail: e.msg, tone: "lethal", big: false, hold: SMALL };
     case "batwara":
-      return { ...base, card: "BATWARA", title: `${nm(actor)} plays Bhukamp`, detail: "Everyone passes one card left and one right.", tone: "gold", big: true, hold: BIG };
+      return { ...base, card: "BATWARA", title: `${nm(actor)} played Bhukamp`, detail: "Everyone passes one card left and one right.", tone: "gold", big: true, hold: BIG };
     case "teer_kaman": {
       const roles = (d?.roles as string[]) ?? [];
       const hit = d?.hit === true;
-      return { ...base, card: "TEER_KAMAN", title: `${nm(actor)} shoots at ${nm(target)}`, detail: `${roles.join(" or ")} — ${hit ? "HIT" : "miss"}`, result: hit ? "hit" : "miss", tone: "lethal", big: true, hold: BIG };
+      return { ...base, card: "TEER_KAMAN", title: `${nm(actor)} played Teer Kaman on ${nm(target)}`, detail: `${roles.join(" or ")} — ${hit ? "HIT" : "miss"}`, result: hit ? "hit" : "miss", tone: "lethal", big: true, hold: BIG };
     }
     case "faisla":
-      return { ...base, card: "FAISLA", title: `${nm(actor)} calls a Faisla`, tone: "vote", big: true, hold: BIG };
+      return { ...base, card: "FAISLA", title: `${nm(actor)} played Faisla`, tone: "vote", big: true, hold: BIG };
     case "away":
     case "back":
       return { ...base, title: e.msg, tone: "neutral", big: false, hold: SMALL };
@@ -144,7 +144,9 @@ function rawBeat(e: GameEvent, names: string[], history: GameEvent[]): Beat | nu
     case "floor":
       return { ...base, title: e.msg, tone: "vote", big: false, hold: 600 };
     case "whisper":
-      return { ...base, title: e.msg, tone: "neutral", big: false, hold: 900 };
+      // (2026-10-14) a person's private message shows in the centre from the message itself; a BOT's private word has
+      // no message, so its event is the line: "Raju → Adi, privately"
+      return d?.bot ? { ...base, title: e.msg.replace(/\s*🤖/g, ""), tone: "neutral", big: false, hold: 900 } : null;
     case "whisper_private":
       return { ...base, title: e.msg, tone: "relic", big: false, hold: 900 };
     case "claim":
@@ -156,7 +158,7 @@ function rawBeat(e: GameEvent, names: string[], history: GameEvent[]): Beat | nu
         const why = backing(e, history, nm);
         if (!loud) return { ...base, actor, target, title: e.msg.replace(/\s*🤖/g, ""), detail: why, tone: d?.kind === "stone" ? "gold" : "vote", big: false, hold: 1800 };
         return d?.kind === "stone"
-          ? { ...base, actor, target, title: `${who}: ${them} has a Stone!`, detail: why, tone: "gold", big: true, hold: Math.round(2600 * PACE) }
+          ? { ...base, actor, target, title: `${who}: ${them} has ${d?.stone === "STONE_1" ? "the Bhadra Stone" : d?.stone === "STONE_2" ? "the Tunga Stone" : "a Stone"}!`, detail: why, tone: "gold", big: true, hold: Math.round(2600 * PACE) }
           : { ...base, actor, target, role: String(d?.role ?? ""), title: d?.role ? `${who}: ${them} ${d?.kind === "was" ? "was" : "is"} ${String(d.role)}!` : `${who} suspects ${them}!`, detail: why, tone: "lethal", big: true, hold: Math.round(2600 * PACE) };
       }
     case "batwara_done": {

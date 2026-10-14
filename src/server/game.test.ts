@@ -265,7 +265,7 @@ describe("online cap (designer 2026-10-07)", () => {
 });
 
 describe("whispers (designer 2026-10-07)", () => {
-  it("only the two players ever get what was whispered; everyone sees who to whom; once per round", async () => {
+  it("only the two players ever get what was said privately; everyone sees who to whom; as often as they like (2026-10-14)", async () => {
     const { code, tokens } = await room(5);
     await startGame(code, tokens[0]);
     const row = (await memoryStore.get(code))!;
@@ -278,7 +278,11 @@ describe("whispers (designer 2026-10-07)", () => {
     expect(JSON.stringify(forA.messages)).toContain(secret);
     expect(JSON.stringify(forC.messages)).not.toContain(secret);      // a third player sees only who to whom
     expect(forC.view!.events.some((e) => e.type === "whisper")).toBe(true);
-    await err(whisper(code, a, { to: seatOfTok(c), kind: "t", text: "again" }), 409); // once per round
+    await whisper(code, a, { to: seatOfTok(c), kind: "t", text: "again" }); // unlimited (designer 2026-10-14)
+    await whisper(code, a, { to: seatOfTok(b), kind: "t", text: "and again" });
+    const st = (await memoryStore.get(code))!.state!;
+    // the table sees each pair once a round, never a flood
+    expect(st.events.filter((e) => e.type === "whisper" && e.data?.seat === seatOfTok(a) && e.data?.target === seatOfTok(b))).toHaveLength(1);
   });
 
   it("a voice note is private too, size-capped, and the host's log never carries any whisper", async () => {

@@ -9,11 +9,11 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import type { ChatMessage } from "@/server/store";
 import type { Beat, Tone } from "./beats";
 import { isReaction, REACT_PREFIX } from "./reactions";
-import { CAPTION_PREFIX, QUICK_PREFIX, isCaption, isQuick, isSystemMessage } from "./whisper";
+import { CAPTION_PREFIX, QUICK_PREFIX, decodeWhisper, isCaption, isQuick, isSystemMessage, isWhisper } from "./whisper";
 
 export { CAPTION_PREFIX, QUICK_PREFIX } from "./whisper";
 
-export type FeedKind = "event" | "claim" | "talk" | "caption" | "vote" | "react" | "whisper";
+export type FeedKind = "event" | "claim" | "talk" | "caption" | "vote" | "react" | "whisper" | "chat" | "private";
 export interface FeedItem {
   id: string;
   kind: FeedKind;
@@ -28,6 +28,10 @@ export interface FeedItem {
   old: boolean;
   /** only this phone sees it (your Kundli read, what you took) */
   mine?: boolean;
+  /** a private message: what this phone may read of it (null = only "A → B, privately") */
+  privateText?: string | null;
+  /** a voice note this phone may play */
+  audio?: string;
 }
 
 const KEEP = 200;
@@ -55,7 +59,7 @@ export class FeedLog {
 
   /** `caughtUp` = this phone's stage has shown every public play so far. Until it has, new talk waits — a bot's
    *  reply to a play must never appear above the play itself. */
-  ingest(beats: Beat[], messages: ChatMessage[], ballots: Record<string, number | null> | null, names: string[], caughtUp = true) {
+  ingest(beats: Beat[], messages: ChatMessage[], ballots: Record<string, number | null> | null, names: string[], caughtUp = true, me = -1) {
     const old = !this.started;
     const out: FeedItem[] = [];
     for (const b of beats) {
@@ -63,12 +67,16 @@ export class FeedLog {
       this.lastBeat = b.n;
       out.push(b.type === "claim"
         ? { id: `b${b.n}`, kind: "claim", seat: b.actor, target: b.target, text: b.title, tone: b.tone, old }
+        : b.type === "whisper"
+        ? { id: `b${b.n}`, kind: "private", seat: b.actor, target: b.target, text: b.title, tone: "neutral", old, privateText: null, mine: false }
+        : b.type === "whisper_private"
+        ? { id: `b${b.n}`, kind: "private", seat: b.actor, target: me, text: b.title, tone: "neutral", old, privateText: b.title.replace(/^[^:]*:\s*/, "").replace(/^"|"$/g, ""), mine: true }
         : { id: `b${b.n}`, kind: "event", seat: b.actor, target: b.target, text: b.title, detail: b.detail, tone: b.tone, old, mine: b.private });
     }
     for (const m of caughtUp || old ? messages : []) {
       if (m.id <= this.lastMsg) continue;
       this.lastMsg = m.id;
-      const it = fromMessage(m, names, old);
+      const it = fromMessage(m, names, old, me);
       if (it) out.push(it);
     }
     // open voting: every ballot shows the moment it lands, and every change of mind
@@ -92,8 +100,18 @@ export class FeedLog {
 
 const nm = (names: string[], seat: number) => (names[seat] ?? "?").replace(/\s*🤖$/, "");
 
-function fromMessage(m: ChatMessage, names: string[], old: boolean): FeedItem | null {
+function fromMessage(m: ChatMessage, names: string[], old: boolean, me: number): FeedItem | null {
   const id = `m${m.id}`;
+  // (designer 2026-10-14) THE CENTRE IS THE CHAT: a private message shows the two of them what was said, and everyone
+  // else only "A → B, privately"
+  if (isWhisper(m.text)) {
+    const w = decodeWhisper(m.seat, m.text);
+    if (!w) return null;
+    const b = w.body;
+    const said = !b ? null : b.kind === "t" ? b.text : b.kind === "k" ? `I read ${nm(names, b.about)}'s Kundli: ${b.role}` : "";
+    return { id, kind: "private", seat: w.from, target: w.to, text: `${nm(names, w.from)} → ${nm(names, w.to)}, privately`, tone: "neutral", old,
+      privateText: said, ...(b?.kind === "v" ? { audio: b.audio } : {}), mine: Boolean(b) && (w.from === me || w.to === me) };
+  }
   if (isCaption(m.text)) return { id, kind: "caption", seat: m.seat, text: m.text.slice(CAPTION_PREFIX.length), tone: "neutral", old };
   if (isQuick(m.text)) return { id, kind: "talk", seat: m.seat, text: m.text.slice(QUICK_PREFIX.length), tone: "neutral", old };
   if (isReaction(m.text)) {
@@ -101,12 +119,13 @@ function fromMessage(m: ChatMessage, names: string[], old: boolean): FeedItem | 
     return { id, kind: "react", seat: m.seat, target: Number(to), text: `${nm(names, m.seat)} threw ${emoji} at ${nm(names, Number(to))}`, tone: "neutral", old };
   }
   if (isSystemMessage(m.text)) return null;
-  return { id, kind: "talk", seat: m.seat, text: m.text, tone: "neutral", old };
+  // a typed line to everyone
+  return { id, kind: "chat", seat: m.seat, text: m.text, tone: "neutral", old };
 }
 
-export function useFeed(beats: Beat[], messages: ChatMessage[], ballots: Record<string, number | null> | null, names: string[], caughtUp: boolean, onFresh: (it: FeedItem) => void) {
+export function useFeed(beats: Beat[], messages: ChatMessage[], ballots: Record<string, number | null> | null, names: string[], caughtUp: boolean, onFresh: (it: FeedItem) => void, me = -1) {
   const [log] = useState(() => new FeedLog());
   useEffect(() => { log.listen(onFresh); }, [log, onFresh]);
-  useEffect(() => { log.ingest(beats, messages, ballots, names, caughtUp); }, [log, beats, messages, ballots, names, caughtUp]);
+  useEffect(() => { log.ingest(beats, messages, ballots, names, caughtUp, me); }, [log, beats, messages, ballots, names, caughtUp, me]);
   return useSyncExternalStore(log.subscribe, log.getSnapshot, log.getSnapshot);
 }

@@ -10,11 +10,13 @@ import type { LineClaim } from "./botmind";
 
 type R = () => number;
 
-/** "X has a Stone" / "X has no Stone", on the table for everyone */
-export function pushStoneClaim(s: GameState, seat: number, target: number, has: boolean) {
+const STONE_NAME: Record<string, string> = { STONE_1: "the Bhadra Stone", STONE_2: "the Tunga Stone" };
+/** "X has the Tunga Stone" / "X has no Stone", on the table for everyone (designer 2026-10-14: say WHICH Stone) */
+export function pushStoneClaim(s: GameState, seat: number, target: number, has: boolean, stone?: string | null) {
   const me = s.players[seat].name, them = s.players[target].name;
-  s.events.push({ n: s.events.length, type: "claim", to: "all", msg: `${me}: "${them} ${has ? "has a Stone" : "has no Stone"}."`,
-    data: { seat, kind: "stone", target, has, role: null, side: null } });
+  const which = has && stone && STONE_NAME[stone] ? stone : null;
+  s.events.push({ n: s.events.length, type: "claim", to: "all", msg: `${me}: "${them} ${has ? `has ${which ? STONE_NAME[which] : "a Stone"}` : "has no Stone"}."`,
+    data: { seat, kind: "stone", target, has, role: null, side: null, ...(which ? { stone: which } : {}) } });
 }
 
 /** EVERY DISCOVERY BECOMES A MARK (designer 2026-10-12: "every info must trigger something — a Kundli revealing a
@@ -33,8 +35,8 @@ function botWhisper(s: GameState, seat: number, about: number, role: string, sid
   if (!friends.length) return;
   const to = friends[0];
   const me = s.players[seat].name, them = s.players[to].name;
-  s.events.push({ n: s.events.length, type: "whisper", to: "all", msg: `${me} whispered to ${them}.`, data: { seat, target: to, round: s.round } });
-  s.events.push({ n: s.events.length, type: "whisper_private", to: [seat, to], msg: `${me} whispers: "I read ${s.players[about].name}'s Kundli — ${role}."`,
+  s.events.push({ n: s.events.length, type: "whisper", to: "all", msg: `${me} → ${them}, privately`, data: { seat, target: to, round: s.round, bot: true } });
+  s.events.push({ n: s.events.length, type: "whisper_private", to: [seat, to], msg: `${me}: "I read ${s.players[about].name}'s Kundli — ${role}."`,
     data: { seat, target: about, role, side, kind: "kundli", to } });
 }
 
@@ -60,6 +62,24 @@ export function botReactions(s: GameState, from: number, botSkill: (seat: number
       data: { seat, kind, target, role, side } });
   };
   for (const e of s.events.slice(from)) {
+    // (designer 2026-10-14: "make the bots do the same") ACCUSED → ANSWER AT ONCE, the way a player taps the accuser:
+    // a bot called a thief (or named with a thief role) calls the accuser out in return — a villager because it knows
+    // the word is wrong, a thief to hit back. Once per accuser; a role only if the bot SAW the accuser's card.
+    if (RULES && e.type === "claim" && e.to === "all" && e.data?.side === "T" && e.data?.kind !== "stone" && bot(e.data?.target)) {
+      const me = e.data!.target as number, accuser = e.data!.seat as number;
+      if (accuser !== me && s.players[me]?.alive && s.players[accuser]?.alive
+        && !s.events.some((c) => c.type === "claim" && c.data?.seat === me && c.data?.target === accuser && c.data?.side === "T")) {
+        const read = s.events.findLast((k) => k.type === "kundli_private" && Array.isArray(k.to) && k.to[0] === me && k.data?.target === accuser);
+        const villager = s.players[me].side === "V";
+        // a villager who read the accuser says the truth; otherwise a plain "suspects" — no invented role
+        const role = read && villager ? (read.data?.side === "T" ? String(read.data?.role) : null) : null;
+        if (!(villager && read?.data?.side === "V")) {
+          s.events.push({ n: s.events.length, type: "claim", to: "all", msg: `${s.players[me].name}: "${role ? `${s.players[accuser].name} is ${role}` : `${s.players[accuser].name} is lying`}."`,
+            data: { seat: me, kind: role ? "kundli" : "accuse", target: accuser, role, side: "T", answer: true } });
+        }
+      }
+      continue;
+    }
     // DID IT COME BACK? (designer 2026-10-12) a villager bot whose Stone a Bhukamp handed on, and which didn't come back
     // down the pile, knows its neighbour kept it — and marks it for the table. (A thief bot keeps that to itself.)
     // (2026-10-13) a HUMAN learns it too — privately: "Your Stone didn't come back — Raju kept it"
@@ -79,7 +99,8 @@ export function botReactions(s: GameState, from: number, botSkill: (seat: number
     if (RULES && e.type === "hera_pheri_private" && ((e.data?.taken as string[]) ?? []).some((c) => c === "STONE_1" || c === "STONE_2")) {
       const hp = s.events.slice(0, e.n).reverse().find((x) => x.type === "hera_pheri");
       const thiefSeat = hp?.data?.seat as number | undefined, victim = hp?.data?.target as number | undefined;
-      if (thiefSeat !== undefined && victim !== undefined && bot(victim) && s.players[victim].side === "V" && s.players[victim].alive) pushStoneClaim(s, victim, thiefSeat, true);
+      const taken = ((e.data?.taken as string[]) ?? []).find((c) => c === "STONE_1" || c === "STONE_2");
+      if (thiefSeat !== undefined && victim !== undefined && bot(victim) && s.players[victim].side === "V" && s.players[victim].alive) pushStoneClaim(s, victim, thiefSeat, true, taken);
       continue;
     }
     const seen = e.type === "talashi_private" ? (e.data?.seat as number)
@@ -91,8 +112,9 @@ export function botReactions(s: GameState, from: number, botSkill: (seat: number
       // the bot rulebook (reason.ts): no dice on whether a bot speaks — a villager says what it saw, a thief the lie
       if (e.type === "talashi_private") {
         const target = e.data?.target as number;
-        const found = ((e.data?.hand as string[]) ?? []).some((c) => c === "STONE_1" || c === "STONE_2");
-        if (s.players[target]?.alive) pushStoneClaim(s, seen, target, wordAboutSearch(s, seen, skill, found));
+        const found = ((e.data?.hand as string[]) ?? []).find((c) => c === "STONE_1" || c === "STONE_2");
+        const says = wordAboutSearch(s, seen, skill, Boolean(found));
+        if (s.players[target]?.alive) pushStoneClaim(s, seen, target, says, says ? found : null);
         continue;
       }
       const target = (e.type === "eliminated_private" ? e.data?.seat : e.data?.target) as number;
