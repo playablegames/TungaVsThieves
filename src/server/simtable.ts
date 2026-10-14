@@ -18,12 +18,15 @@ export interface SimOptions {
   /** seats that think with the flowsheet */
   plans?: (seat: number) => boolean;
   table?: typeof ROLE_TABLE;
+  /** rule option: Dal Badal as a shield (designer 2026-10-14) */
+  dbShield?: boolean;
   /** keep every bot's reason in the log (bot_why, analytics only) — to read a game back */
   explain?: boolean;
 }
 
 export function playTable(n: number, seed: number, r: R, o: SimOptions): GameState {
   let s: GameState = start(Array.from({ length: n }, (_, i) => `P${i}`), seed, o.table ?? ROLE_TABLE);
+  if (o.dbShield) s.dbShield = true;
   const all = Array.from({ length: n }, (_, i) => i);
   for (let k = 0; k < 20000 && s.phase.kind !== "over"; k++) {
     const seat = waitingOn(s)[0];

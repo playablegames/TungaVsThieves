@@ -55,6 +55,7 @@ function phaseLabel(s: GameState): string {
     case "dal_badal": return `dal_badal:${ph.actor}`;
     case "surrender": return "surrender";
     case "elim": return `elim:${ph.step}:${ph.seat}`;
+    case "react": return "react"; // (designer 2026-10-14, behind dbShield) the Dal Badal shield moment
     case "over": return "over";
   }
 }

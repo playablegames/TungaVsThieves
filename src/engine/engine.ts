@@ -84,7 +84,8 @@ export const playableCards = (s: GameState, seat: number) => ACTION_CARDS.filter
 /** Dal Badal (designer 2026-10-09): a living thief holding it may use it on their turn, before they play or pass —
  *  and (2026-10-12) during the MANDATORY VOTE's debate, before the ballots */
 export const canDalBadal = (s: GameState, seat: number) =>
-  ((s.phase.kind === "turn" && s.phase.seat === seat) || (s.phase.kind === "vote" && s.phase.reason === "final" && s.phase.debate))
+  ((s.phase.kind === "turn" && s.phase.seat === seat) || (s.phase.kind === "vote" && (s.phase.reason === "final" || Boolean(s.dbShield)) && s.phase.debate)
+    || (s.phase.kind === "react" && s.phase.seat === seat))
   && Boolean(P(s, seat).alive) && P(s, seat).side === "T" && P(s, seat).hand.includes("DAL_BADAL") && living(s).length >= 3;
 
 /** how many other living players a Dal Badal takes in: 2, fewer only if fewer are left */
@@ -224,6 +225,7 @@ export function waitingOn(s: GameState): number[] {
     case "surrender": return ph.holders.filter((h) => !(h in ph.choices));
     case "dal_badal": return [ph.pickers[0]];
     case "elim": return [ph.seat];
+    case "react": return [ph.seat];
     default: return [];
   }
 }
@@ -291,6 +293,12 @@ export function apply(prev: GameState, seat: number, action: Action): GameState 
     return s;
   }
   if (ph.kind === "dal_badal") return doDalPick(s, action);
+  if (ph.kind === "react") {
+    if (action.type === "dal_badal") return doDalBadal(s, seat, action.seats, []);
+    if (action.type !== "ready") throw new RuleError("Use Dal Badal now, or let it happen");
+    finishReact(s, ph);
+    return s;
+  }
   if (ph.kind === "elim") return doElimStep(s, seat, action);
   throw new RuleError("The game is over");
 }
@@ -333,12 +341,9 @@ function doPlay(s: GameState, seat: number, a: Extract<Action, { type: "play" }>
   switch (a.card) {
     case "KUNDLI": {
       p.hand.push(...draw(s, 2));
-      // MUTUAL KUNDLI (designer 2026-10-12): the reader sees the target's role card AND the target sees the reader's
-      emit(s, "kundli", "all", `${p.name} and ${t!.name} look at each other's role cards.`, { seat, target: t!.seat });
-      emit(s, "kundli_private", [seat], `${t!.name} is ${t!.role} (${t!.side === "V" ? "Tunga" : "Thief"}).`, { target: t!.seat, role: t!.role, side: t!.side });
-      emit(s, "kundli_private", [t!.seat], `${p.name} read your role card — and you saw theirs: ${p.name} is ${p.role} (${p.side === "V" ? "Tunga" : "Thief"}).`,
-        { target: seat, role: p.role, side: p.side, mutual: true });
-      endTurn(s); return s;
+      if (shieldUp(s, t!.seat)) { s.phase = { kind: "react", seat: t!.seat, on: { kind: "kundli", reader: seat } }; return s; }
+      resolveKundli(s, seat, t!.seat);
+      return s;
     }
     case "TALASHI": {
       p.hand.push(...draw(s, 2));
@@ -370,20 +375,8 @@ function doPlay(s: GameState, seat: number, a: Extract<Action, { type: "play" }>
       return s;
     }
     case "TEER_KAMAN": {
-      const named = [...a.roles!];
-      const hit = named.includes(t!.role);
-      emit(s, "teer_kaman", "all", `${p.name} shoots at ${t!.name}, naming ${named.join(" and ")} — ${hit ? "HIT" : "miss"}.`,
-        { seat, target: t!.seat, roles: named, hit });
-      if (hit) {
-        s.elimQueue.push({ seat: t!.seat, killer: seat, reveal: [], open: true }); // (designer 2026-10-14) a HIT shows the role to everyone
-        s.after = { kind: "endTurn", drawFor: seat };
-        runElims(s);
-      } else {
-        // a miss puts the shooter out (designer 2026-10-09)
-        s.elimQueue.push({ seat, killer: null, reveal: [] }); // the shooter's role stays hidden
-        s.after = { kind: "endTurn", drawFor: null };
-        runElims(s);
-      }
+      if (shieldUp(s, t!.seat)) { s.phase = { kind: "react", seat: t!.seat, on: { kind: "tk", shooter: seat, roles: [...a.roles!] } }; return s; }
+      resolveTeerKaman(s, seat, t!.seat, [...a.roles!]);
       return s;
     }
     case "FAISLA": {
@@ -396,6 +389,46 @@ function doPlay(s: GameState, seat: number, a: Extract<Action, { type: "play" }>
   }
 }
 
+// ---------------------------------------------------------------- Kundli / Teer Kaman resolution
+function resolveKundli(s: GameState, seat: number, target: number) {
+  const p = P(s, seat), t = P(s, target);
+  // MUTUAL KUNDLI (designer 2026-10-12): the reader sees the target's role card AND the target sees the reader's
+  emit(s, "kundli", "all", `${p.name} and ${t.name} look at each other's role cards.`, { seat, target });
+  emit(s, "kundli_private", [seat], `${t.name} is ${t.role} (${t.side === "V" ? "Tunga" : "Thief"}).`, { target, role: t.role, side: t.side });
+  emit(s, "kundli_private", [target], `${p.name} read your role card — and you saw theirs: ${p.name} is ${p.role} (${p.side === "V" ? "Tunga" : "Thief"}).`,
+    { target: seat, role: p.role, side: p.side, mutual: true });
+  endTurn(s);
+}
+
+function resolveTeerKaman(s: GameState, seat: number, target: number, named: string[]) {
+  const p = P(s, seat), t = P(s, target);
+  const hit = named.includes(t.role);
+  emit(s, "teer_kaman", "all", `${p.name} shoots at ${t.name}, naming ${named.join(" and ")} — ${hit ? "HIT" : "miss"}.`,
+    { seat, target, roles: named, hit });
+  if (hit) {
+    s.elimQueue.push({ seat: target, killer: seat, reveal: [], open: true }); // (designer 2026-10-14) a HIT shows the role to everyone
+    s.after = { kind: "endTurn", drawFor: seat };
+  } else {
+    // a miss puts the shooter out (designer 2026-10-09)
+    s.elimQueue.push({ seat, killer: null, reveal: [] }); // the shooter's role stays hidden
+    s.after = { kind: "endTurn", drawFor: null };
+  }
+  runElims(s);
+}
+
+/** DAL BADAL AS A SHIELD (designer 2026-10-14): a thief holding it, with 2 others left to shuffle with */
+function shieldUp(s: GameState, seat: number): boolean {
+  const t = P(s, seat);
+  return Boolean(s.dbShield) && t.alive && t.side === "T" && t.hand.includes("DAL_BADAL") && living(s).length >= 3;
+}
+
+/** the shot, the read or the exit goes ahead — on whatever role card the seat holds now */
+function finishReact(s: GameState, ph: Extract<GameState["phase"], { kind: "react" }>) {
+  if (ph.on.kind === "tk") resolveTeerKaman(s, ph.on.shooter, ph.seat, ph.on.roles);
+  else if (ph.on.kind === "kundli") resolveKundli(s, ph.on.reader, ph.seat);
+  else { s.elimQueue.push(ph.on.job); runElims(s); }
+}
+
 // ---------------------------------------------------------------- Dal Badal
 // (designer 2026-10-09) a thief on their turn shows their role and points at 2 other living players. The 3 role cards
 // are shuffled face down; from the thief, in seat order, each picks one — the last takes what is left. Each sees only
@@ -404,6 +437,7 @@ function doDalBadal(s: GameState, seat: number, chosen: number[], pass: Card[]):
   const ph = s.phase;
   const votedOut = ph.kind === "elim" && ph.step === "dal_badal" && ph.seat === seat;
   if (!votedOut && !canDalBadal(s, seat)) throw new RuleError("Only a thief holding Dal Badal can use it — on their turn, or in the mandatory vote");
+  if (ph.kind === "react" && ph.on.kind === "faisla_out" && living(s).length < 3) throw new RuleError("Not enough players left to shuffle with");
   const p = P(s, seat);
   const seats = [...new Set(chosen)];
   const k = dalBadalPick(s, seat);
@@ -421,7 +455,7 @@ function doDalBadal(s: GameState, seat: number, chosen: number[], pass: Card[]):
   if (onTurn) { s.pile = pass; s.pileFrom = seat; }
   emit(s, "dal_badal", "all",
     `DAL BADAL — ${p.name} shows ${p.role} (Thief) and shuffles roles with ${seats.map((x) => P(s, x).name).join(", ").replace(/, ([^,]*)$/, " and $1")}. Each picks one back, face down.`,
-    { seat, role: p.role, seats: pickers, when: onTurn ? "turn" : votedOut ? "voted_out" : "debate" });
+    { seat, role: p.role, seats: pickers, when: onTurn ? "turn" : votedOut || (ph.kind === "react" && ph.on.kind === "faisla_out") ? "voted_out" : ph.kind === "react" ? (ph.on.kind === "tk" ? "shot_at" : "read") : "debate" });
   // (2026-10-12) in the mandatory vote the game goes back where it was once everyone has picked: the debate goes on,
   // or the thief who was voted out carries on going out — with the role they picked (sides count after the shuffle)
   const resume = onTurn ? undefined : votedOut ? { kind: "elim" as const, seat, step: "dying" as const } : ph;
@@ -443,10 +477,12 @@ function doDalPick(s: GameState, a: Action): GameState {
   if (ph.resume) {
     // the mandatory vote: no end of turn. In the debate the thief draws back up to 2 (designer 2026-10-12:
     // everyone holds 2); a thief being voted out draws nothing — their hand is about to go.
-    const debate = ph.resume.kind === "vote";
+    const debate = ph.resume.kind === "vote" || ph.resume.kind === "react";
     if (debate) P(s, ph.actor).hand.push(...draw(s, Math.max(0, 2 - P(s, ph.actor).hand.length)));
     emit(s, "dal_badal_done", "all", debate ? `Dal Badal is done. ${P(s, ph.actor).name} draws back to 2.` : "Dal Badal is done.", { seat: ph.actor, inVote: true });
     s.phase = ph.resume;
+    // a shield: now the shot, the read or the exit goes ahead
+    if (s.phase.kind === "react") { finishReact(s, s.phase); return s; }
     if (s.phase.kind === "elim") {
       const w = winnerIfWipe(s);
       if (w) { s.elimQueue = []; finish(s, w, w === "V" ? "every thief is out" : "every villager is out"); }
@@ -500,7 +536,10 @@ function resolveVote(s: GameState) {
   // Faisla: the caller draws back up to 2 — a caller who put someone out holds their 2 cards instead (after any elimination resolves)
   s.after = { kind: "endTurn", drawFor: ph.caller };
   // only the caller sees the role (designer 2026-10-09) — nobody does if the caller is voted out by their own Faisla
-  if (out !== null) { s.elimQueue.push({ seat: out, killer: ph.caller, reveal: ph.caller !== null && out !== ph.caller ? [ph.caller] : [] }); runElims(s); }
+  const job = out !== null ? { seat: out, killer: ph.caller, reveal: ph.caller !== null && out !== ph.caller ? [ph.caller] : [] } : null;
+  // DAL BADAL AS A SHIELD: a thief voted out may shuffle first — the caller then sees the role card the seat holds now
+  if (job && shieldUp(s, job.seat)) { s.phase = { kind: "react", seat: job.seat, on: { kind: "faisla_out", job } }; return; }
+  if (job) { s.elimQueue.push(job); runElims(s); }
   else continueAfterElims(s);
 }
 

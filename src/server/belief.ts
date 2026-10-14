@@ -18,7 +18,7 @@ import { randomAction, readsOf } from "@/engine/decisions";
 import { deduce, unanswered, UNANSWERED, type Model } from "./deduce";
 import { clampLR, tellsOf, TELLS } from "./tells";
 import type { Action } from "@/engine/types";
-import { ruleBhukamp, ruleClaim, ruleDalBadal, ruleGift, ruleHandoff, ruleTieBreak, ruleTurn, ruleVote, type Decision } from "./reason";
+import { ruleBhukamp, ruleClaim, ruleDalBadal, ruleGift, ruleHandoff, ruleShield, ruleTieBreak, ruleTurn, ruleVote, type Decision } from "./reason";
 
 /** (designer 2026-10-14) THE BOT RULEBOOK (reason.ts, docs/BOT_LOGIC.md) decides everything a bot does — talk, votes,
  *  turns, Bhukamp, Dal Badal, going out. BOT_FLAGS=old-brain runs the old probability model, for a side-by-side only. */
@@ -653,6 +653,7 @@ export function botDecision(s: GameState, seat: number, seed: number, r: R, skil
   if (ph.kind === "elim" && ph.step === "dal_badal") return ruleDalBadal(s, seat, skill, r, "votedOut") ?? { action: { type: "dal_badal", seats: [], pass: [] }, why: "keep Dal Badal" };
   if (ph.kind === "elim" && ph.step === "handoff") return ruleHandoff(s, seat, skill, r);
   if (ph.kind === "elim") return ruleGift(s, seat, skill, r);
+  if (ph.kind === "react") return ruleShield(s, seat, skill, r);
   if (ph.kind === "batwara") return ruleBhukamp(s, seat, skill, r);
   if (ph.kind === "turn") return ruleTurn(s, seat, skill, r);
   // the Dal Badal pick is face down — any card is as good as another

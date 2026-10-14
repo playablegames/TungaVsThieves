@@ -57,6 +57,11 @@ export type Phase =
        *  goes back to once everyone has picked (no draw, no end of turn) */
       resume?: Phase;
     }
+  /** DAL BADAL AS A SHIELD (designer 2026-10-14, behind state.dbShield): a thief holding Dal Badal who is shot at with
+   *  Teer Kaman, read with Kundli, or voted out by a Faisla may answer with it BEFORE that resolves (roles shuffle first,
+   *  then the shot / the read / the exit happens to whatever role card the seat now holds). "ready" = let it happen. */
+  | { kind: "react"; seat: number; on: { kind: "tk"; shooter: number; roles: string[] } | { kind: "kundli"; reader: number }
+      | { kind: "faisla_out"; job: { seat: number; killer: number | null; reveal: number[] } } }
   /** step "dal_badal" (2026-10-12): a thief the mandatory vote put out, holding Dal Badal, may use it before the reveal */
   | { kind: "elim"; seat: number; step: "dying" | "handoff" | "dal_badal" }
   | {
@@ -120,6 +125,9 @@ export interface GameState {
   /** BALANCE PROBE ONLY: show every eliminated player's role to the table (the old way), to measure what hiding costs.
    *  The game never sets it. */
   publicRoles?: boolean;
+  /** DAL BADAL AS A SHIELD (designer 2026-10-14) — a thief may also use it in ANY debate, and as a reaction when shot at
+   *  (Teer Kaman), read (Kundli) or voted out by a Faisla. Off until the designer decides; the balance probe turns it on. */
+  dbShield?: boolean;
   /** LEARN BY PLAYING (2026-10-09): a guided first game — the phone shows a coach; the rules are the same */
   tutorial?: boolean;
   deadOrder: number[];

@@ -14,6 +14,8 @@ export type Decision =
   /** (2026-10-12) a thief the mandatory vote just put out, holding Dal Badal: use it (pick 2) before the reveal, or keep it */
   | { kind: "dal_badal_out"; candidates: number[] }
   | { kind: "surrender"; stones: string[] }
+  /** (designer 2026-10-14, behind dbShield) you're shot at / read / voted out: use Dal Badal first (pick 2), or let it happen */
+  | { kind: "dal_badal_shield"; on: "tk" | "kundli" | "faisla_out"; candidates: number[] }
   | null;
 
 export function decisionFor(s: GameState, seat: number): Decision {
@@ -35,6 +37,7 @@ export function decisionFor(s: GameState, seat: number): Decision {
       if (ph.step === "dal_badal") return { kind: "dal_badal_out", candidates: others };
       return { kind: "gift", candidates: others };
     }
+    case "react": return { kind: "dal_badal_shield", on: ph.on.kind, candidates: live.filter((x) => x !== seat) };
     default: return null;
   }
 }
@@ -58,6 +61,7 @@ export function defaultAction(s: GameState, seat: number): Action {
       if (ph.step === "dal_badal") return { type: "dal_badal", seats: [], pass: [] }; // keep it
       return { type: "gift", target: null };
     }
+    case "react": return { type: "ready" }; // let it happen
     default: throw new Error("No decision");
   }
 }
@@ -145,6 +149,7 @@ export function randomAction(s: GameState, seat: number, r: R, activity = 0.8, k
     // a bot that keeps Stones passes one of its other cards (it must still pass a Stone if that is all it has)
     case "batwara": { const [a, b] = passFrom(r, h, 2, keepStones); return { type: "batwara", card: a, ...(b !== undefined && h.length >= 2 ? { right: b } : {}) }; }
     case "dal_badal": return { type: "dal_pick", index: Math.floor(r() * ph.pool.length) };
+    case "react": return r() < 0.5 ? { type: "ready" } : { type: "dal_badal", seats: sample(r, others, dalBadalPick(s, seat)), pass: [] };
     case "elim": {
       if (ph.step === "handoff") return { type: "handoff", target: pick(r, others) };
       if (ph.step === "dal_badal") return { type: "dal_badal", seats: r() < 0.5 ? sample(r, others, dalBadalPick(s, seat)) : [], pass: [] };

@@ -566,6 +566,34 @@ export function ruleDalBadal(s: GameState, seat: number, skill: Skill, r: R, whe
   return null;
 }
 
+// ------------------------------------------------------------------ DAL BADAL AS A SHIELD (designer 2026-10-14, dbShield)
+/** shot at, read, or voted out by a Faisla while holding Dal Badal — a thief uses it when the moment would cost it:
+ *  · Teer Kaman: only if the shot names my TRUE role (it would hit); otherwise it misses and the shooter goes out
+ *  · Kundli: the reader would see I'm a thief — unless the reader is a partner I know
+ *  · Faisla out: always, like the mandatory vote — the seat goes out with whatever role card it picks
+ *  It shuffles with the player acting on it first, then my accusers, then whoever I think holds a Stone. */
+export function ruleShield(s: GameState, seat: number, skill: Skill, r: R): Decision {
+  const ph = s.phase;
+  const keep: Decision = { action: { type: "ready" }, why: "let it happen" };
+  if (ph.kind !== "react") return keep;
+  const me = s.players[seat];
+  const l = ledger(s, seat, skill);
+  const mem = stoneMemory(s, seat, skill, l);
+  const others = s.players.filter((p) => p.alive && p.seat !== seat && l.known.get(p.seat)?.side !== "T").map((p) => p.seat);
+  const k = dalBadalPick(s, seat);
+  if (others.length < k) return keep;
+  const actor = ph.on.kind === "tk" ? ph.on.shooter : ph.on.kind === "kundli" ? ph.on.reader : null;
+  if (ph.on.kind === "tk" && !ph.on.roles.includes(me.role)) return { action: { type: "ready" }, why: "the shot names the wrong role — it misses, the shooter goes out" };
+  if (ph.on.kind === "kundli" && actor !== null && l.known.get(actor)?.side === "T") return { action: { type: "ready" }, why: "a partner reads me — no harm" };
+  const accusers = latestClaims(s.events).filter((e) => num(e.data, "target") === seat && e.data?.side === "T").map((e) => num(e.data, "seat")!);
+  const first = [...(actor !== null ? [actor] : []), ...accusers].filter((x, i, a) => others.includes(x) && a.indexOf(x) === i);
+  const seats = first.slice(0, k);
+  const rest = others.filter((x) => !seats.includes(x));
+  while (seats.length < k && rest.length) { const t = best(r, rest, (x) => holds(mem, x))!; seats.push(t); rest.splice(rest.indexOf(t), 1); }
+  const what = ph.on.kind === "tk" ? "the shot names my role" : ph.on.kind === "kundli" ? "the read would show I'm a thief" : "voted out";
+  return { action: { type: "dal_badal", seats, pass: [] }, why: `thief: shield — ${what}; shuffle with ${seats.map((x) => plain(s, x)).join(" and ")}` };
+}
+
 // ------------------------------------------------------------------ 7. BHUKAMP
 export function ruleBhukamp(s: GameState, seat: number, skill: Skill, r: R): Decision {
   const me = s.players[seat];
