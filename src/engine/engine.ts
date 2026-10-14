@@ -226,6 +226,7 @@ export function waitingOn(s: GameState): number[] {
     case "dal_badal": return [ph.pickers[0]];
     case "elim": return [ph.seat];
     case "react": return [ph.seat];
+    case "pass_on": return [ph.seat];
     default: return [];
   }
 }
@@ -300,6 +301,10 @@ export function apply(prev: GameState, seat: number, action: Action): GameState 
     return s;
   }
   if (ph.kind === "elim") return doElimStep(s, seat, action);
+  if (ph.kind === "pass_on") {
+    if (action.type !== "pass") throw new RuleError("Pass 3 cards as the new pile");
+    return doPassOn(s, seat, action.pass);
+  }
   throw new RuleError("The game is over");
 }
 
@@ -325,32 +330,27 @@ function doPlay(s: GameState, seat: number, a: Extract<Action, { type: "play" }>
   emit(s, "analytics_turn", [], "turn", {
     seat, played: a.card, playable: playableCards(s, seat), stones: p.hand.filter(isStone).length, side: p.side,
   });
-  const afterPair = [...p.hand];
-  removeCards(afterPair, [a.card, a.card]);
-  checkPass(afterPair, a.pass);
   validateTarget(s, seat, a);
 
-  // pair to the discard, the other 3 out FIRST (power or Stone)
-  removeCards(p.hand, [a.card, a.card, ...a.pass]);
+  // PLAY, THEN PASS (designer 2026-10-14: "play, resolve the effect, pass and then draw or get"): only the pair goes
+  // down now. The player keeps their other 3 through the effect, then passes 3 and draws back up to 2 (pass_on).
+  removeCards(p.hand, [a.card, a.card]);
   discard(s, [a.card, a.card]);
-  s.pile = a.pass;
-  s.pileFrom = seat;
+  s.passDue = { seat, held: [], ...(a.pass?.length ? { plan: [...a.pass] } : {}) };
   emit(s, "play", "all", `${p.name} plays a pair of ${CARD_NAME[a.card]}.`, { seat, card: a.card, target: a.target ?? null });
 
   const t = a.target !== undefined ? P(s, a.target) : null;
   switch (a.card) {
     case "KUNDLI": {
-      p.hand.push(...draw(s, 2));
       if (shieldUp(s, t!.seat)) { s.phase = { kind: "react", seat: t!.seat, on: { kind: "kundli", reader: seat } }; return s; }
       resolveKundli(s, seat, t!.seat);
       return s;
     }
     case "TALASHI": {
-      p.hand.push(...draw(s, 2));
       // a PRIVATE search (designer 2026-10-09): the table sees who was searched, only the searcher sees the cards
       emit(s, "talashi", "all", `${p.name} searches ${t!.name}.`, { seat, target: t!.seat });
       emit(s, "talashi_private", [seat], `${t!.name} holds: ${names(t!.hand)}.`, { seat, target: t!.seat, hand: [...t!.hand] });
-      endTurn(s); return s;
+      passOnOrEnd(s); return s;
     }
     case "HERA_PHERI": {
       const k = Math.min(2, t!.hand.length);
@@ -361,13 +361,12 @@ function doPlay(s: GameState, seat: number, a: Extract<Action, { type: "play" }>
       t!.hand.push(...refill);
       emit(s, "hera_pheri", "all", `${p.name} steals ${k} cards from ${t!.name}, who draws ${refill.length}.`, { seat, target: t!.seat, k });
       emit(s, "hera_pheri_private", [seat, t!.seat], `${p.name} took ${names(taken)} from ${t!.name}.`, { taken });
-      endTurn(s); return s;
+      passOnOrEnd(s); return s;
     }
     case "BATWARA": {
-      // Bhukamp (designer 2026-10-12): the player draws 2 FIRST (their pair went down and their other 3 were passed),
-      // then every living player — them too — passes 1 card LEFT and 1 RIGHT, choosing which goes where, in secret.
-      // With 2 cards in hand you give both and get one from each side.
-      p.hand.push(...draw(s, 2));
+      // Bhukamp (designer 2026-10-12): every living player — the one who played it too, still holding their other 3
+      // (2026-10-14) — passes 1 card LEFT and 1 RIGHT, choosing which goes where, in secret. With 2 cards in hand you
+      // give both and get one from each side. The player then passes 3 and draws back up to 2.
       const givers = living(s).filter((x) => x.hand.length > 0).map((x) => x.seat);
       emit(s, "batwara", "all", `BHUKAMP — ${p.name} shakes the table: everyone passes 1 card left and 1 right.`, { seat });
       s.phase = { kind: "batwara", actor: seat, givers, picks: {} };
@@ -397,7 +396,33 @@ function resolveKundli(s: GameState, seat: number, target: number) {
   emit(s, "kundli_private", [seat], `${t.name} is ${t.role} (${t.side === "V" ? "Tunga" : "Thief"}).`, { target, role: t.role, side: t.side });
   emit(s, "kundli_private", [target], `${p.name} read your role card — and you saw theirs: ${p.name} is ${p.role} (${p.side === "V" ? "Tunga" : "Thief"}).`,
     { target: seat, role: p.role, side: p.side, mutual: true });
+  passOnOrEnd(s);
+}
+
+/** PLAY, THEN PASS (2026-10-14): the effect is over — the player who played it passes 3 now, if they're still in.
+ *  (Out during their own turn — a Teer Kaman miss, voted out by their own Faisla — their 3 already went on as the pile.) */
+function passOnOrEnd(s: GameState) {
+  const d = s.passDue;
+  if (d && P(s, d.seat).alive) { s.phase = { kind: "pass_on", seat: d.seat }; return; }
+  s.passDue = undefined;
   endTurn(s);
+}
+
+function doPassOn(s: GameState, seat: number, pass: Card[]): GameState {
+  const p = P(s, seat);
+  const d = s.passDue!;
+  checkPass(p.hand, pass);
+  removeCards(p.hand, pass);
+  s.pile = pass;
+  s.pileFrom = seat;
+  // then draw or get: the out player's cards arrive now, and everyone holds 2
+  p.hand.push(...d.held);
+  const drawn = draw(s, Math.max(0, 2 - p.hand.length));
+  p.hand.push(...drawn);
+  emit(s, "pass_after", "all", `${p.name} passes 3${drawn.length ? ` and draws ${drawn.length}` : ""}.`, { seat, drew: drawn.length, got: d.held.length });
+  s.passDue = undefined;
+  endTurn(s);
+  return s;
 }
 
 function resolveTeerKaman(s: GameState, seat: number, target: number, named: string[]) {
@@ -446,13 +471,10 @@ function doDalBadal(s: GameState, seat: number, chosen: number[], pass: Card[]):
   const pickers = [seat, ...seats].sort((x, y) => ((x - seat + n) % n) - ((y - seat + n) % n));
   const pool = shuffle(s, pickers.map((x) => ({ role: P(s, x).role, side: P(s, x).side })));
   const onTurn = ph.kind === "turn";
-  if (onTurn) {
-    const rest = [...p.hand];
-    removeCards(rest, ["DAL_BADAL"]);
-    checkPass(rest, pass ?? []);
-  } else if (pass?.length) throw new RuleError("In the mandatory vote Dal Badal passes nothing");
-  removeCards(p.hand, ["DAL_BADAL", ...(onTurn ? pass : [])]); // Dal Badal is out of the game — never reshuffled
-  if (onTurn) { s.pile = pass; s.pileFrom = seat; }
+  if (!onTurn && pass?.length) throw new RuleError("In the mandatory vote Dal Badal passes nothing");
+  removeCards(p.hand, ["DAL_BADAL"]); // Dal Badal is out of the game — never reshuffled
+  // (2026-10-14) on a turn: the shuffle first, then pass 3 and draw back up to 2 (`pass` is only a bot's plan)
+  if (onTurn) s.passDue = { seat, held: [], ...(pass?.length ? { plan: [...pass] } : {}) };
   emit(s, "dal_badal", "all",
     `DAL BADAL — ${p.name} shows ${p.role} (Thief) and shuffles roles with ${seats.map((x) => P(s, x).name).join(", ").replace(/, ([^,]*)$/, " and $1")}. Each picks one back, face down.`,
     { seat, role: p.role, seats: pickers, when: onTurn ? "turn" : votedOut || (ph.kind === "react" && ph.on.kind === "faisla_out") ? "voted_out" : ph.kind === "react" ? (ph.on.kind === "tk" ? "shot_at" : "read") : "debate" });
@@ -489,9 +511,8 @@ function doDalPick(s: GameState, a: Action): GameState {
     }
     return s;
   }
-  P(s, ph.actor).hand.push(...draw(s, 1));
-  emit(s, "dal_badal_done", "all", `Dal Badal is done. ${P(s, ph.actor).name} draws 1.`, { seat: ph.actor });
-  endTurn(s);
+  emit(s, "dal_badal_done", "all", "Dal Badal is done.", { seat: ph.actor });
+  passOnOrEnd(s);
   return s;
 }
 
@@ -523,9 +544,13 @@ function resolveVote(s: GameState) {
   const max = Math.max(0, ...tally.values());
   const top = [...tally.entries()].filter(([, v]) => v === max && v > 0).map(([k]) => k);
   const out = top.length === 1 ? top[0] : null;
+  // A GIFTED VOTE IS FOR ONE VOTE (designer 2026-10-14: "you receive 1 vote for 1 time, not unlimited"): whoever cast
+  // a ballot with extra votes has used them — back to 1. Abstaining keeps them for the next vote.
+  const spent = Object.entries(ph.ballots).filter(([v, t]) => t !== null && P(s, Number(v)).votes > 1).map(([v]) => Number(v));
   emit(s, "vote_result", "all",
     out === null ? "The vote is tied or empty — nobody is out." : `${P(s, out).name} is voted out (${max} votes).`,
-    { reason: ph.reason, ballots, tally: Object.fromEntries(tally), out });
+    { reason: ph.reason, ballots, tally: Object.fromEntries(tally), out, spent });
+  for (const v of spent) P(s, v).votes = 1;
 
   if (ph.reason === "final") {
     s.after = { kind: "finalReveal" };
@@ -559,7 +584,7 @@ function resolveBatwara(s: GameState) {
     emit(s, "batwara_private", [from, to], `${P(s, from).name} passed ${CARD_NAME[c]} to ${P(s, to).name}.`, { from, to, card: c });
   }
   emit(s, "batwara_done", "all", "Bhukamp is done.");
-  endTurn(s);
+  passOnOrEnd(s);
 }
 
 // ---------------------------------------------------------------- elimination
@@ -624,8 +649,17 @@ function doElimStep(s: GameState, seat: number, a: Action): GameState {
       const t = P(s, a.target);
       if (!t.alive) throw new RuleError("Give it to a living player");
       t.votes += 1;
-      emit(s, "gift", "all", `${p.name} gives 1 vote to ${t.name} (now ${t.votes}).`, { seat, target: t.seat });
+      emit(s, "gift", "all", `${p.name} gives 1 vote to ${t.name} — ${t.votes} votes in their next vote, then back to 1.`, { seat, target: t.seat });
     } else emit(s, "gift", "all", `${p.name} gives the vote to nobody.`, { seat, target: null });
+    // PLAY, THEN PASS (2026-10-14): out during their OWN turn (a Teer Kaman miss, voted out by their own Faisla) — the
+    // 3 they still hold go on as the pile, as a pass would have; nothing else is handed on
+    if (s.passDue?.seat === seat) {
+      s.passDue = undefined;
+      s.pile = p.hand.splice(0);
+      s.pileFrom = seat;
+      emit(s, "pass_after", "all", `${p.name}'s ${s.pile.length} cards go on as the pile.`, { seat, out: true });
+      return finishElim(s);
+    }
     if (p.hand.length === 0 || living(s).length === 0) return finishElim(s);
     // put out by the mandatory vote: no hand-off — everything goes to the village
     if (RULES.finalVoteToVillage && s.after?.kind === "finalReveal") {
@@ -642,14 +676,15 @@ function doElimStep(s: GameState, seat: number, a: Action): GameState {
       return finishElim(s);
     }
     // (designer 2026-10-10) NO CHOICE: the cards go to whoever put the player out — the Faisla caller, or the Teer
-    // Kaman shooter who hit. A caller voted out by their own Faisla → the next living player clockwise. (A shooter who
-    // missed is out with an empty hand — the pair went down and 3 were passed — so there is nothing to hand on.)
+    // Kaman shooter who hit. (2026-10-14) They arrive AFTER that player's pass ("pass, then draw or get"), so they are
+    // held aside until then — never passed on in the same turn.
     const killer = s.elimQueue[0]?.killer ?? null;
     const to = killer !== null && killer !== seat && P(s, killer).alive ? killer : neighbour(s, seat, 1);
     if (to === seat) return finishElim(s); // nobody alive to take them
     const t = P(s, to);
     const cards = p.hand.splice(0);
-    t.hand.push(...cards);
+    if (s.passDue?.seat === to) s.passDue.held.push(...cards);
+    else t.hand.push(...cards);
     emit(s, "handoff", "all", `${p.name}'s cards go to ${t.name}.`, { seat, target: t.seat, count: cards.length, auto: true });
     emit(s, "handoff_private", [seat, t.seat], `${p.name}'s cards to ${t.name}: ${names(cards)}.`, { seat, target: t.seat, cards });
     return finishElim(s);
@@ -680,8 +715,11 @@ function finishElim(s: GameState): GameState {
 function continueAfterElims(s: GameState) {
   const after = s.after;
   s.after = null;
-  if (!after) return endTurn(s);
+  if (!after) return passOnOrEnd(s);
   if (after.kind === "finalReveal") return finalReveal(s);
+  // (2026-10-14) the player whose pair it was passes 3 now, then takes what they won / draws back up to 2
+  if (s.passDue) return passOnOrEnd(s);
+  // a game saved before PLAY, THEN PASS: the old draw
   if (after.drawFor !== null) {
     const k = P(s, after.drawFor);
     // EVERYONE HOLDS 2 (designer 2026-10-12): the Faisla caller or Teer Kaman shooter who put someone out takes

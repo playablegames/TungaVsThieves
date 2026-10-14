@@ -105,7 +105,7 @@ export function botReactions(s: GameState, from: number, botSkill: (seat: number
       // the pile I passed was picked up: my Stone is with them now
       if (e.type === "pickup_private" && Array.isArray(e.to)) {
         const got = stones(e.data?.cards), taker = e.to[0];
-        const passer = s.events.slice(0, e.n).findLast((x) => (x.type === "pass" || x.type === "play" || (x.type === "dal_badal" && x.data?.when === "turn")))?.data?.seat as number | undefined;
+        const passer = s.events.slice(0, e.n).findLast((x) => (x.type === "pass" || x.type === "pass_after"))?.data?.seat as number | undefined;
         if (got.length && passer !== undefined && bot(passer) && passer !== taker) for (const c of got) shareStone(s, passer, botSkill(passer)!, c, taker, "I passed");
       }
       if (e.type === "batwara_private" && bot(e.data?.from) && stones([e.data?.card]).length)

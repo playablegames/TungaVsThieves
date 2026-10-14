@@ -14,7 +14,7 @@ import type { Card, GameState, Side } from "@/engine/types";
 import { canDalBadal, canPlay, dalBadalPick, passSize } from "@/engine/engine";
 import { viewFor } from "@/engine/view";
 import { THIEF_ROLES, tkGuesses } from "@/engine/setup";
-import { randomAction, readsOf } from "@/engine/decisions";
+import { plannedPass, randomAction, readsOf } from "@/engine/decisions";
 import { deduce, unanswered, UNANSWERED, type Model } from "./deduce";
 import { clampLR, tellsOf, TELLS } from "./tells";
 import type { Action } from "@/engine/types";
@@ -418,6 +418,7 @@ export function stoneOdds(s: GameState, seat: number, seed: number, skill: Skill
   const p = new Map<number, number>();
   for (let x = 0; x < n; x++) p.set(x, Math.min(0.9, 2 / Math.max(2, n)));
   let inPile = 0; // chance the pile on its way carries a Stone
+  let playP = 0; // (2026-10-14 play, then pass) the player's chance when their pair went down — their pass comes later
   let village = 0;
   const num = (d: Record<string, unknown> | undefined, k: string) => (typeof d?.[k] === "number" ? (d[k] as number) : null);
   const has = (cards: unknown) => Array.isArray(cards) && cards.some(STONE);
@@ -430,7 +431,9 @@ export function stoneOdds(s: GameState, seat: number, seed: number, skill: Skill
       case "pickup": if (actor !== null) { p.set(actor, 1 - (1 - p.get(actor)!) * (1 - inPile)); inPile = 0; } break;
       case "pickup_private": if (has(d?.cards)) p.set(seat, 1); break;
       case "pass": if (actor !== null) { const moved = p.get(actor)! * 0.4; p.set(actor, p.get(actor)! - moved); inPile = moved; } break;
-      case "play": if (actor !== null) { inPile = p.get(actor)!; p.set(actor, 0.1); } break; // the pair goes down, the rest goes on
+      case "play": if (actor !== null) playP = p.get(actor)!; break; // the pair goes down; the rest goes on AFTER the effect
+      // (2026-10-14) the 3 go on once the effect is over — cards won from an out player arrive after, and stay
+      case "pass_after": if (actor !== null) { inPile = playP; if (!d?.out) p.set(actor, Math.max(0.1, p.get(actor)! - playP)); } break;
       case "conduit": break; // the pile passes through a player who is out — its chance travels on
       case "talashi_private": if (target !== null && actor === seat) p.set(target, has(d?.hand) ? 1 : 0); break;
       case "hera_pheri_private": if (has(d?.taken) && actor !== null) { p.set(actor, 1); } break;
@@ -496,11 +499,11 @@ export function keptMyStone(s: GameState, seat: number, at: number): number | nu
   let passer: number | null = null;
   for (let i = at - 1; i > gave.i; i--) {
     const e = ev[i];
-    if (passer === null && (e.type === "pass" || e.type === "play")) passer = e.data?.seat as number;
+    if (passer === null && (e.type === "pass" || e.type === "pass_after")) passer = e.data?.seat as number;
     if ((e.type === "hera_pheri" && e.data?.target === gave.to) || e.type === "batwara" || (e.type === "handoff" && e.data?.seat === gave.to)) return null;
     // only the FIRST pile from them since the Bhukamp tells (later ones are a new story)
     if (i < at - 1 && e.type === "pickup_private" && Array.isArray(e.to) && e.to[0] === seat) {
-      const before = ev.slice(gave.i, i).reverse().find((x) => x.type === "pass" || x.type === "play");
+      const before = ev.slice(gave.i, i).reverse().find((x) => x.type === "pass" || x.type === "pass_after");
       if (before?.data?.seat === gave.to) return null;
     }
   }
@@ -656,6 +659,14 @@ export function botDecision(s: GameState, seat: number, seed: number, r: R, skil
   if (ph.kind === "react") return ruleShield(s, seat, skill, r);
   if (ph.kind === "batwara") return ruleBhukamp(s, seat, skill, r);
   if (ph.kind === "turn") return ruleTurn(s, seat, skill, r);
+  // PLAY, THEN PASS (2026-10-14): the 3 it meant to pass when it played — or, if the effect changed its hand, its plain
+  // cards first, then Dal Badal, then Stones (a Stone goes on only when there is nothing else)
+  if (ph.kind === "pass_on") {
+    const h = s.players[seat].hand;
+    const plan = plannedPass(s, seat);
+    const plain = [...h.filter((c) => !isStoneCard(c) && c !== "DAL_BADAL"), ...h.filter((c) => c === "DAL_BADAL"), ...h.filter(isStoneCard)];
+    return { action: { type: "pass", pass: plan ?? plain.slice(0, passSize(h)) }, why: plan ? "pass the 3 it planned" : "pass on, Stones kept" };
+  }
   // the Dal Badal pick is face down — any card is as good as another
   return { action: randomAction(s, seat, r, skill.activity, true), why: "a face-down pick" };
 }
@@ -710,7 +721,7 @@ export function turnMove(s: GameState, seat: number, seed: number, r: R, skill: 
   if (me.side === "T" && me.hand.some((c) => c === "STONE_1" || c === "STONE_2")) {
     if (r() < (skill.stoneGamble ?? 0)) {
       if (a.type === "pass") a = withoutDalBadal(s, seat, hide, () => randomAction(s, seat, r, 1, false));
-    } else if (a.type === "play" && a.pass.some((c) => c === "STONE_1" || c === "STONE_2")) {
+    } else if (a.type === "play" && (a.pass ?? []).some((c) => c === "STONE_1" || c === "STONE_2")) {
       a = { type: "pass", pass: stonesLastOf(me.hand.filter((c) => !hide || c !== "DAL_BADAL"), passSize(me.hand)) };
       if (a.pass.length < passSize(me.hand)) a = { type: "pass", pass: stonesLastOf(me.hand, passSize(me.hand)) };
     }
@@ -719,10 +730,10 @@ export function turnMove(s: GameState, seat: number, seed: number, r: R, skill: 
   if (me.side === "V" && (a.type === "pass" || a.type === "play") && r() < (skill.careless ?? 0)) {
     const rest = [...me.hand];
     if (a.type === "play") { rest.splice(rest.indexOf(a.card), 1); rest.splice(rest.indexOf(a.card), 1); }
-    a = { ...a, pass: sampleOf(r, rest, a.pass.length) };
+    a = { ...a, pass: sampleOf(r, rest, (a.pass ?? []).length) };
   }
   // a skilled thief keeps its cards close: no Kundli (Mutual Kundli shows its own role back)
-  if (me.side === "T" && skill.thiefRestraint && a.type === "play" && a.card === "KUNDLI") a = { type: "pass", pass: a.pass };
+  if (me.side === "T" && skill.thiefRestraint && a.type === "play" && a.card === "KUNDLI") a = { type: "pass", pass: a.pass ?? [] };
   if (a.type === "play" && a.card !== "TEER_KAMAN") a = withReason(s, seat, seed, r, skill, a);
   if (a.type !== "play" || a.card !== "TEER_KAMAN") return a;
   const foes = [...readsOf(s, seat)].filter(([x, k]) => k.side !== me.side && s.players[x].alive);
@@ -757,7 +768,7 @@ export function turnMove(s: GameState, seat: number, seed: number, r: R, skill: 
       return { ...a, target, roles: [r1, pick(r, want.filter((x) => x !== r1))].slice(0, tkGuesses(s.rolesInPlay)) };
     }
   }
-  return { type: "pass", pass: a.pass };
+  return { type: "pass", pass: a.pass ?? [] };
 }
 
 // ------------------------------------------------------------------ THE PLAYBOOK (2026-10-12)
@@ -777,7 +788,7 @@ function withoutDalBadal(s: GameState, seat: number, hide: boolean, f: () => Act
     if (a.type === "pass" && a.pass.length !== passSize([...h, "DAL_BADAL"])) return { type: "pass", pass: stonesLastOf([...h, "DAL_BADAL"], passSize([...h, "DAL_BADAL"])) };
     if (a.type === "play") {
       const after = [...h]; after.splice(after.indexOf(a.card), 1); after.splice(after.indexOf(a.card), 1);
-      if (a.pass.length !== passSize([...after, "DAL_BADAL"])) return { ...a, pass: [...a.pass, "DAL_BADAL" as Card].slice(0, passSize([...after, "DAL_BADAL"])) };
+      if ((a.pass ?? []).length !== passSize([...after, "DAL_BADAL"])) return { ...a, pass: [...(a.pass ?? []), "DAL_BADAL" as Card].slice(0, passSize([...after, "DAL_BADAL"])) };
     }
     return a;
   } finally { h.splice(i, 0, "DAL_BADAL"); }

@@ -34,4 +34,5 @@ export function rig(
 }
 
 export const totalCards = (s: GameState) =>
-  s.deck.length + s.discard.length + s.pile.length + (s.villagePot ?? []).length + (s.thiefPot ?? []).length + s.players.reduce((k, p) => k + p.hand.length, 0);
+  s.deck.length + s.discard.length + s.pile.length + (s.villagePot ?? []).length + (s.thiefPot ?? []).length + s.players.reduce((k, p) => k + p.hand.length, 0)
+  + (s.passDue?.held.length ?? 0); // (2026-10-14) cards won, waiting for the winner's pass

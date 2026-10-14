@@ -72,6 +72,10 @@ export type Phase =
       holders: number[];
       choices: Record<number, boolean>;
     }
+  /** PLAY, THEN PASS (designer 2026-10-14: "play, resolve the effect, pass and then draw or get"): the pair's effect is
+   *  over and the player who played it now passes 3 as the new pile, then draws back up to 2 (or takes the cards of the
+   *  player they put out). Their hand is never empty while anything happens. */
+  | { kind: "pass_on"; seat: number }
   | { kind: "over"; winner: Side; reason: string };
 
 /** What happens when the elimination queue empties. */
@@ -130,6 +134,9 @@ export interface GameState {
   dbShield?: boolean;
   /** LEARN BY PLAYING (2026-10-09): a guided first game — the phone shows a coach; the rules are the same */
   tutorial?: boolean;
+  /** PLAY, THEN PASS (2026-10-14): the player whose pair is resolving still has to pass 3. `held` = cards they won (the
+   *  out player's) that arrive only AFTER the pass; `plan` = the 3 a bot chose when it played (used if still in hand). */
+  passDue?: { seat: number; held: Card[]; plan?: Card[] };
   deadOrder: number[];
   rolesInPlay: string[];
   events: GameEvent[];
@@ -140,7 +147,9 @@ export type Action =
   | {
       type: "play";
       card: ActionCard;
-      pass: Card[];
+      /** (2026-10-14) the pass comes AFTER the effect, as its own step. A bot may say now which 3 it means to pass —
+       *  a plan, used then if those cards are still in hand. Phones leave it out. */
+      pass?: Card[];
       target?: number;
       /** Teer Kaman: the roles named — 1 at a table that started with 2 thieves, else 2 (setup.ts tkGuesses) */
       roles?: string[];

@@ -330,7 +330,7 @@ function status(v: PlayerView): string {
   const p = v.phase;
   if (p === "over") return v.winner === "V" ? "Tunga wins" : "Thieves win";
   // (designer 2026-10-12) just whose turn it is — the tray says what you can do
-  if (p.startsWith("turn")) return mine ? "Your turn" : `${name(v.turnSeat)}'s turn`;
+  if (p.startsWith("turn") || p.startsWith("pass_on")) return mine ? "Your turn" : `${name(v.turnSeat)}'s turn`;
   if (p.endsWith("_debate")) return `${p.startsWith("final") ? "Last debate" : "Faisla"} — the floor is open`;
   if (p.endsWith("_vote")) return mine ? "Your vote" : `Voting — waiting for ${list}`;
   if (p === "surrender") return mine ? "Surrender your Stone?" : "The Stone holders are deciding…";
@@ -583,13 +583,12 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
         onClaim={s.status === "playing" ? claimAt : undefined}>
         {stage.current?.big
           ? <Stage stage={stage} skip={stage.skip} names={v.players.map((p) => p.name)} inline small={v.players.length > 8} />
-          : <Centre v={v} feed={feed} onOpen={() => setFeedOpen(true)} compact={Boolean(myMove && myMove !== "vote" && myMove !== "debate")} living={living.length} extend={extend}
-          ready={() => act({ type: "ready" })} />}
+          : <Centre v={v} feed={feed} onOpen={() => setFeedOpen(true)} compact={Boolean(myMove && myMove !== "vote" && myMove !== "debate")} living={living.length} extend={extend} />}
       </Ring>
       <StreamerBadge v={v} />
       {!solo && <TalkButton up={Boolean(myMove && myMove !== "debate")} />}
       {/* the coach (a guided first game) or a first-time tip sits INSIDE the tray, so the cards never cover it */}
-      <Tray v={v} act={act} live={live} waitForExit={myExitPending} banner={coach
+      <Tray v={v} act={act} live={live} waitForExit={myExitPending} ready={() => act({ type: "ready" })} banner={coach
         ? <Coach key={coach.id} text={coach.text} onNext={() => setCoachSeen((xs) => [...xs, coach.id])} onSkip={() => setCoachOff(true)} />
         // (designer 2026-10-13: "remove this — everything has to be nudges") no text tips: the thing to tap glows green
         // (designer 2026-10-14) no Defend panel: the accused answers like anyone — tap the accuser to message them or
@@ -715,7 +714,7 @@ function Ring({ v, voice, moment = null, speed = 1, talking, floorSeat = null, a
   };
   // the spotlight beam: from the middle of the table to whoever must act
   // the beam follows whoever holds the floor; otherwise whoever must act
-  const lit = floorSeat !== null ? floorSeat : v.phase.startsWith("turn") ? v.turnSeat : v.phase === "batwara" ? null : v.waitingOn.length === 1 ? v.waitingOn[0] : null;
+  const lit = floorSeat !== null ? floorSeat : (v.phase.startsWith("turn") || v.phase.startsWith("pass_on")) ? v.turnSeat : v.phase === "batwara" ? null : v.waitingOn.length === 1 ? v.waitingOn[0] : null;
   const beam = lit !== null ? (() => {
     const t = pos(lit), dx = t.x - 50, dy = t.y - 50, len = Math.hypot(dx, dy) || 1, w = 7;
     return `50,50 ${t.x + (-dy / len) * w},${t.y + (dx / len) * w} ${t.x - (-dy / len) * w},${t.y - (dx / len) * w}`;
@@ -783,7 +782,9 @@ function Ring({ v, voice, moment = null, speed = 1, talking, floorSeat = null, a
         return <span key={t.id} aria-hidden className="throw z-40 text-[34px]"
           style={{ ["--fx" as string]: `${f.x}%`, ["--fy" as string]: `${f.y}%`, ["--tx" as string]: `${to.x}%`, ["--ty" as string]: `${to.y}%` }}>{t.emoji}</span>;
       })}
-      <div className="absolute left-1/2 top-1/2 max-h-[56%] w-[54%] max-w-[230px] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl [scrollbar-width:none]">{children}</div>
+      {/* (designer 2026-10-14) while a played pair acts on the table, the centre box steps away — the table belongs to the
+          card. Nothing to tap lives here (Ready is in the tray), so hiding it never blocks a move */}
+      <div aria-hidden={moment ? true : undefined} className={`absolute left-1/2 top-1/2 max-h-[56%] w-[54%] max-w-[230px] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl transition-opacity duration-300 [scrollbar-width:none] ${moment ? "pointer-events-none opacity-0" : "opacity-100"}`}>{children}</div>
     </section>
   );
 }
@@ -817,7 +818,8 @@ function CardFlights({ v, pos }: { v: PlayerView; pos: (seat: number) => { x: nu
     for (const e of fresh) {
       const d = e.data ?? {};
       const seat = typeof d.seat === "number" ? d.seat : null, target = typeof d.target === "number" ? d.target : null;
-      if ((e.type === "pass" || e.type === "play") && seat !== null) fly(seat, nextLiving(seat, 1), 3);
+      // (2026-10-14 play, then pass) the 3 fly when they really go: a plain pass, or the pass after a played pair
+      if ((e.type === "pass" || e.type === "pass_after") && seat !== null) fly(seat, nextLiving(seat, 1), 3);
       if (e.type === "hera_pheri" && seat !== null && target !== null) fly(target, seat, typeof d.k === "number" ? d.k : 2, 250);
       // Bhukamp: every living hand sends 1 card LEFT (the next player) and 1 RIGHT (the one before) — when the passes
       // really happen (batwara_done), not when the pair is played (designer 2026-10-13 evening: "it suddenly vanishes and
@@ -974,19 +976,18 @@ function liveTally(v: PlayerView): Record<string, number> {
   return t;
 }
 
-const TAGLESS = new Set(["pass", "away", "back", "floor_extended", "timeout", "gift", "dal_badal_done", "whisper", "whisper_private"]);
+const TAGLESS = new Set(["pass", "pass_after", "away", "back", "floor_extended", "timeout", "gift", "dal_badal_done", "whisper", "whisper_private"]);
 
 /** THE CENTRE (designer 2026-10-09, option A — "every little thing must be displayed at the center"): a status line,
  *  then the running feed — newest at the bottom and biggest, older lines smaller and fainter — then the debate's
  *  controls. Tap the feed for everything that was said and done. */
-function Centre({ v, feed, onOpen, living, extend, ready }: {
+function Centre({ v, feed, onOpen, living, extend }: {
   v: PlayerView; feed: FeedItem[]; onOpen: () => void; compact: boolean; living: number;
-  extend?: () => void; ready: () => void;
+  extend?: () => void;
 }) {
   const d = v.decision;
   const voteOpen = v.phase.endsWith("_vote");
   const debate = v.phase.endsWith("_debate");
-  const btn = "min-h-11 rounded-full border-2 border-brass/70 px-3 font-[family-name:var(--font-engraved)] text-[13px] font-bold uppercase tracking-wide";
   const names = v.players.map((p) => p.name);
   // (designer 2026-10-14) THE CENTRE IS THE CHAT: updates and messages together, newest at the bottom; updates big and
   // highlighted, messages normal. It fits inside the ring of seats and scrolls back; 🕘 keeps everything.
@@ -1017,7 +1018,6 @@ function Centre({ v, feed, onOpen, living, extend, ready }: {
       {debate && d?.kind === "debate" && (
         <div className="mt-2 flex flex-col items-center gap-1.5">
           <p className="text-[12px] text-stock/60">{d.ready.length} of {living} ready</p>
-          <button type="button" onClick={ready} className={`${btn} nudge w-full btn-primary text-stock`}>Ready to vote</button>
           {extend && <button type="button" onClick={extend} className="min-h-8 text-[11px] text-stock/60 underline">+30s (host, once)</button>}
         </div>
       )}
@@ -1055,9 +1055,9 @@ function FeedLine({ it: raw, names, me, rank, full = false }: { it: FeedItem; na
   // in the centre a line is two rows at most — the whole of it is one tap away
   if (update && !full) {
     const box = it.mine ? "border-jade/60 bg-jade/10" : it.tone === "lethal" ? "border-crimson/70 bg-crimson/15 shadow-[0_0_14px_rgba(192,57,43,.3)]" : "border-[#f0a32e]/60 bg-[#f0a32e]/10 shadow-[0_0_14px_rgba(240,163,46,.22)]";
-    return <li className={`stage-in rounded-lg border px-2 py-1 text-center leading-tight ${box} ${size} ${fade} line-clamp-2`}>{body}</li>;
+    return <li className={`stage-in shrink-0 rounded-lg border px-2 py-1 text-center leading-tight ${box} ${size} ${fade} line-clamp-2`}>{body}</li>;
   }
-  return <li className={`stage-in leading-snug text-stock ${size} ${fade} ${full ? "" : "line-clamp-2"}`}>{body}</li>;
+  return <li className={`stage-in shrink-0 leading-snug text-stock ${size} ${fade} ${full ? "" : "line-clamp-2"}`}>{body}</li>;
 }
 
 /** ▶ a voice note sent to you (or by you): plays on this phone only */
@@ -1100,7 +1100,7 @@ function Divider() {
 }
 
 /** "Your Cards": the tiles, and — when it's your move — the pair buttons or the next step. */
-function Tray({ v, act, live, banner = null, waitForExit = false }: { v: PlayerView; act: (a: Action) => void; live: Record<string, number> | null; banner?: React.ReactNode; waitForExit?: boolean }) {
+function Tray({ v, act, live, banner = null, waitForExit = false, ready }: { v: PlayerView; act: (a: Action) => void; live: Record<string, number> | null; banner?: React.ReactNode; waitForExit?: boolean; ready?: () => void }) {
   const d = v.decision;
   const exitFirst = waitForExit && (d?.kind === "gift" || d?.kind === "handoff" || d?.kind === "dal_badal_out");
   if (d?.kind === "vote") return <>{banner && <div className="relative z-20">{banner}</div>}<Ballot v={v} mine={d.mine} live={live ?? {}} act={act} /></>;
@@ -1117,9 +1117,18 @@ function Tray({ v, act, live, banner = null, waitForExit = false }: { v: PlayerV
       {exitFirst ? <p className="py-3 text-center font-display text-[16px] text-stock/80">Your last decision comes next…</p>
         : inTray ? <Decide key={v.phase} v={v} act={act} />
         : v.me.alive && <>
-          <HandRow cards={v.me.hand} />
+          {/* (2026-10-14, game 5JUVS) the Faisla caller holds nothing until the vote is over — say why, not "No cards" */}
+          {v.me.hand.length === 0 && /_(debate|vote)$/.test(v.phase) && v.phase.startsWith("faisla")
+            ? <p className="py-2 text-center text-[13px] leading-snug text-stock/75">Your pair is down and 3 cards went on.<br />After the vote you take the out player&rsquo;s 2 cards — or draw 2 if nobody goes out.</p>
+            : <HandRow cards={v.me.hand} />}
           {/* (2026-10-12) the mandatory debate: a thief holding Dal Badal may use it here */}
           {d?.kind === "debate" && d.dalBadal && <Decide key={v.phase} v={v} act={act} />}
+          {/* (2026-10-14) READY lives in the tray: a big moment playing in the centre used to hide it */}
+          {d?.kind === "debate" && ready && (
+            <button type="button" onClick={ready} className="nudge btn-primary min-h-12 w-full rounded-full border-2 border-brass/70 px-3 font-[family-name:var(--font-engraved)] text-[14px] font-bold uppercase tracking-wide text-stock">
+              Ready to vote · {d.ready.length} of {v.players.filter((p) => p.alive).length}
+            </button>
+          )}
         </>}
     </section>
   );

@@ -75,11 +75,14 @@ describe("YOUR TURN — power or Stone", () => {
     const n = apply(s, 0, { type: "pass", pass: [F, T, S1] });
     expect(n.players[1].hand).toContain(S1);
   });
-  it("power or Stone: a Stone holder with a normal hand plays a pair only by passing the Stone", () => {
+  it("power or Stone (2026-10-14: play, THEN pass): a Stone holder with a normal hand plays a pair — and then passes the Stone", () => {
     const s = rig(5, { hands: [[K, K, F, T, S1], [B, B], [F], [T], [K]] });
     expect(canPlay(s, 0, "KUNDLI")).toBe(true);
-    expect(() => apply(s, 0, { type: "play", card: "KUNDLI", pass: [F, T], target: 1 })).toThrow(RuleError);
-    const n = apply(s, 0, { type: "play", card: "KUNDLI", pass: [F, T, S1], target: 1 });
+    let n = apply(s, 0, { type: "play", card: "KUNDLI", target: 1 });
+    expect(n.phase).toEqual({ kind: "pass_on", seat: 0 });
+    expect(n.players[0].hand.sort()).toEqual([F, T, S1].sort()); // the other 3 are still in hand through the effect
+    expect(() => apply(n, 0, { type: "pass", pass: [F, T] })).toThrow(RuleError); // all 3 go — the Stone too
+    n = apply(n, 0, { type: "pass", pass: [F, T, S1] });
     expect(n.players[0].hand).not.toContain(S1);
     expect(n.players[1].hand).toContain(S1);
   });
@@ -92,11 +95,16 @@ describe("YOUR TURN — power or Stone", () => {
     const n = apply(s, 0, { type: "play", card: "KUNDLI", pass: [F, T, S1], target: 1 });
     expect(n.discard).not.toContain(S1);
   });
-  it("playing a pair passes the other 3 FIRST, then resolves", () => {
+  it("(designer 2026-10-14) PLAY, THEN PASS: the pair resolves first, then the player passes 3, then draws back to 2", () => {
     const s = rig(5, { hands: [[K, K, F, T, H], [B, B], [F], [T], [K]] });
-    const n = apply(s, 0, { type: "play", card: "KUNDLI", pass: [F, T, H], target: 1 });
+    let n = apply(s, 0, { type: "play", card: "KUNDLI", target: 1 });
+    expect(n.events.some((e) => e.type === "kundli_private")).toBe(true); // the read happened
+    expect(n.players[0].hand).toHaveLength(3); // never an empty hand while the card resolves
+    expect(waitingOn(n)).toEqual([0]);
+    n = apply(n, 0, { type: "pass", pass: [F, T, H] });
     expect(n.players[1].hand).toEqual(expect.arrayContaining([F, T, H])); // next seat picked up the pass
     expect(n.players[0].hand).toHaveLength(2); // drew 2
+    expect(n.events.some((e) => e.type === "pass_after")).toBe(true);
   });
   it("only the seat whose turn it is may act", () => {
     const s = start(NAMES(5), 3);
@@ -127,36 +135,38 @@ describe("THE CARDS", () => {
     expect(priv.data!.hand).toEqual([B, S1]);
     expect(viewFor(n, 2).events.some((e) => e.type === "talashi_private")).toBe(false);
   });
-  it("HERA PHERI steals 2 unseen from anyone, the victim draws 2; only they two see what moved", () => {
+  it("HERA PHERI steals 2 unseen from anyone, the victim draws 2; only they two see what moved — then the thief of them passes 3", () => {
     const s = rig(5, { hands: [[H, H, F, K, T], [B, S1], [F], [T], [K]] });
-    const n = apply(s, 0, { type: "play", card: "HERA_PHERI", pass: [F, K, T], target: 1 });
-    expect(n.players[0].hand.sort()).toEqual([B, S1].sort());
-    expect(n.players[1].hand).toHaveLength(2 + 3); // drew 2, and is next: picked up the pass
+    let n = apply(s, 0, { type: "play", card: "HERA_PHERI", target: 1 });
+    expect(n.players[0].hand.sort()).toEqual([F, K, T, B, S1].sort());
     expect(n.events.find((e) => e.type === "hera_pheri_private")!.to).toEqual([0, 1]);
+    n = apply(n, 0, { type: "pass", pass: [F, K, T] });
+    expect(n.players[0].hand.sort()).toEqual([B, S1].sort()); // the steal was the "get": no draw
+    expect(n.players[1].hand).toHaveLength(2 + 3); // drew 2, and is next: picked up the pass
   });
-  it("BHUKAMP (2026-10-12): DRAW 2, then every living player — the one who played it too — passes 1 card LEFT and 1 RIGHT, choosing which goes where", () => {
+  it("BHUKAMP (2026-10-14): every living player — the one who played it too, with their 3 — passes 1 card LEFT and 1 RIGHT; then the player passes 3 and draws 2", () => {
     const s = rig(5, { hands: [[B, B, F, K, H], [S1, T], [F, K], [T, H], [K, F]] });
-    let n = apply(s, 0, { type: "play", card: "BATWARA", pass: [F, K, H] });
+    let n = apply(s, 0, { type: "play", card: "BATWARA" });
     expect(n.phase.kind).toBe("batwara");
-    // the pair and the pass are gone; the player drew 2, so they give and get like everyone else
-    expect(n.players[0].hand).toHaveLength(2);
+    expect(n.players[0].hand.sort()).toEqual([F, K, H].sort()); // only the pair went down
     expect(waitingOn(n).sort()).toEqual([0, 1, 2, 3, 4]);
     expect(() => apply(n, 1, { type: "batwara", card: H, right: T })).toThrow(RuleError); // only cards you hold
     expect(() => apply(n, 1, { type: "batwara", card: S1 })).toThrow(RuleError); // with 2 in hand, one each way
-    const drawn = [...n.players[0].hand];
     // left = the next player in turn order (seat + 1); right = the one before (seat - 1)
-    n = apply(n, 0, { type: "batwara", card: drawn[0], right: drawn[1] });
+    n = apply(n, 0, { type: "batwara", card: F, right: K });
     n = apply(n, 1, { type: "batwara", card: S1, right: T }); // a Stone CAN move by Bhukamp — the holder chose the way
     n = apply(n, 2, { type: "batwara", card: F, right: K });
     n = apply(n, 3, { type: "batwara", card: H, right: T });
     n = apply(n, 4, { type: "batwara", card: K, right: F });
-    expect(n.players[0].hand.sort()).toEqual([T, K].sort()); // from seat 1 (its right) and seat 4 (its left)
+    expect(n.phase).toEqual({ kind: "pass_on", seat: 0 });
+    expect(n.players[0].hand.sort()).toEqual([H, T, K].sort()); // kept H, got T (seat 1) and K (seat 4)
     expect(n.players[2].hand.sort()).toEqual([S1, T].sort()); // the Stone went left, to seat 2
     expect(n.players[3].hand.sort()).toEqual([F, F].sort());
-    expect(n.players[4].hand.sort()).toEqual([drawn[1], H].sort());
-    for (const x of [0, 2, 3, 4]) expect(n.players[x].hand).toHaveLength(2);
-    // seat 1 is next: it got 2 and picked up the 3 passed
-    expect(n.players[1].hand.sort()).toEqual([drawn[0], K, F, K, H].sort());
+    expect(n.players[4].hand.sort()).toEqual([K, H].sort());
+    n = apply(n, 0, { type: "pass", pass: [H, T, K] });
+    expect(n.players[0].hand).toHaveLength(2); // drew 2 at the end
+    // seat 1 is next: it got F (seat 0) and K (seat 2) and picked up the 3 passed
+    expect(n.players[1].hand.sort()).toEqual([F, K, H, T, K].sort());
     expect(totalCards(n)).toBe(totalCards(s)); // 2 came from the deck, nothing lost
   });
   it("TEER KAMAN miss (2026-10-09): the shooter is OUT, role hidden; the target stays", () => {
@@ -206,6 +216,8 @@ describe("THE CARDS", () => {
     for (const v of [0, 1, 2, 3, 4]) m = apply(m, v, { type: "ready" });
     for (const v of [0, 1, 2, 3, 4]) m = apply(m, v, { type: "vote", target: v < 2 ? 2 : v < 4 ? 3 : null });
     expect(m.players.every((p) => p.alive)).toBe(true);
+    expect(m.players[0].hand).toHaveLength(3); // (2026-10-14) the caller held their 3 through the vote
+    m = apply(m, 0, { type: "pass", pass: [T, K, H] });
     expect(m.players[0].hand).toHaveLength(2); // drew 2 on a tie too
   });
   it("FAISLA that puts out its own caller: nobody sees the role", () => {
@@ -241,6 +253,10 @@ describe("ELIMINATION — out, dying power, hand-off", () => {
     n = apply(n, 1, { type: "gift", target: 2 });
     expect(n.players[2].votes).toBe(2);
     expect(n.phase.kind).not.toBe("elim"); // nothing to decide: the hand-off happened by itself
+    // (2026-10-14) pass first, then get: the 2 cards wait until the shooter has passed 3
+    expect(n.phase).toEqual({ kind: "pass_on", seat: 0 });
+    expect(n.players[0].hand).not.toContain(S1);
+    n = apply(n, 0, { type: "pass", pass: [F, K, H] });
     expect(n.players[0].hand).toEqual(expect.arrayContaining([S1, B]));
     expect(n.players[0].hand).toHaveLength(2); // (2026-10-12 everyone holds 2) the two taken INSTEAD of drawing
     expect(n.events.find((e) => e.type === "handoff")!.data).toMatchObject({ seat: 1, target: 0 });
@@ -252,8 +268,10 @@ describe("ELIMINATION — out, dying power, hand-off", () => {
     for (const v of [0, 1, 2, 3, 4]) n = apply(n, v, { type: "vote", target: v === 1 ? 0 : 1 });
     expect(n.players[1].alive).toBe(false);
     n = apply(n, 1, { type: "gift", target: null });
+    n = apply(n, 0, { type: "pass", pass: [T, K, H] }); // (2026-10-14) the caller passes 3, then gets
     expect(n.players[0].hand).toEqual(expect.arrayContaining([S1, B])); // the caller took them
-    // own Faisla, with cards still in hand (rigged): the next living player clockwise gets them
+    // own Faisla (2026-10-14): the caller still holds their other cards — they go on as the pile, and the next living
+    // player clockwise picks them up
     const o = rig(5, { sides: ["V", "V", "V", "T", "T"], hands: [[F, F, T, K, H, S2], [B], [F], [T], [K]] });
     let m = apply(o, 0, { type: "play", card: "FAISLA", pass: [T, K, H] });
     for (const v of [0, 1, 2, 3, 4]) m = apply(m, v, { type: "ready" });
@@ -271,6 +289,28 @@ describe("ELIMINATION — out, dying power, hand-off", () => {
     expect(n.players[4].votes).toBe(2);
     expect(n.players.filter((p) => !p.alive)).toHaveLength(1);
   });
+  it("(designer 2026-10-14) a gifted vote counts ONCE: used in one ballot, then back to 1 — abstaining keeps it", () => {
+    const s = rig(7, { sides: ["T", "V", "V", "V", "V", "T", "V"], hands: [[TK, TK, F, K, H], [S1, B], [F, F], [T], [K], [B], [T]] });
+    let n = kill(s, 1);
+    n = apply(n, 1, { type: "gift", target: 2 });
+    expect(n.players[2].votes).toBe(2);
+    // seat 2's Faisla: seat 2 abstains — the extra vote is kept
+    const faisla = (st: GameState, caller: number, ballots: Record<number, number | null>) => {
+      const live = st.players.filter((p) => p.alive).map((p) => p.seat);
+      st = { ...st, players: st.players.map((p) => (p.seat === caller ? { ...p, hand: [F, F, T, K, H] } : p)), phase: { kind: "turn", seat: caller }, turnSeat: caller };
+      let m = apply(st, caller, { type: "play", card: "FAISLA", pass: [T, K, H] });
+      for (const v of live) m = apply(m, v, { type: "ready" });
+      for (const v of live) m = apply(m, v, { type: "vote", target: ballots[v] ?? null });
+      return m;
+    };
+    n = faisla(n, 2, { 2: null });
+    expect(n.players[2].votes).toBe(2);
+    // the next vote: seat 2 votes, its 2 votes count, then it is back to 1
+    n = faisla(n, 3, { 2: 4, 3: 0 });
+    const r = [...n.events].reverse().find((e) => e.type === "vote_result")!;
+    expect(r.data?.tally).toMatchObject({ 4: 2, 0: 1 });
+    expect(n.players[2].votes).toBe(1);
+  });
   it("all thieves out ends the game at once — Tunga wins", () => {
     const s = rig(5, { sides: ["V", "T", "V", "V", "V"], hands: [[TK, TK, F, K, H], [B], [F], [T], [K]] });
     const n = kill(s, 1);
@@ -286,17 +326,16 @@ describe("DAL BADAL (2026-10-09) — a thief's whole turn", () => {
     expect(() => apply(v, 0, { type: "dal_badal", seats: [2, 4], pass: [F, K, H] })).toThrow(RuleError); // a villager can't
     expect(() => apply(swapGame(), 1, { type: "dal_badal", seats: [2, 4], pass: [F, K, H] })).toThrow(RuleError); // not their turn
   });
-  it("pass 3, show the role, shuffle with 2 others — each picks one back from the thief on — then draw 1; the card leaves the game", () => {
+  it("(2026-10-14) show the role, shuffle with 2 others — each picks one back from the thief on — then pass 3 and draw back to 2; the card leaves the game", () => {
     const s = swapGame();
-    expect(() => apply(s, 0, { type: "dal_badal", seats: [2], pass: [F, K, H] })).toThrow(RuleError); // pick 2
-    expect(() => apply(s, 0, { type: "dal_badal", seats: [0, 2], pass: [F, K, H] })).toThrow(RuleError); // 2 OTHERS
-    expect(() => apply(s, 0, { type: "dal_badal", seats: [2, 4], pass: [F, K] })).toThrow(RuleError); // pass 3
+    expect(() => apply(s, 0, { type: "dal_badal", seats: [2], pass: [] })).toThrow(RuleError); // pick 2
+    expect(() => apply(s, 0, { type: "dal_badal", seats: [0, 2], pass: [] })).toThrow(RuleError); // 2 OTHERS
     const before = [0, 2, 4].map((x) => role(s, x)).sort();
-    let n = apply(s, 0, { type: "dal_badal", seats: [4, 2], pass: [F, K, H] });
+    let n = apply(s, 0, { type: "dal_badal", seats: [4, 2], pass: [] });
     const pub = n.events.find((e) => e.type === "dal_badal")!;
     expect(pub.to).toBe("all");
     expect(pub.data!.role).toBe(role(s, 0)); // the thief shows their role
-    expect(n.pile.sort()).toEqual([F, H, K].sort()); // the 3 passed first
+    expect(n.players[0].hand).toHaveLength(4); // nothing passed yet
     expect(n.phase).toMatchObject({ kind: "dal_badal", actor: 0, pickers: [0, 2, 4] });
     expect(waitingOn(n)).toEqual([0]);
     n = apply(n, 0, { type: "dal_pick", index: 1 });
@@ -305,7 +344,9 @@ describe("DAL BADAL (2026-10-09) — a thief's whole turn", () => {
     expect([0, 2, 4].map((x) => role(n, x)).sort()).toEqual(before);
     expect(n.players.filter((p) => p.side === "T")).toHaveLength(2);
     for (const x of [0, 2, 4]) expect(n.events.some((e) => e.type === "role" && Array.isArray(e.to) && e.to[0] === x && e.data?.swapped)).toBe(true);
-    // the thief drew 1; the turn is over and seat 1 picked up the 3
+    expect(n.phase).toEqual({ kind: "pass_on", seat: 0 });
+    n = apply(n, 0, { type: "pass", pass: [F, K, H] });
+    // the thief drew back to 2; the turn is over and seat 1 picked up the 3
     expect(n.players[0].hand).toHaveLength(2);
     expect(n.phase).toMatchObject({ kind: "turn", seat: 1 });
     expect(n.players[1].hand).toEqual(expect.arrayContaining([F, K, H]));

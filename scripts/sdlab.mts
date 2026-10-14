@@ -392,11 +392,11 @@ if (TEST === "dalbadal") {
   const keepDB = (s: GameState, seat: number, a: Action): Action => {
     // a banking thief never passes Dal Badal away
     const h = s.players[seat].hand;
-    if ((a.type === "pass" || a.type === "play") && a.pass.includes("DAL_BADAL")) {
+    if ((a.type === "pass" || a.type === "play") && (a.pass ?? []).includes("DAL_BADAL")) {
       const used = a.type === "play" ? [a.card, a.card] : [];
-      const free = [...h]; for (const c of [...used, ...a.pass]) free.splice(free.indexOf(c), 1);
+      const free = [...h]; for (const c of [...used, ...(a.pass ?? [])]) free.splice(free.indexOf(c), 1);
       const swap = free.find((c) => c !== "DAL_BADAL");
-      if (swap) { const p = [...a.pass]; p[p.indexOf("DAL_BADAL")] = swap; return { ...a, pass: p }; }
+      if (swap) { const p = [...(a.pass ?? [])]; p[p.indexOf("DAL_BADAL")] = swap; return { ...a, pass: p }; }
     }
     return a;
   };
@@ -443,7 +443,7 @@ if (TEST === "dalbadal") {
         const i = me.hand.indexOf("DAL_BADAL"); me.hand.splice(i, 1);
         let b: Action;
         try { b = skilledAction(s, seat, s.seed, rnd, AVG); } finally { me.hand.push("DAL_BADAL"); }
-        if (b.type === "play") { const after = [...me.hand]; after.splice(after.indexOf(b.card), 1); after.splice(after.indexOf(b.card), 1); if (b.pass.length !== passSize(after)) b = plainPass(s, seat); }
+        if (b.type === "play") { const after = [...me.hand]; after.splice(after.indexOf(b.card), 1); after.splice(after.indexOf(b.card), 1); if ((b.pass ?? []).length !== passSize(after)) b = plainPass(s, seat); }
         if (b.type === "pass" && b.pass.length !== passSize(me.hand)) b = plainPass(s, seat);
         return pol.bank ? keepDB(s, seat, b) : b;
       }
@@ -477,8 +477,8 @@ if (TEST.startsWith("timing")) {
     if (a.type !== "pass" && a.type !== "play") return a;
     const h = s.players[seat].hand;
     const free = [...h];
-    for (const c of [...(a.type === "play" ? [a.card, a.card] : []), ...a.pass]) free.splice(free.indexOf(c), 1);
-    const p = [...a.pass];
+    for (const c of [...(a.type === "play" ? [a.card, a.card] : []), ...(a.pass ?? [])]) free.splice(free.indexOf(c), 1);
+    const p = [...(a.pass ?? [])];
     for (const k of keep) {
       const i = p.indexOf(k); if (i < 0) continue;
       const j = free.findIndex((c) => !keep.includes(c)); if (j < 0) continue;
@@ -597,7 +597,7 @@ if (TEST.startsWith("timing")) {
         const i = me.hand.indexOf("DAL_BADAL"); me.hand.splice(i, 1);
         let b: Action;
         try { b = skilledAction(s, seat, s.seed, rnd, AVG); } finally { me.hand.push("DAL_BADAL"); }
-        if (b.type === "play") { const after = [...me.hand]; after.splice(after.indexOf(b.card), 1); after.splice(after.indexOf(b.card), 1); if (b.pass.length !== passSize(after)) b = plainPass(s, seat); }
+        if (b.type === "play") { const after = [...me.hand]; after.splice(after.indexOf(b.card), 1); after.splice(after.indexOf(b.card), 1); if ((b.pass ?? []).length !== passSize(after)) b = plainPass(s, seat); }
         if (b.type === "pass" && b.pass.length !== passSize(me.hand)) b = plainPass(s, seat);
         return protect(s, seat, b, ["DAL_BADAL"]);
       }
@@ -610,7 +610,7 @@ if (TEST.startsWith("timing")) {
     restrict: (s, seat, a) => {
       const me = s.players[seat];
       if (s.phase.kind !== "turn" || me.side !== "T" || !me.hand.some(isStone)) return a;
-      if (mode === "keep") return a.type === "play" && a.pass.some(isStone) ? plainPass(s, seat) : a;
+      if (mode === "keep") return a.type === "play" && (a.pass ?? []).some(isStone) ? plainPass(s, seat) : a;
       if (a.type === "play") return a;
       for (const c of ["HERA_PHERI", "TALASHI", "KUNDLI", "BATWARA", "FAISLA"] as Card[]) {
         const f = forcePlay(s, seat, c);

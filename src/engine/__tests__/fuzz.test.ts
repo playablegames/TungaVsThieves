@@ -24,7 +24,7 @@ function check(s: GameState, thieves: number, roles: string, firstPickupDone: bo
   // 6 action cards × 10 + Dal Badal + 2 Stones = 63; Dal Badal leaves the game once used (2026-10-09)
   const used = s.events.some((e) => e.type === "dal_badal") ? 1 : 0;
   if (totalCards(s) !== 63 - used) hit(`card total != ${63 - used}`);
-  const inPlay = [...s.pile, ...(s.villagePot ?? []), ...(s.thiefPot ?? []), ...s.players.flatMap((p) => p.hand)].filter(isStone).length;
+  const inPlay = [...s.pile, ...(s.villagePot ?? []), ...(s.thiefPot ?? []), ...s.players.flatMap((p) => p.hand), ...(s.passDue?.held ?? [])].filter(isStone).length;
   if (inPlay !== 2) hit(`Stones in hands+pile+village = ${inPlay}`);
   if ([...s.deck, ...s.discard].some(isStone)) hit("Stone in deck/discard");
   if (s.players.filter((p) => p.side === "T").length !== thieves) hit("thief count changed");

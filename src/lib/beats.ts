@@ -35,9 +35,10 @@ export interface Beat {
 // 2026-10-13 (designer, "slow it down a little more so every bit of info is processed — it's unplayable"): 1.5 → 2
 // 2026-10-13 evening (designer, "playing is slow, decision is fast, reverse it" · "2 sec for passing, 4 sec for decisions"
 // · "every screen skips by itself after 2 s"): back to 1; a pass holds 2 s, a played card 4 s (its moment + 2 s)
+// 2026-10-14 (designer, "slow down the game a little, passing 3 secs, decisions 5 secs"): a pass 3 s, a played card 5 s
 export const PACE = 1;
-const BIG = 4000;
-const SMALL = 2000;
+const BIG = 5000;
+const SMALL = 3000;
 /** the most the server holds a clock for the beats of one move */
 /** last words (10 s) + the ejection fit inside one hold */
 export const HOLD_CAP = Math.round(18000 * PACE);
@@ -76,6 +77,9 @@ function rawBeat(e: GameEvent, names: string[], history: GameEvent[]): Beat | nu
   switch (e.type) {
     case "pass":
       return { ...base, title: `${nm(actor)} passed`, detail: "Three cards go on face down.", tone: "neutral", big: false, hold: SMALL };
+    // (2026-10-14 play, then pass) the pair's effect is over: the 3 go on, then the player draws back to 2
+    case "pass_after":
+      return { ...base, title: d?.out ? `${nm(actor)}'s 3 cards go on` : `${nm(actor)} passes 3`, detail: d?.out ? "They go on as the pile." : "Then draws back to 2.", tone: "neutral", big: false, hold: SMALL };
     case "kundli":
       return { ...base, card: "KUNDLI", title: `${nm(actor)} played Kundli on ${nm(target)}`, tone: "relic", big: true, hold: BIG };
     case "kundli_private":

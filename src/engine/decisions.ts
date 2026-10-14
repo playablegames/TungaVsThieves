@@ -16,6 +16,8 @@ export type Decision =
   | { kind: "surrender"; stones: string[] }
   /** (designer 2026-10-14, behind dbShield) you're shot at / read / voted out: use Dal Badal first (pick 2), or let it happen */
   | { kind: "dal_badal_shield"; on: "tk" | "kundli" | "faisla_out"; candidates: number[] }
+  /** (2026-10-14) PLAY, THEN PASS: your pair's effect is over — pass `passSize` cards; `held` cards you won come after */
+  | { kind: "pass_on"; passSize: number; held: number }
   | null;
 
 export function decisionFor(s: GameState, seat: number): Decision {
@@ -38,12 +40,23 @@ export function decisionFor(s: GameState, seat: number): Decision {
       return { kind: "gift", candidates: others };
     }
     case "react": return { kind: "dal_badal_shield", on: ph.on.kind, candidates: live.filter((x) => x !== seat) };
+    case "pass_on": return { kind: "pass_on", passSize: passSize(s.players[seat].hand), held: s.passDue?.held.length ?? 0 };
     default: return null;
   }
 }
 
 /** the first k cards, Stones last — a Stone only goes into the pile when there is nothing else to pass */
 const stonesLast = (h: Card[], k: number) => [...h.filter((c) => !isStone(c)), ...h.filter(isStone)].slice(0, k);
+
+/** the 3 a bot said it would pass when it played — if it still holds every one of them */
+export function plannedPass(s: GameState, seat: number): Card[] | null {
+  const plan = s.passDue?.seat === seat ? s.passDue.plan : undefined;
+  const h = s.players[seat].hand;
+  if (!plan || plan.length !== passSize(h)) return null;
+  const left = [...h];
+  for (const c of plan) { const i = left.indexOf(c); if (i < 0) return null; left.splice(i, 1); }
+  return [...plan];
+}
 
 /** The action applied when a phone times out — always legal, always harmless. */
 export function defaultAction(s: GameState, seat: number): Action {
@@ -62,6 +75,7 @@ export function defaultAction(s: GameState, seat: number): Action {
       return { type: "gift", target: null };
     }
     case "react": return { type: "ready" }; // let it happen
+    case "pass_on": return { type: "pass", pass: plannedPass(s, seat) ?? stonesLast(h, passSize(h)) };
     default: throw new Error("No decision");
   }
 }
@@ -101,7 +115,7 @@ export function botAction(s: GameState, seat: number, r: R = Math.random): Actio
   if (a.type === "play" && a.card === "TEER_KAMAN") {
     const me = s.players[seat];
     const foes = [...readsOf(s, seat)].filter(([, k]) => k.side !== me.side);
-    if (!foes.length) return { type: "pass", pass: a.pass };
+    if (!foes.length) return { type: "pass", pass: a.pass ?? [] };
     const [target, k] = pick(r, foes);
     const other = pick(r, s.rolesInPlay.filter((x) => x !== k.role));
     return { ...a, target, roles: [k.role, other].slice(0, tkGuesses(s.rolesInPlay)) };
@@ -150,6 +164,7 @@ export function randomAction(s: GameState, seat: number, r: R, activity = 0.8, k
     case "batwara": { const [a, b] = passFrom(r, h, 2, keepStones); return { type: "batwara", card: a, ...(b !== undefined && h.length >= 2 ? { right: b } : {}) }; }
     case "dal_badal": return { type: "dal_pick", index: Math.floor(r() * ph.pool.length) };
     case "react": return r() < 0.5 ? { type: "ready" } : { type: "dal_badal", seats: sample(r, others, dalBadalPick(s, seat)), pass: [] };
+    case "pass_on": return { type: "pass", pass: plannedPass(s, seat) ?? passFrom(r, h, passSize(h), keepStones) };
     case "elim": {
       if (ph.step === "handoff") return { type: "handoff", target: pick(r, others) };
       if (ph.step === "dal_badal") return { type: "dal_badal", seats: r() < 0.5 ? sample(r, others, dalBadalPick(s, seat)) : [], pass: [] };

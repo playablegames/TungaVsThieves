@@ -194,6 +194,7 @@ export function stoneMemory(s: GameState, seat: number, skill: Skill, l: Ledger 
   const put = (c: Card, x: number) => at.set(c, new Set([x]));
   const moveFrom = (x: number, to: number) => { for (const [c, set] of at) if (set.size === 1 && set.has(x)) at.set(c, new Set([to])); };
   let hp: { seat: number; target: number } | null = null;
+  let played: { x: number; stones: Card[] } | null = null;
   // THE QUIET STONE TELL (designer 2026-10-14, sharp only): turns in a row a player passed without playing a pair
   const quiet = new Map<number, number>();
   for (const e of v.events) {
@@ -219,8 +220,15 @@ export function stoneMemory(s: GameState, seat: number, skill: Skill, l: Ledger 
       case "batwara_private": { const c = d?.card as Card; if (isStone(c)) put(c, num(d, "to")!); break; }
       case "handoff_private": for (const c of (d?.cards as Card[]) ?? []) if (isStone(c)) put(c, num(d, "target")!); break;
       case "to_village": for (const c of (d?.cards as Card[]) ?? []) if (isStone(c)) at.set(c, new Set()); break;
-      // a pair played sends every other card on — a Stone too
-      case "play": { const x = num(d, "seat"); if (x !== null && x !== seat) moveFrom(x, nextAlive(x)); break; }
+      // (2026-10-14 play, then pass) a pair played: the cards held then go on once the effect is over — a Stone too.
+      // Cards won from an out player arrive after the pass and stay.
+      case "play": { const x = num(d, "seat"); played = x !== null ? { x, stones: [...at].filter(([, set]) => set.size === 1 && set.has(x)).map(([c]) => c) } : null; break; }
+      case "pass_after": {
+        const x = num(d, "seat");
+        if (played && played.x === x && x !== seat && !d?.out) for (const c of played.stones) if (at.get(c)!.size === 1 && at.get(c)!.has(x)) at.set(c, new Set([nextAlive(x)]));
+        played = null;
+        break;
+      }
       case "eliminated": {
         const x = num(d, "seat")!, k = num(d, "killer");
         aliveAt.delete(x);
