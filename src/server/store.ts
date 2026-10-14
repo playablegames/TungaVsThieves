@@ -22,7 +22,9 @@ export interface GameRow {
     /** (2026-10-12) a bot's skill — casual (a beginner: gambles), average, sharp (holds, times Dal Badal) */
     skill?: "casual" | "average" | "sharp";
     /** TURN ALERTS: this phone's web-push subscription, and whether it has switched away from the game right now */
-    push?: { endpoint: string; keys: { p256dh: string; auth: string } } | null; hidden?: boolean }[];
+    push?: { endpoint: string; keys: { p256dh: string; auth: string } } | null; hidden?: boolean;
+    /** (designer 2026-10-14) the host muted this player's voice: mic held shut (messages stay open) */
+    muted?: boolean }[];
   state: GameState | null;
   deadline: number | null;
   timers: Timers;

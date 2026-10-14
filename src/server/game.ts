@@ -539,6 +539,8 @@ export interface ClientState {
   next: string | null;
   /** LAST WORDS: the player just put out, speaking until … */
   lastWords: { seat: number; until: number } | null;
+  /** (designer 2026-10-14) seats the host has muted */
+  muted: number[];
 }
 
 export async function getState(code: string, token: string | null, sinceMsg: number): Promise<ClientState> {
@@ -559,6 +561,7 @@ export async function getState(code: string, token: string | null, sinceMsg: num
       return w && w.to === seat ? m : { ...m, text: redactWhisper(m.text) };
     }),
     timers: row.timers,
+    muted: row.lobby.flatMap((p, i) => (p.muted ? [i] : [])),
     voice: livekitConfigured() ? "livekit" : "mesh",
     floor: row.state?.floor && row.state.floor.until > Date.now() ? { seat: row.state.floor.seat, until: row.state.floor.until } : null,
     floorUsed: row.state?.floor?.used ?? [],
@@ -569,9 +572,34 @@ export async function getState(code: string, token: string | null, sinceMsg: num
   };
 }
 
+/** (designer 2026-10-14) one message every 2 seconds per player — chat can never flood the centre */
+export const CHAT_GAP_MS = 2000;
+const lastChat = new Map<string, number>();
+function chatGate(row: GameRow, seat: number, system = false) {
+  if (system) return;
+  const key = `${row.code}:${seat}`, now = Date.now();
+  if (now - (lastChat.get(key) ?? 0) < CHAT_GAP_MS) throw new HttpError(429, "Slow down — one message every 2 seconds");
+  lastChat.set(key, now);
+}
+
+/** HOST MODERATION (designer 2026-10-14): the host mutes or unmutes a player's VOICE for everyone — their mic is held
+ *  shut on their own phone and every other phone stops playing them. Messages stay open (the 2 s limit keeps them sane). */
+export async function mutePlayer(code: string, token: string | null, seat: unknown, muted: unknown) {
+  await mutate(code, (row) => {
+    if (row.hostToken !== token) throw new HttpError(403, "Only the host can mute");
+    const i = Number(seat);
+    const p = row.lobby[i];
+    if (!p || p.token === token) throw new HttpError(400, "Pick another player");
+    p.muted = Boolean(muted);
+    return row;
+  });
+}
+
 export async function chat(code: string, token: string | null, text: unknown) {
   const row = await load(code);
   const seat = seatOf(row, token);
+  // reactions, captions and quick lines are system traffic; a typed line is a message (2 s gap)
+  chatGate(row, seat, isSystemMessage(String(text ?? "")));
   // (designer 2026-10-14) a chat line is what fits two lines of the centre — 50 characters (captions keep their length)
   const raw = String(text ?? "").trim();
   const t = isSystemMessage(raw) ? raw.slice(0, 300) : raw.slice(0, 50);
@@ -745,6 +773,7 @@ export async function debugRig(code: string, token: string | null, body: { hand?
  *  public event — "Yh whispered to Shyam" — and only the two of them ever receive what was said. A Kundli read sent
  *  as a whisper also reaches a bot's mind (a private event to the receiver), so bots act on what they're told. */
 export async function whisper(code: string, token: string | null, body: { to?: unknown; kind?: unknown; text?: unknown; audio?: unknown; about?: unknown; role?: unknown }) {
+  { const r0 = await load(code); chatGate(r0, seatOf(r0, token)); }
   let stored = "";
   const next = await play(code, (row) => {
     const s = row.state;

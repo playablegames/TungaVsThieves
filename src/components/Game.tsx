@@ -80,8 +80,19 @@ export default function Game({ code }: { code: string }) {
   // (designer 2026-10-12) a player who is out watches in silence — their mic stays shut, except for their last words
   // your own floor (an accusation answered, a debate turn) or your last words open the mic by themselves — no button to hold
   const ownFloor = Boolean((fl && fl.seat === me) || (lw && lw.seat === me));
-  const held = Boolean((fl && fl.seat !== me) || (lw && lw.seat !== me) || (ptt.on && !ptt.down && !ownFloor && st?.status === "playing") || reading === "update" || (reading === "talk" && !ptt.down && !ownFloor));
+  // (designer 2026-10-14) the host muted my voice: the mic stays shut until they unmute me
+  const hostMuted = Boolean(st?.muted?.includes(me));
+  const held = Boolean(hostMuted || (fl && fl.seat !== me) || (lw && lw.seat !== me) || (ptt.on && !ptt.down && !ownFloor && st?.status === "playing") || reading === "update" || (reading === "talk" && !ptt.down && !ownFloor));
   const duckTable = voice.duck;
+  const mutedKey = (st?.muted ?? []).join(",");
+  useEffect(() => {
+    const muted = mutedKey ? mutedKey.split(",").map(Number) : [];
+    for (const [k, pe] of Object.entries(voice.peers)) {
+      const seat = Number(k);
+      if (seat === me || !pe) continue;
+      if (muted.includes(seat) !== Boolean(pe.hushed)) voice.hush(seat);
+    }
+  }, [mutedKey, voice, me]);
   useEffect(() => { duckTable(reading === "update"); }, [reading, duckTable]);
   const setHeld = voice.setHeld;
   useEffect(() => { setHeld(held); }, [held, setHeld]);
@@ -388,8 +399,9 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
   const readAloud = useRef(bots.voice);
   useEffect(() => { readAloud.current = bots.voice; }, [bots.voice]);
   const onFresh = useCallback((it: FeedItem) => {
-    // read aloud: what someone says or claims (bots and the Villager/Thief/Role/Stone taps) — not your own, not captions
-    if (!readAloud.current || it.old || it.seat === v.me.seat || (it.kind !== "talk" && it.kind !== "claim")) return;
+    // (designer 2026-10-14: "no read aloud needed except for updates") chat, claims and quick lines are never read out —
+    // the narrator reads the updates; this only ever read talk, so it stays silent now
+    if (!readAloud.current || it.old || it.seat === v.me.seat || it.kind !== "talk" || true) return;
     const seat = it.seat ?? 0;
     const text = it.kind === "talk" ? `${names[seat]?.replace(/\s*🤖$/, "") ?? ""}: ${it.text}` : it.text;
     say({ text, lang: "en-IN", pitch: 0.75 + ((seat * 37) % 60) / 100, rate: 0.95 + ((seat * 13) % 20) / 100 });
@@ -564,7 +576,8 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
         <SpeedAsk code={code} token={token} name={v.players[s.timers.speedAsk]?.name.replace(/\s*🤖$/, "") ?? "A player"} />
       )}
 
-      <Ring v={v} voice={voice} moment={beat && TABLE_MOMENTS.has(beat.type) ? beat : null} speed={s.timers.speed ?? 1} onHistory={setHistory} onMessage={(to, voice) => setCompose({ to, voice })} hint={!v.tutorial && v.me.alive && !tipsSeen.includes("seats")} talking={bots.current?.seat ?? null} floorSeat={s.floor && s.floor.until > now() ? s.floor.seat : null} actor={headline?.actor} target={headline?.target} pick={v.decision?.kind === "vote" ? v.decision.mine ?? null : null} tally={live ?? voteShown?.tally}
+      <Ring v={v} voice={voice} moment={beat && TABLE_MOMENTS.has(beat.type) ? beat : null} speed={s.timers.speed ?? 1} onHistory={setHistory} onMessage={(to, voice) => setCompose({ to, voice })} muted={s.muted ?? []}
+        onHostMute={s.you.host ? (seat, m) => { api.mute(code, token, seat, m).catch(() => {}); } : undefined} hint={!v.tutorial && v.me.alive && !tipsSeen.includes("seats")} talking={bots.current?.seat ?? null} floorSeat={s.floor && s.floor.until > now() ? s.floor.seat : null} actor={headline?.actor} target={headline?.target} pick={v.decision?.kind === "vote" ? v.decision.mine ?? null : null} tally={live ?? voteShown?.tally}
         flying={flying} onThrow={s.status === "playing" ? throwAt : undefined}
         away={s.away} marks={marks} onMark={setMark}
         onClaim={s.status === "playing" ? claimAt : undefined}>
@@ -679,11 +692,12 @@ function RolePeek({ v }: { v: PlayerView }) {
 }
 
 /** Seats on an oval in turn order, you at the bottom, a thin brass line joining them. */
-function Ring({ v, voice, moment = null, speed = 1, talking, floorSeat = null, actor, target, pick, tally, flying = [], away = [], marks = {}, onMark, onThrow, onPick, onClaim, onHistory, onMessage, hint = false, children }: {
+function Ring({ v, voice, moment = null, speed = 1, talking, floorSeat = null, actor, target, pick, tally, flying = [], away = [], marks = {}, onMark, onThrow, onPick, onClaim, onHistory, onMessage, muted = [], onHostMute, hint = false, children }: {
   v: PlayerView; voice: VoiceCtl; moment?: Beat | null; speed?: number; talking: number | null; floorSeat?: number | null; actor?: number; target?: number; pick: number | null; tally?: Record<string, number>;
   flying?: Throw[]; away?: number[]; marks?: Record<number, Mark>; onMark?: (seat: number, m: Mark | null) => void; onThrow?: (seat: number, emoji: string) => void; onPick?: (seat: number) => void;
   onClaim?: (kind: "kundli" | "stone", seat: number, role?: string, has?: boolean, stone?: Card) => void; onHistory?: (seat: number) => void;
-  onMessage?: (to: number | null, voice: boolean) => void; hint?: boolean; children: React.ReactNode;
+  onMessage?: (to: number | null, voice: boolean) => void; muted?: number[]; onHostMute?: (seat: number, muted: boolean) => void;
+  hint?: boolean; children: React.ReactNode;
 }) {
   const n = v.players.length;
   const voteOpen = v.phase.endsWith("_vote");
@@ -738,7 +752,7 @@ function Ring({ v, voice, moment = null, speed = 1, talking, floorSeat = null, a
               voted={voteOpen && p.alive && !v.waitingOn.includes(p.seat)}
               picked={pick === p.seat}
               speaking={me ? voice.speaking : Boolean(peer?.speaking && !peer.hushed) || talking === p.seat}
-              micOff={me ? !voice.micOn || voice.micBlocked : Boolean(peer?.muted)}
+              micOff={me ? !voice.micOn || voice.micBlocked || muted.includes(p.seat) : Boolean(peer?.muted) || muted.includes(p.seat)}
               hushed={Boolean(peer?.hushed)}
               away={away.includes(p.seat)} mark={marks[p.seat]} said={said[p.seat]} hint={hint && !me && p.alive}
               onTap={onPick && p.alive ? () => onPick(p.seat)
@@ -758,7 +772,8 @@ function Ring({ v, voice, moment = null, speed = 1, talking, floorSeat = null, a
           onMessage={onMessage ? (voice) => { onMessage(picker, voice); setPicker(null); } : undefined}
           onMark={onMark ? (m) => { onMark(picker, m); setPicker(null); } : undefined}
           onThrow={onThrow ? (e) => { onThrow(picker, e); setPicker(null); } : undefined}
-          hush={peerOf(picker) ? { hushed: peerOf(picker)!.hushed, toggle: () => { voice.hush(picker); setPicker(null); } } : undefined}
+          hush={peerOf(picker) && !onHostMute ? { hushed: peerOf(picker)!.hushed, toggle: () => { voice.hush(picker); setPicker(null); } } : undefined}
+          hostMute={onHostMute ? { muted: muted.includes(picker), toggle: () => { onHostMute(picker, !muted.includes(picker)); setPicker(null); } } : undefined}
           />
       )}
       <CardFlights v={v} pos={pos} />
@@ -1591,10 +1606,10 @@ export const TOUR: [string, React.ReactNode][] = [
 /** THE ACCUSE SHEET (designer 2026-10-14): what the table has said about them so far, then ONE tap — a role card
  *  (thief cards first, in red: accuse · village cards in gold: clear) or the Stone. Your own read wears 🔮. Private
  *  marks, throws, mute and history sit below. An out player: "was…", no Stone. */
-function AccuseSheet({ v, seat, said, seen, mark, onClose, onClaim, onMark, onThrow, hush, onMessage }: {
+function AccuseSheet({ v, seat, said, seen, mark, onClose, onClaim, onMark, onThrow, hush, hostMute, onMessage }: {
   v: PlayerView; seat: number; said?: SaidAbout; seen?: string; mark?: Mark; onClose: () => void;
   onClaim?: (kind: "kundli" | "stone", role?: string, has?: boolean, stone?: Card) => void; onMark?: (m: Mark | null) => void; onThrow?: (e: string) => void;
-  hush?: { hushed: boolean; toggle: () => void }; onMessage?: (voice: boolean) => void;
+  hush?: { hushed: boolean; toggle: () => void }; hostMute?: { muted: boolean; toggle: () => void }; onMessage?: (voice: boolean) => void;
 }) {
   const p = v.players[seat];
   const name = p.name.replace(/\s*🤖$/, "");
@@ -1668,6 +1683,7 @@ function AccuseSheet({ v, seat, said, seen, mark, onClose, onClaim, onMark, onTh
             <span className="mx-1 h-6 w-px bg-brass/30" aria-hidden />
           </>}
           {onThrow && REACTIONS.map((e) => <button key={e} type="button" onClick={() => onThrow(e)} className="grid h-10 w-10 place-items-center rounded-full text-[22px] active:scale-90">{e}</button>)}
+          {hostMute && <button type="button" onClick={hostMute.toggle} className="min-h-10 rounded-full px-3 text-[13px] font-bold text-stock ring-1 ring-brass/50">{hostMute.muted ? "🔊 Unmute for everyone" : "🔇 Mute for everyone"}</button>}
           {hush && <button type="button" aria-label={hush.hushed ? "Unmute for me" : "Mute for me"} onClick={hush.toggle} className="grid h-10 w-10 place-items-center rounded-full text-[20px]">{hush.hushed ? "🔊" : "🔇"}</button>}
         </div>
       </div>

@@ -53,6 +53,9 @@ export const api = {
   endWords: (code: string, token: string) => call(`/api/games/${code}/words`, { method: "POST", token }),
   speed: (code: string, token: string, body: { speed?: 1 | 2; answer?: "yes" | "no" }) => call(`/api/games/${code}/speed`, { method: "POST", token, body: JSON.stringify(body) }),
   tick: (code: string) => call<{ applied: boolean }>(`/api/games/${code}/tick`, { method: "POST" }),
+  /** host: mute / unmute a player for everyone (2026-10-14) */
+  mute: (code: string, token: string, seat: number, muted: boolean) =>
+    call(`/api/games/${code}/mute`, { method: "POST", token, body: JSON.stringify({ seat, muted }) }),
   chat: (code: string, token: string, text: string) =>
     call(`/api/games/${code}/chat`, { method: "POST", token, body: JSON.stringify({ text }) }),
   state: (code: string, token: string, since: number) => call<ClientState>(`/api/games/${code}/state?since=${since}`, { token }),
