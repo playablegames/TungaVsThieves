@@ -1,6 +1,6 @@
 import { tkGuesses } from "@/engine/setup";
 import { describe, expect, it, vi } from "vitest";
-import { act, addBot, chat, claim, createRoom, debateSeconds, extendDebate, reclaim, removeBot, sweep, getState, joinRoom, startGame, tick, HttpError, INTRO_MS, BOT_DELAY_MS, VOTE_SETTLE_MS, ONLINE_MAX_PLAYERS, whisper, exportLog, takeFloor, FLOOR_MS } from "./game";
+import { act, addBot, createBotGame, chat, claim, createRoom, debateSeconds, extendDebate, reclaim, removeBot, sweep, getState, joinRoom, startGame, tick, HttpError, INTRO_MS, BOT_DELAY_MS, VOTE_SETTLE_MS, ONLINE_MAX_PLAYERS, whisper, exportLog, takeFloor, FLOOR_MS } from "./game";
 import { botVote } from "./botmind";
 import { HOLD_CAP } from "@/lib/beats";
 import { defaultAction, randomAction } from "@/engine/decisions";
@@ -399,5 +399,15 @@ describe("playtest LLE3Q (2026-10-09)", () => {
       expect((after.state!.phase as { debate: boolean }).debate).toBe(false); // ballots are OPEN
       expect(after.state!.events.at(-1)!.type).not.toBe("vote_result");
     } finally { vi.useRealTimers(); }
+  });
+});
+
+describe("Play with bots in one call (2026-10-14)", () => {
+  it("seats you and the bots, deals and starts — one call, the game is playing", async () => {
+    const { code, token } = await createBotGame("Asha", 5);
+    const st = await getState(code, token, 0);
+    expect(st.status).toBe("playing");
+    expect(st.view!.players).toHaveLength(6);
+    expect(st.you.name).toBe("Asha");
   });
 });

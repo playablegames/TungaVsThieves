@@ -28,6 +28,8 @@ async function call<T>(path: string, init: RequestInit & { token?: string | null
 
 export const api = {
   create: (name: string) => call<{ code: string; token: string }>("/api/games", { method: "POST", body: JSON.stringify({ name }) }),
+  /** Play with bots: you + `bots` bots, dealt and started, in one call (2026-10-14) */
+  createWithBots: (name: string, bots: number) => call<{ code: string; token: string }>("/api/games", { method: "POST", body: JSON.stringify({ name, bots }) }),
   join: (code: string, name: string) =>
     call<{ code: string; token: string }>(`/api/games/${code}/join`, { method: "POST", body: JSON.stringify({ name }) }),
   start: (code: string, token: string) => call(`/api/games/${code}/start`, { method: "POST", token }),

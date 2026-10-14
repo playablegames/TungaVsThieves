@@ -67,14 +67,9 @@ function Entry() {
         router.push(`/g/${t.code}`);
         return;
       }
-      const r = ask === "join" ? await api.join(code.trim().toUpperCase(), name) : await api.create(name);
+      // (2026-10-14) Play with bots: the table is seated, dealt and started in ONE call (it was three)
+      const r = ask === "join" ? await api.join(code.trim().toUpperCase(), name) : ask === "bots" ? await api.createWithBots(name, bots) : await api.create(name);
       saveToken(r.code, r.token);
-      if (ask === "bots") {
-        // a table of bots, and the game begins at once
-        // (2026-10-14) every bot in one call — it used to be one round trip per bot
-        await api.addBot(r.code, r.token, bots);
-        await api.start(r.code, r.token);
-      }
       router.push(`/g/${r.code}`);
     } catch (e) {
       setError((e as Error).message);

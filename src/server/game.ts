@@ -7,7 +7,7 @@ import { defaultAction } from "@/engine/decisions";
 import { botTalk } from "./botmind";
 import { botReactions, pushStoneClaim, pushTalkClaims } from "./reactions";
 import { personalised, personalityOf } from "./personality";
-import { botDecision, botTieBreak, pushBotClaim, RULES, skilledAction, SKILLS } from "./belief";
+import { botDecision, botTieBreak, pushBotClaim, RULES, SKILLS } from "./belief";
 import { hear } from "./hear";
 import { sendPush, type Alert } from "./push";
 import { MIN_PLAYERS, ROLE_TABLE, THIEF_ROLES } from "@/engine/setup";
@@ -175,6 +175,33 @@ function sanitizeTimers(t?: Partial<Timers>): Partial<Timers> {
     if (Number.isFinite(v) && v >= 15 && v <= 600) out[k] = Math.round(v);
   }
   return out;
+}
+
+/** PLAY WITH BOTS in ONE call (2026-10-14, "the game doesn't start fast"): seat you and the bots, deal, and save the
+ *  started game in a single database write — it used to be three calls (create, bots, start), each a round trip */
+export async function createBotGame(name: unknown, count: unknown, timers?: Partial<Timers>) {
+  const token = newToken();
+  const k = Math.max(MIN_PLAYERS - 1, Math.min(ONLINE_MAX_PLAYERS - 1, Math.floor(Number(count) || MIN_PLAYERS - 1)));
+  const lobby: GameRow["lobby"] = [{ name: cleanName(name), token }];
+  for (let i = 0; i < k; i++) {
+    const taken = new Set(lobby.map((p) => p.name.toLowerCase()));
+    const bot = BOT_NAMES.map((n) => `${n} 🤖`).find((n) => !taken.has(n.toLowerCase())) ?? `Bot ${lobby.length + 1} 🤖`;
+    lobby.push({ name: bot, token: newToken(), bot: true, skill: BOT_SKILLS[i % BOT_SKILLS.length] });
+  }
+  // shuffle seats so you don't always go first
+  for (let i = lobby.length - 1; i > 0; i--) { const j = randomInt(i + 1); [lobby[i], lobby[j]] = [lobby[j], lobby[i]]; }
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const row: GameRow = {
+      code: newCode(), version: 1, status: "lobby", hostToken: token, lobby: structuredClone(lobby), state: null, deadline: null,
+      timers: { ...DEFAULT_TIMERS, ...sanitizeTimers(timers) }, createdAt: new Date().toISOString(),
+    };
+    const first = start(row.lobby.map((p) => p.name), randomInt(2 ** 31));
+    first.voteUntilClock = true;
+    const next = commitState(row, first);
+    if (next.deadline !== null) next.deadline += INTRO_MS;
+    if (await store.create(next)) return { code: next.code, token };
+  }
+  throw new HttpError(500, "Could not allocate a room code");
 }
 
 export async function joinRoom(code: string, name: unknown) {
