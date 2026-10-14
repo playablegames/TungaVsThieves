@@ -3,7 +3,8 @@
 // game (game.ts) and every simulation, so the bots measured are the bots people play against (2026-10-13).
 import type { GameState } from "@/engine/types";
 import { readsOf } from "@/engine/decisions";
-import { keptMyStone, roleFor, thiefWord, type Skill } from "./belief";
+import { keptMyStone, roleFor, RULES, thiefWord, type Skill } from "./belief";
+import { wordAboutRole, wordAboutSearch } from "./reason";
 import { THIEF_ROLES } from "@/engine/setup";
 import type { LineClaim } from "./botmind";
 
@@ -67,10 +68,18 @@ export function botReactions(s: GameState, from: number, botSkill: (seat: number
       if (kept !== null) s.events.push({ n: s.events.length, type: "kept_private", to: [e.to[0]], msg: `Your Stone didn't come back — ${s.players[kept].name} kept it.`, data: { seat: kept, target: e.to[0] } });
       continue;
     }
-    if (e.type === "pickup_private" && Array.isArray(e.to) && bot(e.to[0]) && s.players[e.to[0]]?.side === "V") villagerBluff(s, e.to[0] as number, botSkill(e.to[0] as number)!, r);
+    // (2026-10-14) the bot rulebook has no bluffing — docs/BOT_LOGIC.md
+    if (!RULES && e.type === "pickup_private" && Array.isArray(e.to) && bot(e.to[0]) && s.players[e.to[0]]?.side === "V") villagerBluff(s, e.to[0] as number, botSkill(e.to[0] as number)!, r);
     if (e.type === "pickup_private" && Array.isArray(e.to) && bot(e.to[0]) && s.players[e.to[0]]?.side === "V") {
       const kept = keptMyStone(s, e.to[0], e.n);
       if (kept !== null && !s.events.some((c) => c.type === "claim" && c.data?.seat === e.to[0] && c.data?.target === kept && c.data?.kind === "stone" && c.n > e.n - 40)) pushStoneClaim(s, e.to[0] as number, kept, true);
+      continue;
+    }
+    // (2026-10-14, bot rulebook) a villager robbed of a Stone says who took it — the way anyone would
+    if (RULES && e.type === "hera_pheri_private" && ((e.data?.taken as string[]) ?? []).some((c) => c === "STONE_1" || c === "STONE_2")) {
+      const hp = s.events.slice(0, e.n).reverse().find((x) => x.type === "hera_pheri");
+      const thiefSeat = hp?.data?.seat as number | undefined, victim = hp?.data?.target as number | undefined;
+      if (thiefSeat !== undefined && victim !== undefined && bot(victim) && s.players[victim].side === "V" && s.players[victim].alive) pushStoneClaim(s, victim, thiefSeat, true);
       continue;
     }
     const seen = e.type === "talashi_private" ? (e.data?.seat as number)
@@ -78,6 +87,22 @@ export function botReactions(s: GameState, from: number, botSkill: (seat: number
     if (seen === undefined || !bot(seen) || !s.players[seen]?.alive) continue;
     const skill = botSkill(seen)!;
     const thief = s.players[seen].side === "T";
+    if (RULES) {
+      // the bot rulebook (reason.ts): no dice on whether a bot speaks — a villager says what it saw, a thief the lie
+      if (e.type === "talashi_private") {
+        const target = e.data?.target as number;
+        const found = ((e.data?.hand as string[]) ?? []).some((c) => c === "STONE_1" || c === "STONE_2");
+        if (s.players[target]?.alive) pushStoneClaim(s, seen, target, wordAboutSearch(s, seen, skill, found));
+        continue;
+      }
+      const target = (e.type === "eliminated_private" ? e.data?.seat : e.data?.target) as number;
+      if (!s.players[target] || target === seen) continue;
+      const kind = e.type === "eliminated_private" ? "was" : "kundli";
+      if (kind === "kundli" && !s.players[target].alive) continue;
+      const w = wordAboutRole(s, seen, skill, r, target, e.data?.role as string, e.data?.side as "V" | "T");
+      if (w) { mark(seen, kind, target, w.role, w.side); if (!thief || skill.name !== "casual") botWhisper(s, seen, target, w.role ?? "", w.side); }
+      continue;
+    }
     const speaks = r() < skill.claimRate;
     const lies = thief && r() < skill.lie;
     if (e.type === "talashi_private") {

@@ -18,6 +18,12 @@ import { randomAction, readsOf } from "@/engine/decisions";
 import { deduce, unanswered, UNANSWERED, type Model } from "./deduce";
 import { clampLR, tellsOf, TELLS } from "./tells";
 import type { Action } from "@/engine/types";
+import { ruleBhukamp, ruleClaim, ruleDalBadal, ruleGift, ruleHandoff, ruleTieBreak, ruleTurn, ruleVote, type Decision } from "./reason";
+
+/** (designer 2026-10-14) THE BOT RULEBOOK (reason.ts, docs/BOT_LOGIC.md) decides everything a bot does — talk, votes,
+ *  turns, Bhukamp, Dal Badal, going out. BOT_FLAGS=old-brain runs the old probability model, for a side-by-side only. */
+export const RULES = !(typeof process !== "undefined" && (process.env.BOT_FLAGS ?? "").includes("old-brain"));
+
 
 type R = () => number;
 
@@ -300,6 +306,16 @@ export function withoutHearsay(s: GameState, seat: number): GameState {
 }
 
 export function beliefVote(s: GameState, seat: number, seed: number, r: R, skill: Skill = DEFAULT_SKILL): number | null {
+  return beliefVoteWhy(s, seat, seed, r, skill).target;
+}
+
+/** a bot's ballot and the reason for it (the log keeps the reason — game.ts) */
+export function beliefVoteWhy(s: GameState, seat: number, seed: number, r: R, skill: Skill = DEFAULT_SKILL): { target: number | null; why: string } {
+  if (RULES) return ruleVote(s, seat, skill, r);
+  return { target: oldBeliefVote(s, seat, seed, r, skill), why: "old brain" };
+}
+
+function oldBeliefVote(s: GameState, seat: number, seed: number, r: R, skill: Skill = DEFAULT_SKILL): number | null {
   const alive = s.players.filter((p) => p.alive && p.seat !== seat).map((p) => p.seat);
   if (!alive.length) return null;
   const thief = s.players[seat].side === "T";
@@ -375,6 +391,7 @@ export function botTieBreak(s: GameState, seat: number, seed: number, skill: Ski
   const leaders = [...tally].filter(([, v]) => v === max && max > 0).map(([x]) => x).filter((x) => x !== seat);
   if (leaders.length < 2) return null;
   const thief = s.players[seat].side === "T";
+  if (RULES) return ruleTieBreak(s, seat, skill, leaders, ph.ballots[seat]);
   const b = beliefOf(s, seat, seed, skill);
   const final = ph.reason === "final";
   const st = final ? stoneOdds(s, seat, seed, skill) : null;
@@ -514,7 +531,7 @@ export function backedClaim(events: GameState["events"], actor: number, target: 
 }
 
 // ------------------------------------------------------------------ claims
-export type ClaimData = { kind: "kundli" | "accuse" | "was"; target: number; role: string | null; side: Side };
+export type ClaimData = { kind: "kundli" | "accuse" | "was"; target: number; role: string | null; side: Side; why?: string };
 
 // ------------------------------------------------------------------ THIEF SKILLS (2026-10-13, research: Mafia scum
 // play, Secret Hitler fascists, Avalon minions). A skilled thief (average, sharp) BLENDS (plays like a villager), never
@@ -551,6 +568,7 @@ export function thiefWord(s: GameState, seat: number, target: number, role: stri
  *  points at whoever the table already suspects. */
 export function botClaim(s: GameState, seat: number, seed: number, r: R, skill: Skill = DEFAULT_SKILL): ClaimData | null {
   const me = s.players[seat];
+  if (RULES) return ruleClaim(s, seat, skill, r); // a bot says what it saw — no dice on whether it speaks
   if (!me.alive || r() > skill.claimRate) return null;
   const v = viewFor(s, seat);
   const said = new Set(v.events.filter((e) => e.type === "claim" && e.data?.seat === seat).map((e) => `${e.data?.kind}:${e.data?.target}`));
@@ -604,13 +622,18 @@ export function pushBotClaim(s: GameState, seat: number, seed: number, r: R, ski
   if (!c) return false;
   // one mark per player and side: "X is Lootera" already says "X is a thief" (screen check 2026-10-12)
   if (s.events.some((e) => e.type === "claim" && e.data?.seat === seat && e.data?.target === c.target && e.data?.side === c.side)) return false;
-  // (designer 2026-10-13) every word names a role: an accusation a thief role, a clear a village role
-  const role = c.role ?? roleFor(s, seat, c.target, c.side, r);
-  if (!role) return false;
+  // (designer 2026-10-14) a role is named only when the bot SAW one (or lies that it did) — a suspicion names none:
+  // "Raju suspects Pappu". (The old rule dressed every suspicion up as a random thief role — HU79V.)
+  const role = RULES ? c.role : c.role ?? roleFor(s, seat, c.target, c.side, r);
+  if (!RULES && !role) return false;
   const me = s.players[seat].name, them = s.players[c.target].name;
   const was = c.kind === "was" || !s.players[c.target].alive;
-  s.events.push({ n: s.events.length, type: "claim", to: "all", msg: `${me}: "${them} ${was ? "was" : "is"} ${role}."`,
-    data: { seat, ...c, kind: was ? "was" : c.kind === "accuse" ? "kundli" : c.kind, role } });
+  const { why, ...data } = c;
+  const msg = role ? `${me}: "${them} ${was ? "was" : "is"} ${role}."` : `${me}: "I suspect ${them}."`;
+  s.events.push({ n: s.events.length, type: "claim", to: "all", msg,
+    data: { seat, ...data, kind: was ? "was" : c.kind === "accuse" && role ? "kundli" : c.kind, role } });
+  // the reason stays on the server (to: [] = analytics only) — a thief's reason would give it away
+  if (why) s.events.push({ n: s.events.length, type: "bot_why", to: [], msg: `${me} said that because: ${why}`, data: { seat, kind: "claim", target: c.target, why } });
   return true;
 }
 
@@ -621,13 +644,29 @@ export function topSuspect(s: GameState, seat: number, seed: number, skill: Skil
   return alive.sort((x, y) => (b.p.get(y) ?? 0) - (b.p.get(x) ?? 0))[0] ?? null;
 }
 
+/** THE RULEBOOK's move for any decision a bot faces, with the reason (docs/BOT_LOGIC.md) */
+export function botDecision(s: GameState, seat: number, seed: number, r: R, skill: Skill = DEFAULT_SKILL): Decision {
+  const ph = s.phase;
+  if (ph.kind === "vote" && ph.debate) return ruleDalBadal(s, seat, skill, r, "debate") ?? { action: { type: "ready" }, why: "ready" };
+  if (ph.kind === "vote") { const v = ruleVote(s, seat, skill, r); return { action: { type: "vote", target: v.target }, why: v.why }; }
+  if (ph.kind === "surrender") return { action: { type: "surrender", give: s.players[seat].side === "V" }, why: "surrender" };
+  if (ph.kind === "elim" && ph.step === "dal_badal") return ruleDalBadal(s, seat, skill, r, "votedOut") ?? { action: { type: "dal_badal", seats: [], pass: [] }, why: "keep Dal Badal" };
+  if (ph.kind === "elim" && ph.step === "handoff") return ruleHandoff(s, seat, skill, r);
+  if (ph.kind === "elim") return ruleGift(s, seat, skill, r);
+  if (ph.kind === "batwara") return ruleBhukamp(s, seat, skill, r);
+  if (ph.kind === "turn") return ruleTurn(s, seat, skill, r);
+  // the Dal Badal pick is face down — any card is as good as another
+  return { action: randomAction(s, seat, r, skill.activity, true), why: "a face-down pick" };
+}
+
 /** A bot's move outside the ballot, at its skill: the random pair policy at its activity (keeping Stones), Teer Kaman
  *  only on a Kundli read — or, for a casual bot, sometimes blind at its top suspect — and Dal Badal half the time. */
 export function skilledAction(s: GameState, seat: number, seed: number, r: R, skill: Skill = DEFAULT_SKILL): Action {
+  if (RULES) return botDecision(s, seat, seed, r, skill).action;
   const ph = s.phase;
   const me = s.players[seat];
   if (ph.kind === "vote" && ph.debate) return dalBadalMove(s, seat, seed, r, skill, "debate") ?? { type: "ready" };
-  if (ph.kind === "vote") return { type: "vote", target: beliefVote(s, seat, seed, r, skill) };
+  if (ph.kind === "vote") return { type: "vote", target: beliefVoteWhy(s, seat, seed, r, skill).target };
   if (ph.kind === "surrender") return { type: "surrender", give: me.side === "V" };
   if (ph.kind === "elim" && ph.step === "dal_badal") return dalBadalMove(s, seat, seed, r, skill, "votedOut") ?? { type: "dal_badal", seats: [], pass: [] };
   if (ph.kind === "batwara") return bhukampMove(s, seat, seed, r, skill);

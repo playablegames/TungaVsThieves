@@ -847,10 +847,9 @@ function seatFaces(v: PlayerView, said: Record<number, SaidAbout>): Record<numbe
     const art = roleArt(role);
     if (p.seat === v.me.seat && art) out[p.seat] = { kind: "mine", art, role };
     else if (role && art) out[p.seat] = { kind: "known", art, role, seen: saw };
-    else {
-      const rumour = roleArt(said[p.seat]?.role);
-      out[p.seat] = rumour ? { kind: "rumour", art: rumour, role: said[p.seat]?.role, seen: saw } : { kind: "back", art: CARD_BACK, seen: saw };
-    }
+    // (designer 2026-10-14) a role someone CLAIMED no longer turns the seat into that card — a Kundli claim and a plain
+    // accusation weigh the same, one 🫵 on the seat each
+    else out[p.seat] = { kind: "back", art: CARD_BACK, seen: saw };
   }
   return out;
 }
@@ -861,11 +860,10 @@ function Seat({ p, me, size, face, got, tag, spot, voted, picked, speaking, micO
 }) {
   const z = SEAT[size];
   const label = `${p.name}${me ? " (you)" : ""}${got ? `, got ${got} vote${got === 1 ? "" : "s"}` : ""}: ${p.handSize} cards, ${p.votes} vote${p.votes === 1 ? "" : "s"}${p.alive ? "" : p.revealedRole ? `, out — was ${p.revealedRole}` : ", out"}${spot ? ", their move" : ""}${speaking ? ", talking" : ""}${voted ? ", has voted" : ""}${away ? ", away" : ""}${mark ? `, you marked ${MARK[mark].label}` : ""}${said?.accuse ? `, called a thief ${said.accuse} times` : ""}${said?.trust ? `, called a villager ${said.trust} times` : ""}${said?.role ? `, read as ${said.role}` : ""}${said?.stone !== undefined ? (said.stone ? ", said to hold a Stone" : ", said to hold no Stone") : ""}`;
-  const saidChip = said && (said.accuse || said.trust || (said.role && face.kind === "back") || (p.alive && said.stone !== undefined)) ? (
+  const saidChip = said && (said.accuse || said.trust || (p.alive && said.stone !== undefined)) ? (
     <span className={`flex max-w-full items-center gap-1 truncate rounded-full bg-black/50 px-1.5 text-[11px] leading-[16px] text-stock ${me ? "mb-0.5" : "mt-0.5"}`} aria-hidden>
       {said.accuse ? <span className="text-crimson-soft">🫵{said.accuse}</span> : null}
       {said.trust ? <span className="text-jade-soft">🌾{said.trust}</span> : null}
-      {said.role && face.kind === "back" ? <span className="truncate text-stock">🔮{said.role}</span> : null}
       {p.alive && said.stone !== undefined ? <span className="text-[#f3c66b]">💎{said.stone ? "✓" : "✗"}</span> : null}
     </span>
   ) : null;

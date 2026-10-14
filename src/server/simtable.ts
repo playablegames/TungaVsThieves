@@ -5,7 +5,7 @@
 import { apply, start, waitingOn } from "@/engine/engine";
 import { ROLE_TABLE } from "@/engine/setup";
 import type { GameState } from "@/engine/types";
-import { pushBotClaim, skilledAction, type Skill } from "./belief";
+import { botDecision, pushBotClaim, RULES, skilledAction, type Skill } from "./belief";
 import { botTalk } from "./botmind";
 import { botReactions, pushTalkClaims } from "./reactions";
 import { plannedAction } from "./flowsheet";
@@ -18,6 +18,8 @@ export interface SimOptions {
   /** seats that think with the flowsheet */
   plans?: (seat: number) => boolean;
   table?: typeof ROLE_TABLE;
+  /** keep every bot's reason in the log (bot_why, analytics only) — to read a game back */
+  explain?: boolean;
 }
 
 export function playTable(n: number, seed: number, r: R, o: SimOptions): GameState {
@@ -28,11 +30,17 @@ export function playTable(n: number, seed: number, r: R, o: SimOptions): GameSta
     const sk = o.skillOf(seat);
     if (s.phase.kind === "vote" && s.phase.debate) pushBotClaim(s, seat, s.seed, r, sk);
     const from = s.events.length;
-    const a = o.plans?.(seat) ? plannedAction(s, seat, s.seed, r, sk) : skilledAction(s, seat, s.seed, r, sk);
+    let a = o.plans?.(seat) ? plannedAction(s, seat, s.seed, r, sk) : null;
+    if (!a && RULES && o.explain) {
+      const d = botDecision(s, seat, s.seed, r, sk);
+      if (d.why !== "ready") s.events.push({ n: s.events.length, type: "bot_why", to: [], msg: `${s.players[seat].name}: ${d.why}`, data: { seat, why: d.why } });
+      a = d.action;
+    }
+    a ??= skilledAction(s, seat, s.seed, r, sk);
     s = apply(s, seat, a);
     if (s.phase.kind === "over") break;
     botReactions(s, from, o.skillOf, r);
-    pushTalkClaims(s, botTalk(s, from, all, s.seed, r).flatMap((l) => (l.claims ?? []).map((c) => ({ seat: l.seat, c }))));
+    if (!RULES) pushTalkClaims(s, botTalk(s, from, all, s.seed, r).flatMap((l) => (l.claims ?? []).map((c) => ({ seat: l.seat, c }))));
   }
   return s;
 }

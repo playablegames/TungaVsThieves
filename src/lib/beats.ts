@@ -157,7 +157,7 @@ function rawBeat(e: GameEvent, names: string[], history: GameEvent[]): Beat | nu
         if (!loud) return { ...base, actor, target, title: e.msg.replace(/\s*🤖/g, ""), detail: why, tone: d?.kind === "stone" ? "gold" : "vote", big: false, hold: 1800 };
         return d?.kind === "stone"
           ? { ...base, actor, target, title: `${who}: ${them} has a Stone!`, detail: why, tone: "gold", big: true, hold: Math.round(2600 * PACE) }
-          : { ...base, actor, target, role: String(d?.role ?? ""), title: `${who}: ${them} ${d?.kind === "was" ? "was" : "is"} ${String(d?.role ?? "a thief")}!`, detail: why, tone: "lethal", big: true, hold: Math.round(2600 * PACE) };
+          : { ...base, actor, target, role: String(d?.role ?? ""), title: d?.role ? `${who}: ${them} ${d?.kind === "was" ? "was" : "is"} ${String(d.role)}!` : `${who} suspects ${them}!`, detail: why, tone: "lethal", big: true, hold: Math.round(2600 * PACE) };
       }
     case "batwara_done": {
       // (playtest 5EQL5, 2026-10-13: "I hardly receive any intel") what YOUR neighbours passed you in the Bhukamp —

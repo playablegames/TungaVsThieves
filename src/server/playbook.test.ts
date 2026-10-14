@@ -22,13 +22,13 @@ const SIDES: ("V" | "T")[] = ["T", "V", "V", "T", "V", "V"];
 const runs = (s: GameState, skill = SKILLS.sharp, n = 40) => { const r = counter(); return Array.from({ length: n }, () => skilledAction(s, 0, s.seed, r, skill)); };
 
 describe("THE PLAYBOOK — beginners gamble, skilled players hold", () => {
-  it("a SKILLED thief holding a Stone never plays a pair that sends it on; a BEGINNER sometimes does", () => {
+  // (2026-10-14, docs/BOT_LOGIC.md §6.1) nobody gambles a Stone: a pair would send it to a player whose side I don't know
+  it("no bot, at any skill, plays a pair that sends its Stone to a player it doesn't know is on its side", () => {
     const s = table(SIDES, [["STONE_1", "TALASHI", "TALASHI", "FAISLA", "KUNDLI"], ["HERA_PHERI", "KUNDLI"], ["FAISLA", "BATWARA"], ["KUNDLI", "FAISLA"], ["TALASHI", "BATWARA"], ["FAISLA", "KUNDLI"]]);
-    for (const a of runs(s, SKILLS.sharp)) {
-      if (a.type === "pass" || a.type === "play") expect(a.pass).not.toContain("STONE_1");
+    for (const skill of [SKILLS.casual, SKILLS.average, SKILLS.sharp]) for (const a of runs(s, skill)) {
+      expect(a.type).toBe("pass");
+      if (a.type === "pass") expect(a.pass).not.toContain("STONE_1");
     }
-    const casual = runs(s, SKILLS.casual, 80);
-    expect(casual.some((a) => (a.type === "pass" || a.type === "play") && a.pass.includes("STONE_1"))).toBe(true);
   });
   it("a SKILLED villager never passes Dal Badal on — no thief gets it", () => {
     const s = table(["V", "V", "T", "T", "V", "V"], [["DAL_BADAL", "TALASHI", "FAISLA", "KUNDLI", "BATWARA"], ["HERA_PHERI", "KUNDLI"], ["FAISLA", "BATWARA"], ["KUNDLI", "FAISLA"], ["TALASHI", "BATWARA"], ["FAISLA", "KUNDLI"]]);
@@ -62,12 +62,19 @@ describe("THE PLAYBOOK — beginners gamble, skilled players hold", () => {
     for (const skill of [SKILLS.casual, SKILLS.average, SKILLS.sharp])
       expect(runs(s, { ...skill, tkConfidence: 0.99 }).some((a) => a.type === "play" && a.card === "TEER_KAMAN")).toBe(false);
   });
-  it("ON SUSPICION: a villager sure enough shoots its top suspect, naming the role the table claimed for them", () => {
+  it("A STRONG CASE: three voices on one player, a role named for them → the shot, naming that role", () => {
     const s = tkTable();
-    s.events.push({ n: s.events.length, type: "claim", to: "all", msg: "", data: { seat: 3, target: 2, kind: "kundli", role: s.players[2].role, side: "T" } });
-    const shots = runs(s, { ...SKILLS.casual, tkConfidence: 0.05 }).filter((a) => a.type === "play" && a.card === "TEER_KAMAN");
+    for (const a of [1, 3, 5]) s.events.push({ n: s.events.length, type: "claim", to: "all", msg: "", data: { seat: a, target: 2, kind: a === 1 ? "kundli" : "accuse", role: a === 1 ? s.players[2].role : null, side: "T" } });
+    const shots = runs(s, SKILLS.average).filter((a) => a.type === "play" && a.card === "TEER_KAMAN");
     expect(shots.length).toBeGreaterThan(0);
-    expect(shots.every((a) => a.type === "play" && a.roles?.length)).toBe(true);
+    expect(shots.every((a) => a.type === "play" && a.target === 2 && a.roles?.[0] === s.players[2].role)).toBe(true);
+  });
+  it("A STANDOFF draws no arrow: the accused accused the speaker back", () => {
+    const s = tkTable();
+    s.events.push({ n: s.events.length, type: "kundli", to: "all", msg: "", data: { seat: 3, target: 2 } });
+    s.events.push({ n: s.events.length, type: "claim", to: "all", msg: "", data: { seat: 3, target: 2, kind: "kundli", role: s.players[2].role, side: "T" } });
+    s.events.push({ n: s.events.length, type: "claim", to: "all", msg: "", data: { seat: 2, target: 3, kind: "kundli", role: s.players[4].role, side: "T" } });
+    expect(runs(s, SKILLS.average).some((a) => a.type === "play" && a.card === "TEER_KAMAN")).toBe(false);
   });
   it("WAIT FOR THE ANSWER: an accusation moves a bot less until the accused has answered (or the floor closed)", () => {
     for (const skill of [SKILLS.casual, SKILLS.sharp]) {

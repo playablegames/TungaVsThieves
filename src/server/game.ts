@@ -7,7 +7,7 @@ import { defaultAction } from "@/engine/decisions";
 import { botTalk } from "./botmind";
 import { botReactions, pushStoneClaim, pushTalkClaims } from "./reactions";
 import { personalised, personalityOf } from "./personality";
-import { botTieBreak, pushBotClaim, roleFor, skilledAction, SKILLS } from "./belief";
+import { botDecision, botTieBreak, pushBotClaim, RULES, skilledAction, SKILLS } from "./belief";
 import { hear } from "./hear";
 import { sendPush, type Alert } from "./push";
 import { MIN_PLAYERS, ROLE_TABLE, THIEF_ROLES } from "@/engine/setup";
@@ -127,7 +127,8 @@ async function play(code: string, f: (row: GameRow) => GameRow): Promise<GameRow
   await alertNewlyWaiting(next, waitingBefore);
   const bots = next.lobby.flatMap((p, seat) => (p.bot ? [seat] : []));
   if (!next.state || !bots.length) return next;
-  const lines = botTalk(next.state, from, bots, next.state.seed, Math.random);
+  // (2026-10-14) under the bot rulebook a bot's words come only from reason.ts — the old line generator never speaks
+  const lines = RULES ? [] : botTalk(next.state, from, bots, next.state.seed, Math.random);
   // what a line asserts goes on the table as a claim — every bot reads it, the seat counts it (playtest LLE3Q)
   const said = lines.flatMap((l) => (l.claims ?? []).map((c) => ({ seat: l.seat, c })));
   if (said.length) await mutate(code, (r) => {
@@ -321,7 +322,10 @@ const autoAction = (row: GameRow, s: GameState, seat: number): Action => {
   if (!isBot(row, seat)) return defaultAction(s, seat);
   // (2026-10-12) a bot plays the whole game from what it has seen and heard, at its skill (belief.ts — the playbook:
   // a beginner gambles the Stone and uses Dal Badal whenever; a skilled bot sits on the Stone and times Dal Badal)
-  return skilledAction(s, seat, s.seed, Math.random, botSkill(row, seat));
+  // every bot decision carries its reason into the log (analytics only, never shown) — docs/BOT_LOGIC.md
+  const d = botDecision(s, seat, s.seed, Math.random, botSkill(row, seat));
+  if (d.why !== "ready") s.events.push({ n: s.events.length, type: "bot_why", to: [], msg: `${s.players[seat].name}: ${d.why}`, data: { seat, kind: d.action.type, why: d.why } });
+  return d.action;
 };
 const AWAY_AFTER = 2; // consecutive timeouts before a stand-in takes the seat
 
@@ -548,7 +552,8 @@ export async function chat(code: string, token: string | null, text: unknown) {
     const st = r.state;
     if (!st || st.phase.kind === "over" || !st.players[seat].alive || !st.players[h.target]?.alive) return r;
     st.events.push({ n: st.events.length, type: "claim", to: botSeats, msg: `${st.players[seat].name} (said): "${t.slice(CAPTION_PREFIX.length)}"`,
-      data: { seat, kind: h.kind === "stone" ? "stone" : "kundli", target: h.target, role: h.kind === "stone" ? null : h.role ?? (h.side ? roleFor(st, seat, h.target, h.side) : null), side: h.side, ...(h.kind === "stone" ? { has: h.has } : {}), heard: true } });
+      // (2026-10-14) a role only if the player SAID one — never one invented for them
+      data: { seat, kind: h.kind === "stone" ? "stone" : h.role ? "kundli" : "accuse", target: h.target, role: h.kind === "stone" ? null : h.role ?? null, side: h.side, ...(h.kind === "stone" ? { has: h.has } : {}), heard: true } });
     r.state = st;
     return r;
   });
