@@ -142,7 +142,8 @@ knows, otherwise the neighbour the table suspects more. Dal Badal follows the sa
 | average | yes | no | no | no | always |
 | sharp | yes | yes | yes | yes | always |
 
-No random noise anywhere. The only coin flip is between options that are truly equal.
+No random noise anywhere — bots decide by logic; wrong calls come from too little information. The only coin flip is
+between options that are truly equal (designer 2026-10-14: "depend on code only, make it logical").
 
 ## 9. Sharing information (designer 2026-10-14: "share info like real players")
 
@@ -164,40 +165,59 @@ thief names the role; otherwise it says "X is lying".
 **Listening:** bots read claims in public chat lines and in private lines sent to them. A friend's private word about a
 Stone puts that Stone where the friend said, unless the friend is a known liar or a known thief.
 
-## 10. Bot talk (designer 2026-10-14)
+## 10. Bot talk, lies, handshakes and double agents (designer 2026-10-14)
 
-*"Bots should answer truthfully or lie as per their personality and role, and speak with other bots too, to pass on
-information — without information transfer how will you solve a hidden role card game?"*
+*"Without information transfer how will you solve a hidden role card game?" · "Villagers will lie to protect their role,
+but within their own village roles — and thieves too." · "Bots should behave logically — no patching."*
 
-**What bots hear** (plain word rules, `hear.ts listen()`): a question — "what are u", "kaun ho", "your role?" — to the
-player it's written to (or named in the table chat); a word about yourself — "I'm Teacher", "main Kisaan hoon"; a
-Stone sighting — "Stone with Adi"; and the old claims ("X is Chor", "X has a Stone").
+**A THIEF PLAYS EXACTLY LIKE A VILLAGER.** Same talk, same votes, same plays. Its partners — known (a Kundli read) or
+**believed** (after a handshake) — stand where a villager's known villagers stand; it knows no "thief" to hunt, so it
+hunts whoever the evidence points at. Its own goals only: keep the Stone, Dal Badal, bus an exposed partner, shoot a
+Stone-holding villager whose role it knows. (A sharp thief still won't play Kundli: it shows its own role back.)
 
-**Asked its role, a bot answers privately, once — and keeps its story:**
+**What bots hear** (plain word rules, `hear.ts listen()`): a question ("what are u", "kaun ho", "your role?"), a word
+about yourself ("I'm Teacher", "main Kisaan hoon"), "Stone with Adi", and the old claims ("X is Chor").
 
-| | Open Book / Hothead | Detective | Quiet One |
+**Role talk — everyone may lie, always inside the village roles.** Each bot has ONE cover story, kept all game: the
+role it told before, else a role it knows belongs to a player who's out, else one nobody has claimed (a coin flip among
+equals).
+
+| asked by… | Open Book / Hothead | Detective | Quiet One |
 |---|---|---|---|
-| villager | the truth, unless the asker is a real suspect (2+) | the truth only to someone it has nothing against (≤0) | the truth only to someone it trusts (<0); a lie to a suspect (2+); otherwise "I'd rather not say" |
-| thief | as open as that villager would be — but its lie | same | same |
+| someone it's sure of (a read villager; a thief's partner) | truth | truth | truth |
+| a player it knows is a thief | cover | cover | cover |
+| anyone else | truth | truth if nothing against them, else cover | cover |
 
-A thief tells a partner it knows the truth. A villager tells a thief it knows a lie (its Teer Kaman will miss). A
-thief's lie is a village role: one it knows belongs to a player who is out, else one nobody has claimed or been named
-(a coin flip among equals) — and **the same lie every time**.
+"Truth" for a thief is its cover story. Tell a bot your role and it tells you its own. Each round (and each debate) every
+bot tells one player it doesn't suspect its role and asks theirs. Pressed (called a thief by 2, or at once for the Open
+Book and the Hothead), a bot claims a role out loud. A villager whose role someone claims within its hearing says so at
+once: "X is lying — I'm Kisaan".
 
-**Tell a bot your role and it tells you its own** (same rules).
+**The handshake.** A player is OUTED when someone the table saw do a Kundli with them names them with a thief role.
+Then every thief bot privately tells them "I'm also <my real thief role>. Where's the Stone?"
+- the outed player is a thief: it believes them (the role fits) and tells what it knows about the Stones — partners
+  from then on. A sharp thief trusts only a messenger who never accused or voted against it.
+- the outed player is a villager: the messenger just gave itself away — it says so out loud ("Y told me they're Chor")
 
-**Bots talk to each other:** at each new round and each debate, every bot privately asks one player it doesn't suspect
-(a coin flip among equals): a villager says its role first ("I'm Kisaan. What are you?"); a thief just asks ("What are
-you?"). A bot asked answers at once; a person answers if they like. The table sees "A → B, privately".
+**Double agents** — only a SHARP bot can, and its personality decides whether it wants to: the Quiet One always, the
+Detective only about its top suspect, the Hothead and the Open Book never.
+- a double-agent villager poses as a thief to an outed player ("I'm also Lootera…") and, approached by a thief, plays
+  along ("I'm Lootera, no Stone here — where's yours?") to learn where the Stone is
+- a double-agent thief who doesn't trust a messenger feeds it a false Stone location
 
-**Under pressure** — called a thief by 2 players, or at once for the Open Book and the Hothead — a bot claims a role out
-loud: a villager its own, a thief its lie.
+**The tie moment.** A vote tied as the clock ends — Faisla or mandatory — is when secrets are spent:
+- a villager a tied player confided in reads it out: "X told me they're Chor" (and where X said the Stone was)
+- anyone a double agent posed to can read the pose back at them — the poser is punished as a thief
+- a sharp thief whose partner is in the tie frames the other tied player ("Y told me they're Lootera") — Y knows it's a
+  lie and says so
+- then every bot re-weighs and breaks the tie. A revealed Stone is fine: voting out a villager sends their Stone to the
+  thieves, and a thief's to the village — the question is whom to trust.
 
-**Hearing a claim:** every role card is different, so claims are checkable.
-- someone claims **my** role → a certain lie (+3; every skill knows its own role)
-- a claim against my facts (a read, a role I know is someone else's, a role ruled out by a miss) → a lie (average, sharp)
-- a villager whose role someone claims within its hearing says so out loud at once: "X is lying — I'm Kisaan"
-- **a counterclaim** — two players claim the same role: one of them lies. The designer's rule: the FIRST claimer +2, the
-  later +1. (Measured 2026-10-14, 700 bot games: the LATER claimer was the liar 64% of the time — see the report.)
-- "Y is Teacher" (said by A) and "I'm Teacher" (said by Z) → A or Z lies, +1 each
-- someone who told me their role privately, uncontested: −0.5 (a small bond — thieves use it too)
+**Weighing words** (facts still beat words):
+- a word naming a role ("I read X: Chor", "X told me they're Lootera") 1.5; a plain "I suspect X" 1
+- someone claims MY role → a certain lie; a claim against my facts → a lie (average, sharp)
+- a counterclaim (two claim one role): one of them lies — the LATER claimer +1, the earlier +0.5 (bot games: the later
+  claimer lied 64% of the time)
+- "Y is Teacher" (A) and "I'm Teacher" (Z) → A or Z lies, +1 each
+- "I'm also <thief role>" said to a villager +3 (a sharp villager may be posing, so not a fact)
+- someone who told me their role privately, uncontested −0.5

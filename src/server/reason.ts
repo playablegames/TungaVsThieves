@@ -199,6 +199,24 @@ export function ledger(s: GameState, seat: number, skill: Skill): Ledger {
     if (e.data?.side === known.get(t)!.side && known.get(a)?.side !== "T") add(a, -1, `was right about ${name(t)}`);
   }
   for (const a of liars) add(a, 2, "caught lying");
+  // A CHANGED STORY (designer 2026-10-14): "I said X to stay safe — I'm really Y". The new story is what counts from now
+  // on (selfClaims keeps the latest), checked against everything like any other — the change itself costs a little
+  for (const e of v.events) {
+    const a = num(e.data, "seat");
+    if (e.type === "claim" && e.to === "all" && e.data?.kind === "self" && typeof e.data?.retract === "string" && a !== null && a !== seat)
+      add(a, 0.5, `changed their story: ${String(e.data.retract)} → ${String(e.data.role)}`);
+  }
+  // THE BLAME TELL (designer 2026-10-14): accused out loud, and the answer was to blame the accuser back — without a
+  // word in their own defence. Cornered thieves blame; villagers defend. Average and sharp bots notice it.
+  if (noticesLies(skill)) for (const e of v.events) {
+    if (e.type !== "claim" || e.to !== "all" || e.data?.side !== "T" || e.data?.kind === "stone") continue;
+    const a = num(e.data, "seat"), b = num(e.data, "target");
+    if (a === null || b === null || a === b || b === seat || e.data?.answer) continue;
+    const later = v.events.filter((c) => c.n > e.n && c.data?.seat === b);
+    const blamed = later.some((c) => c.type === "claim" && c.data?.target === a && c.data?.side === "T");
+    const defended = later.some((c) => (c.type === "claim" && c.data?.kind === "self") || c.type === "defend");
+    if (blamed && !defended) add(b, 1, `blamed ${name(a)} back instead of defending`);
+  }
   for (const [a, w] of selfLie) add(a, 1, w);
   // a COUNTERCLAIM: two players say they're the same role — one of them is lying: the LATER claimer +1, the earlier +0.5
   const byRole = new Map<string, { seat: number; n: number }[]>();

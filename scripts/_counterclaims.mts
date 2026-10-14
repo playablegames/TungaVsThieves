@@ -10,11 +10,12 @@ for (const m of (process.env.BOT_FLAGS ?? "").matchAll(/(\d+):(\d+)\/(\d+)\/(\d+
 let seed = 21; const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
 const SK = [SKILLS.average, SKILLS.casual, SKILLS.sharp], PS = Object.keys(PERSONALITIES);
 const G = Number(process.argv[2] ?? 100);
+const OFFSET = Number(process.env.SEED_OFFSET ?? 0);
 let firstLiar = 0, laterLiar = 0;
 for (const n of (process.argv[3] ?? "5,6,7,8,9,10,12").split(",").map(Number)) {
   let vw = 0, outT = 0, outV = 0;
   for (let g = 0; g < G; g++) {
-    const s = playTable(n, 400_000 + 1000 * n + g, rnd, { skillOf: (x) => personalised(SK[(x + g) % 3], PS[(x + 3 * g) % 4]), table });
+    const s = playTable(n, 400_000 + 1000 * n + g + OFFSET, rnd, { skillOf: (x) => personalised(SK[(x + g) % 3], PS[(x + 3 * g) % 4]), table });
     if (s.phase.kind === "over" && s.phase.winner === "V") vw++;
     for (const e of s.events) if (e.type === "vote_result" && typeof e.data?.out === "number") s.players[e.data.out as number].side === "T" ? outT++ : outV++;
     // the first moment each player claimed each role
@@ -33,6 +34,8 @@ for (const n of (process.argv[3] ?? "5,6,7,8,9,10,12").split(",").map(Number)) {
       if (a.seat !== owner) firstLiar++; else laterLiar++;
     }
   }
-  console.log(`${n}p ${table[n].join("/")}  village ${Math.round(100 * vw / G)}%  ±${Math.round(100 * 1.96 * Math.sqrt(0.25 / G))}  voted out T${outT}/V${outV}`);
+  console.log(`${n}p ${table[n].join("/")}  village ${(100 * vw / G).toFixed(1)}%  ±${(100 * 1.96 * Math.sqrt(0.25 / G)).toFixed(1)}  voted out T${outT}/V${outV}`);
 }
 console.log(`counterclaims: the FIRST claimer was the liar ${firstLiar} times, a LATER one ${laterLiar} times`);
+// machine-readable line for merging parallel runs
+console.log("JSON " + JSON.stringify({ firstLiar, laterLiar }));

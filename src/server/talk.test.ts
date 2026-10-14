@@ -154,3 +154,45 @@ describe("the handshake and the tie moment (designer 2026-10-14)", () => {
     expect(s.events.some((e) => e.type === "claim" && e.data?.seat === v && e.data?.target === t && e.data?.told === true)).toBe(true);
   });
 });
+
+describe("defend or blame (designer 2026-10-14)", () => {
+  const accuse = (s: GameState, a: number, b: number, sk: (x: number) => Skill | null) =>
+    botReactions(s, push(s, "claim", "all", { seat: a, kind: "accuse", target: b, role: null, side: "T" }), sk, () => 0.5);
+  const answers = (s: GameState, b: number) => s.events.filter((e) => e.data?.seat === b && e.data?.answer === true);
+  it("a villager defends (says its role); a cornered thief blames; a SHARP thief defends like a villager", () => {
+    const s = game();
+    const v = s.players.find((p) => p.side === "V" && p.seat !== 0)!.seat, t = s.players.find((p) => p.side === "T" && p.seat !== 0)!.seat;
+    accuse(s, 0, v, skills("open"));
+    expect(answers(s, v)[0].data).toMatchObject({ kind: "self", role: s.players[v].role });
+    accuse(s, 0, t, skills("open"));
+    expect(answers(s, t)[0].data).toMatchObject({ kind: "accuse", target: 0 });
+    const s2 = game();
+    const t2 = s2.players.find((p) => p.side === "T" && p.seat !== 0)!.seat;
+    accuse(s2, 0, t2, skills("open", SKILLS.sharp));
+    expect(answers(s2, t2)[0].data).toMatchObject({ kind: "self", side: "V" });
+    expect(answers(s2, t2)[0].data!.role).not.toBe(s2.players[t2].role);
+  });
+  it("the blame tell: blamed back without a word of defence → suspect (average and sharp notice)", () => {
+    const s = game();
+    const t = s.players.find((p) => p.side === "T" && p.seat !== 0)!.seat, w = s.players.find((p) => p.side === "V" && p.seat !== 0)!.seat;
+    accuse(s, 0, t, skills("open"));
+    expect(ledger(s, w, SKILLS.average).why.get(t)!.some((x) => x.includes("instead of defending"))).toBe(true);
+    expect(ledger(s, w, SKILLS.casual).why.get(t)!.some((x) => x.includes("instead of defending"))).toBe(false);
+  });
+  it("caught in a cover story: a villager comes clean with its true role; a sharp thief switches to a new story", () => {
+    for (const side of ["V", "T"] as const) {
+      const s = game();
+      const liar = s.players.find((p) => p.side === side && p.seat !== 0)!;
+      const owner = s.players.find((p) => p.side === "V" && p.seat !== 0 && p.seat !== liar.seat)!;
+      const sk = (x: number) => (x === 0 ? null : personalised(SKILLS.sharp, "quiet"));
+      // the liar told the table it's the owner's role
+      botReactions(s, push(s, "claim", "all", { seat: liar.seat, kind: "self", target: liar.seat, role: owner.role, side: "V" }), sk, () => 0.5);
+      const fix = s.events.find((e) => e.data?.seat === liar.seat && typeof e.data?.retract === "string");
+      expect(fix?.data?.retract).toBe(owner.role);
+      if (side === "V") expect(fix?.data?.role).toBe(liar.role);
+      else { expect(fix?.data?.role).not.toBe(liar.role); expect(fix?.data?.role).not.toBe(owner.role); }
+      const w = s.players.find((p) => p.seat !== 0 && p.seat !== liar.seat && p.seat !== owner.seat)!.seat;
+      expect(ledger(s, w, SKILLS.average).why.get(liar.seat)!.some((x) => x.startsWith("+0.5 changed their story"))).toBe(true);
+    }
+  });
+});

@@ -104,6 +104,9 @@ function villagerBluff(s: GameState, seat: number, skill: Skill, r: R) {
  *  equally good ones). Chosen only from what MY phone saw. */
 export function coverRole(s: GameState, seat: number, skill: Skill, r: R = Math.random): string {
   const mine = s.players[seat].role;
+  // the story the whole table heard last — after coming clean, that is the truth
+  const out = s.events.findLast((e) => e.type === "claim" && e.to === "all" && e.data?.kind === "self" && e.data?.seat === seat && e.data?.side === "V" && typeof e.data?.role === "string");
+  if (out) return String(out.data!.role);
   const told = s.events.findLast((e) => e.data?.kind === "self" && e.data?.seat === seat && e.data?.side === "V" && typeof e.data?.role === "string" && e.data.role !== mine);
   if (told) return String(told.data!.role);
   const seen = viewFor(s, seat).events;
@@ -117,6 +120,19 @@ export function coverRole(s: GameState, seat: number, skill: Skill, r: R = Math.
     pool.filter((x) => !taken.has(x) && !claimed.has(x)), pool.filter((x) => !taken.has(x)), pool];
   const tier = tiers.find((xs) => xs.length) ?? [mine];
   return tier[Math.min(tier.length - 1, Math.floor(r() * tier.length))];
+}
+
+/** a sharp thief's second story, after its first was caught: a village role nobody has claimed or been named, and not
+ *  the one it just dropped (null: nothing safe left — it blames instead) */
+function freshCover(s: GameState, seat: number, skill: Skill, was: string, r: R): string | null {
+  const seen = viewFor(s, seat).events;
+  const l = ledger(s, seat, skill);
+  const used = new Set([was, s.players[seat].role,
+    ...seen.filter((e) => e.data?.kind === "self" && typeof e.data?.role === "string").map((e) => String(e.data!.role)),
+    ...seen.filter((e) => e.type === "claim" && typeof e.data?.role === "string").map((e) => String(e.data!.role)),
+    ...[...l.known].filter(([, k]) => k.role).map(([, k]) => k.role!)]);
+  const pool = s.rolesInPlay.filter((x) => !THIEF_ROLES.includes(x) && !used.has(x));
+  return pool.length ? pool[Math.min(pool.length - 1, Math.floor(r() * pool.length))] : null;
 }
 
 /** WHAT A BOT SAYS WHEN ASKED ITS ROLE (designer 2026-10-14) — the same rules for both sides, by personality:
@@ -343,29 +359,53 @@ function reactOnce(s: GameState, from: number, botSkill: (seat: number) => Skill
       if (e.type === "handoff_private" && bot(e.data?.seat))
         for (const c of stones(e.data?.cards)) shareStone(s, e.data!.seat as number, botSkill(e.data!.seat as number)!, c, e.data!.target as number, "My cards went with");
     }
-    // (designer 2026-10-14: "make the bots do the same") ACCUSED → ANSWER AT ONCE, the way a player taps the accuser:
-    // a bot called a thief (or named with a thief role) calls the accuser out in return — a villager because it knows
-    // the word is wrong, a thief to hit back. Once per accuser; a role only if the bot SAW the accuser's card.
+    // ACCUSED → ANSWER AT ONCE (designer 2026-10-14: "counterclaimers are mostly lying — they're put on the spot, so
+    // their natural reaction is to blame; a skilled player knows this and defends himself first, like a villager would,
+    // and then the player who blamed looks like the thief — a skill for sharp players"):
+    //   a villager DEFENDS — says its role (its cover story, if it's the Quiet One) — and names the accuser only if it
+    //   read them and saw a thief (a fact)
+    //   a thief, cornered, BLAMES — "X is lying" — unless it's SHARP: then it defends exactly like a villager
+    // Once per accuser.
     if (RULES && e.type === "claim" && e.to === "all" && e.data?.side === "T" && e.data?.kind !== "stone" && bot(e.data?.target)) {
       const me = e.data!.target as number, accuser = e.data!.seat as number;
-      if (accuser !== me && s.players[me]?.alive && s.players[accuser]?.alive
-        && !s.events.some((c) => c.type === "claim" && c.data?.seat === me && c.data?.target === accuser && c.data?.side === "T")) {
-        const read = s.events.findLast((k) => k.type === "kundli_private" && Array.isArray(k.to) && k.to[0] === me && k.data?.target === accuser);
-        const villager = s.players[me].side === "V";
-        // a villager who read the accuser says the truth; otherwise a plain "suspects" — no invented role
-        const role = read && villager ? (read.data?.side === "T" ? String(read.data?.role) : null) : null;
-        if (!(villager && read?.data?.side === "V")) {
-          s.events.push({ n: s.events.length, type: "claim", to: "all", msg: `${s.players[me].name}: "${role ? `${s.players[accuser].name} is ${role}` : `${s.players[accuser].name} is lying`}."`,
-            data: { seat: me, kind: role ? "kundli" : "accuse", target: accuser, role, side: "T", answer: true } });
-        }
-        // (designer 2026-10-14, bot talk) under pressure — called a thief by 2 players, or the Open Book / Hothead at once —
-        // a bot claims a role out loud: a villager its own, a thief its lie (the same story it told before). Once.
+      const answered = s.events.some((c) => c.n > e.n && c.data?.answer === true && c.data?.seat === me && c.data?.to === accuser);
+      if (accuser !== me && s.players[me]?.alive && s.players[accuser]?.alive && !answered
+        && !s.events.some((c) => c.data?.answer === true && c.data?.seat === me && c.data?.to === accuser)) {
         const sk = botSkill(me)!;
-        const pressed = new Set(s.events.filter((c) => c.type === "claim" && c.data?.target === me && c.data?.side === "T" && c.data?.seat !== me).map((c) => c.data!.seat)).size;
-        if ((pressed >= 2 || sk.personality === "open" || sk.personality === "hothead")
-          && !s.events.some((c) => c.type === "claim" && c.to === "all" && c.data?.kind === "self" && c.data?.seat === me)) {
-          const role2 = villager ? s.players[me].role : coverRole(s, me, sk, r);
-          s.events.push({ n: s.events.length, type: "claim", to: "all", msg: `${s.players[me].name}: "I'm ${role2}."`, data: { seat: me, kind: "self", target: me, role: role2, side: "V" } });
+        const villager = s.players[me].side === "V";
+        // CAUGHT IN MY COVER STORY (designer 2026-10-14: "bots can defend with new information — admitting they lied, but
+        // they're not lying now"): the real owner of the role I claimed says so. A villager comes clean with its true
+        // role; a sharp thief switches to a new story; any other thief, cornered, blames (below).
+        const myStory = s.events.findLast((c) => c.n < e.n && c.data?.kind === "self" && c.data?.seat === me && c.data?.side === "V" && typeof c.data?.role === "string");
+        if (e.data?.counter === true && myStory && myStory.data!.role !== s.players[me].role && (villager || sk.name === "sharp")) {
+          const was = String(myStory.data!.role);
+          const now = villager ? s.players[me].role : freshCover(s, me, sk, was, r);
+          if (now) {
+            s.events.push({ n: s.events.length, type: "claim", to: "all", msg: `${s.players[me].name}: "I said ${was} to stay safe — I'm really ${now}."`,
+              data: { seat: me, kind: "self", target: me, role: now, side: "V", answer: true, to: accuser, retract: was } });
+            continue;
+          }
+        }
+        const defends = villager || sk.name === "sharp";
+        const said = s.events.some((c) => c.type === "claim" && c.to === "all" && c.data?.kind === "self" && c.data?.seat === me);
+        if (defends) {
+          if (!said) {
+            const mine = villager && sk.personality !== "quiet" ? s.players[me].role : coverRole(s, me, sk, r);
+            s.events.push({ n: s.events.length, type: "claim", to: "all", msg: `${s.players[me].name}: "I'm ${mine}."`, data: { seat: me, kind: "self", target: me, role: mine, side: "V", answer: true, to: accuser } });
+          } else s.events.push({ n: s.events.length, type: "defend", to: "all", msg: `${s.players[me].name}: "I've said what I am."`, data: { seat: me, kind: "stand", answer: true, to: accuser } });
+          // a villager who READ the accuser and saw a thief says so — a fact, not a blame
+          const read = villager ? s.events.findLast((k) => k.type === "kundli_private" && Array.isArray(k.to) && k.to[0] === me && k.data?.target === accuser) : undefined;
+          if (read?.data?.side === "T") s.events.push({ n: s.events.length, type: "claim", to: "all", msg: `${s.players[me].name}: "${s.players[accuser].name} is ${String(read.data.role)}."`,
+            data: { seat: me, kind: "kundli", target: accuser, role: read.data.role, side: "T" } });
+        } else {
+          s.events.push({ n: s.events.length, type: "claim", to: "all", msg: `${s.players[me].name}: "${s.players[accuser].name} is lying."`,
+            data: { seat: me, kind: "accuse", target: accuser, role: null, side: "T", answer: true, to: accuser } });
+          // pressed by 2, the cornered thief also claims a role — its cover story
+          const pressed = new Set(s.events.filter((c) => c.type === "claim" && c.data?.target === me && c.data?.side === "T" && c.data?.seat !== me).map((c) => c.data!.seat)).size;
+          if (pressed >= 2 && !said) {
+            const cover = coverRole(s, me, sk, r);
+            s.events.push({ n: s.events.length, type: "claim", to: "all", msg: `${s.players[me].name}: "I'm ${cover}."`, data: { seat: me, kind: "self", target: me, role: cover, side: "V" } });
+          }
         }
       }
       continue;
