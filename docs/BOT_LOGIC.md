@@ -98,7 +98,13 @@ Playing a pair means passing **all** your other cards. If you hold a Stone, play
 | Kundli | the living player I haven't read with the most talk about them | never (it shows my own role back). A casual thief plays it anyway |
 | Bhukamp | a neighbour I suspect holds a Stone | a neighbour I believe is a villager holding a Stone |
 
-4. **Nothing with a purpose:** pass. Keep a Stone first, then Dal Badal, then the cards that could make a pair.
+4. **No pair with a clear purpose: play the pair you hold anyway** (designer 2026-10-14, from 39 human games: without
+   a Stone people played their pair about 88% of the time). The reasoning picks the target, not whether to play:
+   - **Villager:** Hera Pheri on my top suspect, Faisla (let the table talk), Bhukamp, or Teer Kaman on my top suspect,
+     naming the role the table named for them.
+   - **Thief:** blends in with Hera Pheri on the table's suspect, Faisla or Bhukamp. Never Kundli (it shows my role
+     back) and never Teer Kaman (naming village roles out loud gives me away) without a reason from the table above.
+5. **No pair at all:** pass. Keep a Stone first, then Dal Badal, then the cards that could make a pair.
 
 **Teer Kaman roles:** the role I know or the role the table named for them (never a ruled-out one), then the other
 team's remaining roles in printed order.

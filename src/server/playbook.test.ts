@@ -56,11 +56,14 @@ describe("THE PLAYBOOK — beginners gamble, skilled players hold", () => {
     const shots = runs(s, SKILLS.casual).filter((a) => a.type === "play" && a.card === "TEER_KAMAN");
     expect(shots.some((a) => a.type === "play" && a.target === 2 && a.roles?.includes(s.players[2].role))).toBe(true);
   });
-  it("a bare accusation alone draws no arrow from a bot that isn't sure (its suspicion bar not reached)", () => {
+  // (designer 2026-10-14) PLAY THE PAIR YOU HOLD: a Teer Kaman pair with no sure target still fires — at the top
+  // suspect, naming the role the table named for them
+  it("a villager holding only a Teer Kaman pair shoots its top suspect, naming the role the table named", () => {
     const s = tkTable();
     s.events.push({ n: s.events.length, type: "claim", to: "all", msg: "", data: { seat: 3, target: 2, kind: "kundli", role: s.players[2].role, side: "T" } });
-    for (const skill of [SKILLS.casual, SKILLS.average, SKILLS.sharp])
-      expect(runs(s, { ...skill, tkConfidence: 0.99 }).some((a) => a.type === "play" && a.card === "TEER_KAMAN")).toBe(false);
+    const shots = runs(s, SKILLS.average).filter((a) => a.type === "play" && a.card === "TEER_KAMAN");
+    expect(shots.length).toBeGreaterThan(0);
+    expect(shots.every((a) => a.type === "play" && a.target === 2 && a.roles?.[0] === s.players[2].role)).toBe(true);
   });
   it("A STRONG CASE: three voices on one player, a role named for them → the shot, naming that role", () => {
     const s = tkTable();
@@ -68,13 +71,6 @@ describe("THE PLAYBOOK — beginners gamble, skilled players hold", () => {
     const shots = runs(s, SKILLS.average).filter((a) => a.type === "play" && a.card === "TEER_KAMAN");
     expect(shots.length).toBeGreaterThan(0);
     expect(shots.every((a) => a.type === "play" && a.target === 2 && a.roles?.[0] === s.players[2].role)).toBe(true);
-  });
-  it("A STANDOFF draws no arrow: the accused accused the speaker back", () => {
-    const s = tkTable();
-    s.events.push({ n: s.events.length, type: "kundli", to: "all", msg: "", data: { seat: 3, target: 2 } });
-    s.events.push({ n: s.events.length, type: "claim", to: "all", msg: "", data: { seat: 3, target: 2, kind: "kundli", role: s.players[2].role, side: "T" } });
-    s.events.push({ n: s.events.length, type: "claim", to: "all", msg: "", data: { seat: 2, target: 3, kind: "kundli", role: s.players[4].role, side: "T" } });
-    expect(runs(s, SKILLS.average).some((a) => a.type === "play" && a.card === "TEER_KAMAN")).toBe(false);
   });
   it("WAIT FOR THE ANSWER: an accusation moves a bot less until the accused has answered (or the floor closed)", () => {
     for (const skill of [SKILLS.casual, SKILLS.sharp]) {

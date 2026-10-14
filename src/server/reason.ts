@@ -480,7 +480,17 @@ export function ruleTurn(s: GameState, seat: number, skill: Skill, r: R): Decisi
       const t = best(r, withCards.filter((x) => !ally(x)), (x) => sc(x) * 10 + (l.talk.get(x) ?? 0));
       if (t !== undefined) return play("TALASHI", `search ${name(t)} — my top suspect`, t);
     }
-    return pass("nothing worth playing");
+    // PLAY THE PAIR YOU HOLD (designer 2026-10-14, from 39 human games: without a Stone people played their pair ~88% of
+    // the time) — the reasoning picks the target, not whether to play
+    const suspect = (xs: number[]) => best(r, xs.filter((x) => !ally(x)), (x) => sc(x) * 10 + (l.talk.get(x) ?? 0));
+    if (can("HERA_PHERI")) { const t = suspect(withCards); if (t !== undefined) return play("HERA_PHERI", `steal from ${name(t)} — my top suspect`, t); }
+    if (can("FAISLA")) return play("FAISLA", "call a vote — let the table talk");
+    if (can("BATWARA")) return play("BATWARA", "shake the table");
+    if (can("TEER_KAMAN")) {
+      const t = suspect(others);
+      if (t !== undefined) return play("TEER_KAMAN", `shoot ${name(t)} — my top suspect (${reasonFor(l, t)})`, t, tkRoles(s, seat, l, t, null));
+    }
+    return pass("no pair to play");
   }
 
   // A THIEF
@@ -511,7 +521,12 @@ export function ruleTurn(s: GameState, seat: number, skill: Skill, r: R): Decisi
     const t = best(r, unread.length ? unread : others, (x) => (l.talk.get(x) ?? 0) * 10 + sc(x));
     if (t !== undefined) return play("KUNDLI", `thief (casual): read ${name(t)}`, t);
   }
-  return pass("thief: nothing worth playing");
+  // PLAY THE PAIR YOU HOLD — a thief plays like everyone else (blending in). Not Kundli (it shows my role back) and not
+  // Teer Kaman (naming village roles out loud gives me away), unless the rules above found a reason.
+  if (can("HERA_PHERI")) { const t = best(r, withCards.filter((x) => !ally(x)), (x) => sc(x)); if (t !== undefined) return play("HERA_PHERI", `thief: steal from ${name(t)} — the table's suspect`, t); }
+  if (can("FAISLA")) return play("FAISLA", "thief: call a vote — blend in");
+  if (can("BATWARA")) return play("BATWARA", "thief: shake the table — blend in");
+  return pass("thief: no pair I can play safely");
 }
 
 // ------------------------------------------------------------------ DAL BADAL (thief)
