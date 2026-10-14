@@ -8,7 +8,7 @@ import { botTalk } from "./botmind";
 import { botReactions, pushStoneClaim, pushTalkClaims } from "./reactions";
 import { personalised, personalityOf } from "./personality";
 import { botDecision, botTieBreak, pushBotClaim, RULES, SKILLS } from "./belief";
-import { hear } from "./hear";
+import { listen } from "./hear";
 import { sendPush, type Alert } from "./push";
 import { MIN_PLAYERS, ROLE_TABLE, THIEF_ROLES } from "@/engine/setup";
 import { RuleError, type Action, type Card, type GameEvent, type GameState } from "@/engine/types";
@@ -613,11 +613,23 @@ export async function chat(code: string, token: string | null, text: unknown) {
   // (designer 2026-10-14: voice AND chat) a typed line in the table chat is read the same way as a spoken one
   const said = isCaption(t) ? t.slice(CAPTION_PREFIX.length) : isSystemMessage(t) ? null : t;
   const h = s && s.phase.kind !== "over" && said !== null && botSeats.length
-    ? hear(said, seat, s.players.map((p) => ({ name: p.name, alive: p.alive })), s.rolesInPlay) : null;
+    ? listen(said, seat, s.players.map((p) => ({ name: p.name, alive: p.alive })), s.rolesInPlay) : null;
   if (!h) { await ping(row.code, row.version); return; }
   await play(code, (r) => {
     const st = r.state;
     if (!st || st.phase.kind === "over" || !st.players[seat].alive || !st.players[h.target]?.alive) return r;
+    // (designer 2026-10-14, bot talk) a question to a bot at the table: it answers privately
+    if (h.kind === "ask") {
+      if (r.lobby[h.target]?.bot) st.events.push({ n: st.events.length, type: "ask", to: [h.target], msg: `${st.players[seat].name} asks ${st.players[h.target].name}: "${said}"`, data: { seat, target: h.target } });
+      r.state = st;
+      return r;
+    }
+    // a word about yourself, to the whole table ("I'm Kisaan")
+    if (h.kind === "self") {
+      st.events.push({ n: st.events.length, type: "claim", to: botSeats, msg: `${st.players[seat].name} (said): "${said}"`, data: { seat, kind: "self", target: seat, role: h.role, side: h.side, heard: true, public: true } });
+      r.state = st;
+      return r;
+    }
     st.events.push({ n: st.events.length, type: "claim", to: botSeats, msg: `${st.players[seat].name} (said): "${said}"`,
       // (2026-10-14) a role only if the player SAID one — never one invented for them
       data: { seat, kind: h.kind === "stone" ? "stone" : h.role ? "kundli" : "accuse", target: h.target, role: h.kind === "stone" ? null : h.role ?? null, side: h.side, ...(h.kind === "stone" ? { has: h.has } : {}), heard: true } });
@@ -802,8 +814,12 @@ export async function whisper(code: string, token: string | null, body: { to?: u
     if (!s.events.some(pair)) s.events.push({ n: s.events.length, type: "whisper", to: "all", msg: `${me} is chatting privately with ${them}.`, data: { seat, target: to, round: s.round } });
     // a bot reads the claims in a private line written to it, as it would a whisper
     if (b.kind === "t" && row.lobby[to]?.bot) {
-      const h = hear(b.text, seat, s.players.map((p) => ({ name: p.name, alive: p.alive })), s.rolesInPlay);
-      if (h && h.kind !== "stone" && h.side) s.events.push({ n: s.events.length, type: "claim", to: [to], msg: `${me} (private): "${b.text}"`,
+      const h = listen(b.text, seat, s.players.map((p) => ({ name: p.name, alive: p.alive })), s.rolesInPlay, to);
+      // (designer 2026-10-14, bot talk) a question gets an answer; a word about yourself gets one back; a Stone sighting counts
+      if (h?.kind === "ask") s.events.push({ n: s.events.length, type: "ask", to: [to], msg: `${me} asks ${them}: "${b.text}"`, data: { seat, target: to } });
+      else if (h?.kind === "self") s.events.push({ n: s.events.length, type: "claim", to: [to], msg: `${me} (private): "${b.text}"`, data: { seat, kind: "self", target: seat, role: h.role, side: h.side, heard: true } });
+      else if (h?.kind === "stone") s.events.push({ n: s.events.length, type: "claim", to: [to], msg: `${me} (private): "${b.text}"`, data: { seat, kind: "stone", target: h.target, has: h.has, role: null, side: null, heard: true } });
+      else if (h && h.side) s.events.push({ n: s.events.length, type: "claim", to: [to], msg: `${me} (private): "${b.text}"`,
         data: { seat, target: h.target, role: h.role ?? null, side: h.side, kind: h.role ? "kundli" : "accuse", heard: true } });
     }
     if (b.kind === "k") {

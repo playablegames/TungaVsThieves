@@ -14,11 +14,11 @@ import type { Card, GameState, Side } from "@/engine/types";
 import { canDalBadal, canPlay, dalBadalPick, passSize } from "@/engine/engine";
 import { viewFor } from "@/engine/view";
 import { THIEF_ROLES, tkGuesses } from "@/engine/setup";
-import { plannedPass, randomAction, readsOf } from "@/engine/decisions";
+import { randomAction, readsOf } from "@/engine/decisions";
 import { deduce, unanswered, UNANSWERED, type Model } from "./deduce";
 import { clampLR, tellsOf, TELLS } from "./tells";
 import type { Action } from "@/engine/types";
-import { ruleBhukamp, ruleClaim, ruleDalBadal, ruleGift, ruleHandoff, ruleShield, ruleTieBreak, ruleTurn, ruleVote, type Decision } from "./reason";
+import { passCards, ruleBhukamp, ruleClaim, ruleDalBadal, ruleGift, ruleHandoff, ruleShield, ruleTieBreak, ruleTurn, ruleVote, type Decision } from "./reason";
 
 /** (designer 2026-10-14) THE BOT RULEBOOK (reason.ts, docs/BOT_LOGIC.md) decides everything a bot does — talk, votes,
  *  turns, Bhukamp, Dal Badal, going out. BOT_FLAGS=old-brain runs the old probability model, for a side-by-side only. */
@@ -662,10 +662,9 @@ export function botDecision(s: GameState, seat: number, seed: number, r: R, skil
   // PLAY, THEN PASS (2026-10-14): the 3 it meant to pass when it played — or, if the effect changed its hand, its plain
   // cards first, then Dal Badal, then Stones (a Stone goes on only when there is nothing else)
   if (ph.kind === "pass_on") {
+    // the bot rulebook's keep order, on the hand it holds NOW (a Hera Pheri may have brought a Stone it now keeps)
     const h = s.players[seat].hand;
-    const plan = plannedPass(s, seat);
-    const plain = [...h.filter((c) => !isStoneCard(c) && c !== "DAL_BADAL"), ...h.filter((c) => c === "DAL_BADAL"), ...h.filter(isStoneCard)];
-    return { action: { type: "pass", pass: plan ?? plain.slice(0, passSize(h)) }, why: plan ? "pass the 3 it planned" : "pass on, Stones kept" };
+    return { action: { type: "pass", pass: passCards(h, passSize(h)) }, why: "pass on — Stone, then Dal Badal, then pairs kept" };
   }
   // the Dal Badal pick is face down — any card is as good as another
   return { action: randomAction(s, seat, r, skill.activity, true), why: "a face-down pick" };

@@ -91,7 +91,9 @@ says nothing about their side (villagers sit on Stones too). A search that shows
 
 ## 6. Your turn
 
-Playing a pair means passing **all** your other cards. If you hold a Stone, playing any pair sends the Stone on.
+(2026-10-14, PLAY THEN PASS) A pair resolves first, then you pass 3 and draw back to 2. After a pair you hold exactly 3,
+so any pair still sends a held Stone on — **except Hera Pheri**: the steal leaves 5 cards, so the Stone can stay. A bot
+holding a Stone plays Hera Pheri when it can (on its top suspect / a likely Stone holder).
 
 1. **Holding a Stone** (a pair sends it to the next player): a **thief** plays only if the next player is a partner it
    knows. A **villager** never sends it to someone it suspects (score above 0) or knows is a thief. To someone it has
@@ -119,8 +121,13 @@ Playing a pair means passing **all** your other cards. If you hold a Stone, play
      back) and never Teer Kaman (naming village roles out loud gives me away) without a reason from the table above.
 5. **No pair at all:** pass. Keep a Stone first, then Dal Badal, then the cards that could make a pair.
 
-**Teer Kaman roles:** the role I know or the role the table named for them (never a ruled-out one), then the other
-team's remaining roles in printed order.
+**Teer Kaman roles** (2026-10-14: any role may be named): the role I know or the table named for them (never a
+ruled-out one), then the remaining roles of the side I believe they're on.
+
+**A thief's Teer Kaman** (designer 2026-10-14, "a thief can try to eliminate another thief"):
+- **bus a partner** — a partner I know whom 2+ players have called a thief goes out anyway; my arrow takes their cards
+  and makes me look like a villager (average and sharp thieves)
+- in the last round, a villager whose role I know — my read, **or what they told me** — holding a Stone
 
 ## 7. Bhukamp (everyone passes 1 left, 1 right)
 
@@ -156,3 +163,41 @@ thief names the role; otherwise it says "X is lying".
 
 **Listening:** bots read claims in public chat lines and in private lines sent to them. A friend's private word about a
 Stone puts that Stone where the friend said, unless the friend is a known liar or a known thief.
+
+## 10. Bot talk (designer 2026-10-14)
+
+*"Bots should answer truthfully or lie as per their personality and role, and speak with other bots too, to pass on
+information — without information transfer how will you solve a hidden role card game?"*
+
+**What bots hear** (plain word rules, `hear.ts listen()`): a question — "what are u", "kaun ho", "your role?" — to the
+player it's written to (or named in the table chat); a word about yourself — "I'm Teacher", "main Kisaan hoon"; a
+Stone sighting — "Stone with Adi"; and the old claims ("X is Chor", "X has a Stone").
+
+**Asked its role, a bot answers privately, once — and keeps its story:**
+
+| | Open Book / Hothead | Detective | Quiet One |
+|---|---|---|---|
+| villager | the truth, unless the asker is a real suspect (2+) | the truth only to someone it has nothing against (≤0) | the truth only to someone it trusts (<0); a lie to a suspect (2+); otherwise "I'd rather not say" |
+| thief | as open as that villager would be — but its lie | same | same |
+
+A thief tells a partner it knows the truth. A villager tells a thief it knows a lie (its Teer Kaman will miss). A
+thief's lie is a village role: one it knows belongs to a player who is out, else one nobody has claimed or been named
+(a coin flip among equals) — and **the same lie every time**.
+
+**Tell a bot your role and it tells you its own** (same rules).
+
+**Bots talk to each other:** at each new round and each debate, every bot privately asks one player it doesn't suspect
+(a coin flip among equals): a villager says its role first ("I'm Kisaan. What are you?"); a thief just asks ("What are
+you?"). A bot asked answers at once; a person answers if they like. The table sees "A → B, privately".
+
+**Under pressure** — called a thief by 2 players, or at once for the Open Book and the Hothead — a bot claims a role out
+loud: a villager its own, a thief its lie.
+
+**Hearing a claim:** every role card is different, so claims are checkable.
+- someone claims **my** role → a certain lie (+3; every skill knows its own role)
+- a claim against my facts (a read, a role I know is someone else's, a role ruled out by a miss) → a lie (average, sharp)
+- a villager whose role someone claims within its hearing says so out loud at once: "X is lying — I'm Kisaan"
+- **a counterclaim** — two players claim the same role: one of them lies. The designer's rule: the FIRST claimer +2, the
+  later +1. (Measured 2026-10-14, 700 bot games: the LATER claimer was the liar 64% of the time — see the report.)
+- "Y is Teacher" (said by A) and "I'm Teacher" (said by Z) → A or Z lies, +1 each
+- someone who told me their role privately, uncontested: −0.5 (a small bond — thieves use it too)

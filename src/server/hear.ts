@@ -36,3 +36,33 @@ export function hear(text: string, speaker: number, players: { name: string; ali
   if (TRUST.test(t)) return { kind: "trust", target, side: "V" };
   return null;
 }
+
+// ------------------------------------------------------------------ BOT TALK (designer 2026-10-14)
+// "I passed on so much information, the bots didn't reciprocate" (games SYZLE / FJYQC / 5JUVS): bots now also hear
+// a QUESTION ("what are u", "kaun ho", "your role?") and a player's word about THEMSELVES ("I'm Teacher",
+// "main Kisaan hoon") — and "Stone with Adi" as a Stone claim. Plain word rules, no AI; anything unclear is ignored.
+export type Said =
+  | Heard
+  | { kind: "self"; target: number; role: string; side: Side }
+  | { kind: "ask"; target: number };
+
+const QUESTION = /\b(what|who|wat|wht)\s*(are|r|ru)\s*(you|u|ya|yu)\b|\b(your|ur|yr|tera|tumhara|aapka)\s*role\b|\bkaun\s*(ho|hai|h)\b|\bkya\s*ho\b|\brole\s*\?|\bwhat'?s\s*(your|ur)\b|\bare\s*(you|u)\s*(a|the)?\s*(thief|villager|chor)\b/;
+const FIRST_PERSON = /\b(i'?m|i am|im|main|mai|mein|myself|my role)\b/;
+
+/** what one line says, for the bots. `to` = the player a private line was written to (null in the table chat). */
+export function listen(text: string, speaker: number, players: { name: string; alive: boolean }[], rolesInPlay: string[], to: number | null = null): Said | null {
+  const t = text.toLowerCase();
+  const named = players.map((p, seat) => ({ seat, p }))
+    .filter(({ seat, p }) => seat !== speaker && p.alive && firstName(p.name).length > 1 && word(firstName(p.name)).test(t));
+  const role = [...rolesInPlay].sort((a, b) => b.length - a.length).find((r) => word(r.toLowerCase()).test(t));
+  // a question to one player: the one written to, or the one named in the table chat
+  if (QUESTION.test(t)) {
+    const target = to ?? (named.length === 1 ? named[0].seat : null);
+    if (target !== null && target !== speaker) return { kind: "ask", target };
+  }
+  // about myself: a role and "I'm / main", with nobody else named
+  if (role && FIRST_PERSON.test(t) && named.length === 0) return { kind: "self", target: speaker, role, side: THIEF_ROLES.includes(role) ? "T" : "V" };
+  // "Stone with Adi" (no verb)
+  if (named.length === 1 && /\bstones?\b/.test(t) && /\bwith\b/.test(t) && !/\b(no|not|without)\b/.test(t)) return { kind: "stone", target: named[0].seat, side: null, has: true };
+  return hear(text, speaker, players, rolesInPlay);
+}

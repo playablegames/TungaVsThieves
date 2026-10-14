@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hear } from "./hear";
+import { hear, listen } from "./hear";
 
 const players = [
   { name: "Asha", alive: true }, { name: "Vik", alive: true }, { name: "Raju 🤖", alive: true },
@@ -28,5 +28,24 @@ describe("bots hear captions", () => {
     expect(h("Sam was a thief")).toBeNull(); // out of the game
     expect(h("Vik played Kundli")).toBeNull();
     expect(h("the samosa is a thief")).toBeNull();
+  });
+});
+
+describe("bot talk (designer 2026-10-14): questions, words about yourself, Stone sightings", () => {
+  const l = (t: string, to: number | null = null) => listen(t, 0, players, roles, to);
+  it("a question to the player written to, or named", () => {
+    expect(l("Bro what are u", 2)).toEqual({ kind: "ask", target: 2 });
+    expect(l("kaun ho tum?", 1)).toEqual({ kind: "ask", target: 1 });
+    expect(l("Raju what's your role?")).toEqual({ kind: "ask", target: 2 });
+    expect(l("what are you")).toBeNull(); // the table chat, nobody named
+  });
+  it("a word about yourself", () => {
+    expect(l("I'm teacher".replace("teacher", "Kisaan"), 2)).toMatchObject({ kind: "self", target: 0, role: "Kisaan", side: "V" });
+    expect(l("main Sarpanch hoon")).toMatchObject({ kind: "self", role: "Sarpanch" });
+    expect(l("im chor lol")).toMatchObject({ kind: "self", role: "Chor", side: "T" });
+  });
+  it("a Stone with someone, and the old claims still work", () => {
+    expect(l("Stone with Vik")).toMatchObject({ kind: "stone", target: 1, has: true });
+    expect(l("Vik is Lootera")).toMatchObject({ kind: "kundli", target: 1, role: "Lootera" });
   });
 });

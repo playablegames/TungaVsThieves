@@ -6,6 +6,7 @@ import { readsOf } from "@/engine/decisions";
 import { keptMyStone, roleFor, RULES, thiefWord, type Skill } from "./belief";
 import { ledger, wordAboutRole, wordAboutSearch } from "./reason";
 import { THIEF_ROLES } from "@/engine/setup";
+import { viewFor } from "@/engine/view";
 import type { LineClaim } from "./botmind";
 
 type R = () => number;
@@ -91,8 +92,112 @@ function villagerBluff(s: GameState, seat: number, skill: Skill, r: R) {
   else if (holds && heard && r() < 0.4) pushStoneClaim(s, seat, seat, false);
 }
 
+// ------------------------------------------------------------------ BOT TALK (designer 2026-10-14)
+// "Bots should answer truthfully or lie as per their personality and role, and bots should speak with other bots too,
+// to pass on information — without information transfer how will you solve a hidden role card game?"
+// Research (Wolvesville / Mafia / Town of Salem guides): villagers confide in people they trust first; two players
+// claiming the same role means one is lying; a liar picks a role that is hard to check and keeps the same story.
+
+/** what a bot says when asked its role: the truth, a lie, or nothing (null) — by role and personality */
+export function roleWordFor(s: GameState, seat: number, skill: Skill, asker: number, r: R = Math.random): { role: string; side: "V" | "T" } | null {
+  const me = s.players[seat];
+  const l = ledger(s, seat, skill);
+  const sc = l.score.get(asker) ?? 0;
+  const knownSide = l.known.get(asker)?.side;
+  const p = skill.personality;
+  if (me.side === "T" && knownSide === "T") return { role: me.role, side: "T" }; // a partner I know: the truth
+  // a villager: a thief I know gets a lie (its Teer Kaman will miss)
+  if (me.side === "V" && knownSide === "T") return { role: myLie(s, seat, skill, r), side: "V" };
+  // how open this personality is with this asker — a thief BLENDS IN: it opens up exactly as a villager of its
+  // personality would, and where that villager would tell the truth, it tells its lie
+  const word = (): { role: string; side: "V" | "T" } => (me.side === "V" ? { role: me.role, side: "V" } : { role: myLie(s, seat, skill, r), side: "V" });
+  if (p === "quiet") return sc < 0 || knownSide === "V" ? word() : sc >= 2 ? { role: myLie(s, seat, skill, r), side: "V" } : null;
+  if (p === "detective") return sc <= 0 ? word() : null;
+  return sc < 2 ? word() : null; // the Open Book and the Hothead
+}
+
+/** a village role to claim that isn't mine: the one I claimed before (the same story every time), else one nobody has
+ *  claimed or been named, not known to be someone else's (reason.ts fittingRole's rules) */
+function myLie(s: GameState, seat: number, skill: Skill, r: R = Math.random): string {
+  const said = s.events.findLast((e) => e.data?.kind === "self" && e.data?.seat === seat && typeof e.data?.role === "string");
+  if (said) return String(said.data!.role);
+  // only what MY phone saw (2026-10-14 fix: a lie was chosen from whispers it never heard)
+  const seen = viewFor(s, seat).events;
+  const l = ledger(s, seat, skill);
+  const mine = s.players[seat].role;
+  const pool = s.rolesInPlay.filter((x) => !THIEF_ROLES.includes(x) && x !== mine);
+  const taken = new Set([...l.known].filter(([x, k]) => x !== seat && k.role).map(([, k]) => k.role!));
+  const claimed = new Set(seen.filter((e) => e.data?.kind === "self" && e.data?.seat !== seat).map((e) => String(e.data?.role)));
+  const named = new Set(seen.filter((e) => e.type === "claim" && typeof e.data?.role === "string" && e.data?.target !== seat).map((e) => String(e.data!.role)));
+  // the safest lie: a role I know belongs to a player who is OUT, then one nobody has claimed or been named — a coin flip
+  // among equally good ones (2026-10-14 fix: every thief took the same printed-order role)
+  const outRoles = pool.filter((x) => [...l.known].some(([y, k]) => k.role === x && !s.players[y].alive));
+  const tiers = [outRoles.filter((x) => !claimed.has(x)), pool.filter((x) => !taken.has(x) && !claimed.has(x) && !named.has(x)),
+    pool.filter((x) => !taken.has(x) && !claimed.has(x)), pool.filter((x) => !taken.has(x)), pool];
+  const tier = tiers.find((xs) => xs.length) ?? [mine];
+  return tier[Math.min(tier.length - 1, Math.floor(r() * tier.length))];
+}
+
+const toldRole = (s: GameState, seat: number, to: number) => s.events.some((e) => e.type === "whisper_private" && e.data?.seat === seat && e.data?.to === to && (e.data?.kind === "self" || e.data?.kind === "refuse"));
+
+/** a bot answers "what are you?" privately — once per player (it keeps its story) */
+function answerRole(s: GameState, seat: number, to: number, skill: Skill, ask = false) {
+  if (!s.players[seat].alive || toldRole(s, seat, to)) return;
+  const w = roleWordFor(s, seat, skill, to, rr);
+  if (!w) { tell(s, seat, to, "I'd rather not say.", { kind: "refuse" }); return; }
+  tell(s, seat, to, ask ? `I'm ${w.role}. And you?` : `I'm ${w.role}.`, { kind: "self", target: seat, role: w.role, side: w.side });
+}
+
+/** BOTS TALK TO EACH OTHER: once a round, a bot asks one player it doesn't suspect (bot or person) for their role —
+ *  telling its own first ("I'm Kisaan. And you?"). A bot asked answers at once; a person answers if they like. */
+function roundTalk(s: GameState, seat: number, skill: Skill, bot: (x: unknown) => boolean) {
+  const me = s.players[seat];
+  if (!me.alive) return;
+  if (s.events.some((e) => e.type === "whisper_private" && e.data?.seat === seat && e.data?.ask === true && e.data?.round === s.round)) return;
+  const l = ledger(s, seat, skill);
+  const pool = s.players.filter((p) => p.alive && p.seat !== seat && !toldRole(s, seat, p.seat)
+    && (me.side === "T" || (l.known.get(p.seat)?.side !== "T" && (l.score.get(p.seat) ?? 0) <= 0)));
+  if (!pool.length) return;
+  // the one I trust most — a coin flip among equals (2026-10-14 fix: every bot asked seat 0)
+  const low = Math.min(...pool.map((p) => l.score.get(p.seat) ?? 0));
+  const ties = pool.filter((p) => (l.score.get(p.seat) ?? 0) === low);
+  const to = ties[Math.min(ties.length - 1, Math.floor(rr() * ties.length))].seat;
+  // a villager tells its role first; a thief FISHES — it asks without volunteering a story
+  const w = me.side === "V" ? roleWordFor(s, seat, skill, to, rr) : null;
+  if (me.side === "V" && !w) return;
+  tell(s, seat, to, w ? `I'm ${w.role}. What are you?` : "What are you?",
+    w ? { kind: "self", target: seat, role: w.role, side: w.side, ask: true, round: s.round } : { kind: "ask", ask: true, round: s.round });
+  if (bot(to)) answerRole(s, to, seat, skillOf(to)!);
+}
+let skillOf: (x: number) => Skill | null = () => null;
+let rr: R = Math.random;
+
 export function botReactions(s: GameState, from: number, botSkill: (seat: number) => Skill | null, r: R = Math.random) {
   const bot = (x: unknown) => typeof x === "number" && botSkill(x) !== null;
+  skillOf = botSkill; rr = r;
+  if (RULES) for (const e of s.events.slice(from)) {
+    const d = e.data;
+    // a question to a bot
+    if (e.type === "ask" && bot(d?.target) && s.players[d!.target as number]?.alive) answerRole(s, d!.target as number, d!.seat as number, botSkill(d!.target as number)!);
+    // someone told a bot their role privately: it answers with its own (the same rules)
+    if (d?.kind === "self" && typeof d.seat === "number" && d.seat !== undefined) {
+      const to = e.type === "whisper_private" ? (d.to as number) : Array.isArray(e.to) && !d.public && e.to.length === 1 ? e.to[0] : null;
+      if (to !== null && bot(to) && to !== d.seat && s.players[to]?.alive) answerRole(s, to, d.seat as number, botSkill(to)!);
+      // MY ROLE, CLAIMED BY SOMEONE ELSE: a villager bot says so out loud, once — "X is lying — I'm Kisaan"
+      const owner = s.players.findIndex((p) => p.role === d.role);
+      const heardBy = e.to === "all" || d.public || (Array.isArray(e.to) && e.to.includes(owner)) || (e.type === "whisper_private" && d.to === owner);
+      if (owner >= 0 && owner !== d.seat && bot(owner) && heardBy && s.players[owner].alive && s.players[owner].side === "V"
+        && !s.events.some((c) => c.type === "claim" && c.data?.seat === owner && c.data?.target === d.seat && c.data?.side === "T")) {
+        const liar = d.seat as number;
+        s.events.push({ n: s.events.length, type: "claim", to: "all", msg: `${s.players[owner].name}: "${s.players[liar].name} is lying — I'm ${d.role}."`, data: { seat: owner, kind: "accuse", target: liar, role: null, side: "T", counter: true } });
+        if (!s.events.some((c) => c.type === "claim" && c.to === "all" && c.data?.kind === "self" && c.data?.seat === owner))
+          s.events.push({ n: s.events.length, type: "claim", to: "all", msg: `${s.players[owner].name}: "I'm ${d.role}."`, data: { seat: owner, kind: "self", target: owner, role: d.role, side: "V" } });
+      }
+    }
+    // a new round, or a debate: the bots talk among themselves
+    if ((e.type === "pickup" && (s.events.slice(0, e.n).findLast((x) => x.type === "pickup")?.data?.round ?? 0) !== d?.round) || e.type === "faisla" || e.type === "final_vote")
+      for (const p of s.players) if (bot(p.seat)) roundTalk(s, p.seat, botSkill(p.seat)!, bot);
+  }
   const mark = (seat: number, kind: "kundli" | "was", target: number, role: string | null, side: "V" | "T") => {
     if (s.events.some((e) => e.type === "claim" && e.data?.seat === seat && e.data?.target === target && e.data?.kind === kind)) return;
     const them = s.players[target].name;
@@ -127,6 +232,15 @@ export function botReactions(s: GameState, from: number, botSkill: (seat: number
         if (!(villager && read?.data?.side === "V")) {
           s.events.push({ n: s.events.length, type: "claim", to: "all", msg: `${s.players[me].name}: "${role ? `${s.players[accuser].name} is ${role}` : `${s.players[accuser].name} is lying`}."`,
             data: { seat: me, kind: role ? "kundli" : "accuse", target: accuser, role, side: "T", answer: true } });
+        }
+        // (designer 2026-10-14, bot talk) under pressure — called a thief by 2 players, or the Open Book / Hothead at once —
+        // a bot claims a role out loud: a villager its own, a thief its lie (the same story it told before). Once.
+        const sk = botSkill(me)!;
+        const pressed = new Set(s.events.filter((c) => c.type === "claim" && c.data?.target === me && c.data?.side === "T" && c.data?.seat !== me).map((c) => c.data!.seat)).size;
+        if ((pressed >= 2 || sk.personality === "open" || sk.personality === "hothead")
+          && !s.events.some((c) => c.type === "claim" && c.to === "all" && c.data?.kind === "self" && c.data?.seat === me)) {
+          const role2 = villager ? s.players[me].role : myLie(s, me, sk, r);
+          s.events.push({ n: s.events.length, type: "claim", to: "all", msg: `${s.players[me].name}: "I'm ${role2}."`, data: { seat: me, kind: "self", target: me, role: role2, side: "V" } });
         }
       }
       continue;
