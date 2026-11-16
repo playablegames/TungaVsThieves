@@ -34,6 +34,16 @@ function Entry() {
   const hydrated = useHydrated();
   // the festive Mohanam plays softly under the cover after the first tap; it stops when you go to a table
   useEffect(() => { startHomeMusicOnFirstTap(); return () => stopHomeMusic(); }, []);
+  // (2026-11-16, real-phone check) the phone's own bars take the box's night on this screen: the status bar follows
+  // theme-color, the bottom bar follows the page behind it. Put back when you leave for a table (still the old look).
+  useEffect(() => {
+    const NIGHT = "#021230";
+    const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+    const was = { theme: meta?.content, bg: document.body.style.background };
+    if (meta) meta.content = NIGHT;
+    document.body.style.background = NIGHT;
+    return () => { if (meta && was.theme) meta.content = was.theme; document.body.style.background = was.bg; };
+  }, []);
   const [skipped, setSkipped] = useState(false);
   const newHere = hydrated && !skipped && (() => { try { return localStorage.getItem(LEARNED) === null; } catch { return false; } })();
   const skipLearn = () => { setSkipped(true); try { localStorage.setItem(LEARNED, "skipped"); } catch {} };
@@ -98,7 +108,7 @@ function Entry() {
         <img src="/art/logo-gold.webp" alt="" decoding="async" className="absolute left-[25%] top-[max(2.5%,env(safe-area-inset-top))] w-[50%] drop-shadow-[0_6px_14px_rgba(0,8,30,.75)]" />
       </div>
 
-      <div className="relative z-10 -mt-[22%] flex w-full flex-1 flex-col justify-end gap-3">
+      <div className="relative z-10 -mt-[22%] flex w-full flex-col gap-3">
         {newHere && !invited && (
           <div className="stage-in flex items-center rounded-2xl bg-stock text-card-ink shadow-[0_10px_24px_-10px_rgba(0,0,0,.9)]">
             <button type="button" onClick={() => choose("learn")} className="box-focus flex min-h-16 flex-1 items-center gap-3 rounded-l-2xl py-2 pl-4 pr-2 text-left">
