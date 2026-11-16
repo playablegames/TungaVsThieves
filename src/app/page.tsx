@@ -98,7 +98,7 @@ function Entry() {
         <img src="/art/logo-gold.webp" alt="" decoding="async" className="absolute left-[25%] top-[max(2.5%,env(safe-area-inset-top))] w-[50%] drop-shadow-[0_6px_14px_rgba(0,8,30,.75)]" />
       </div>
 
-      <div className="-mt-[22%] flex w-full flex-col gap-3">
+      <div className="relative z-10 -mt-[22%] flex w-full flex-1 flex-col justify-end gap-3">
         {newHere && !invited && (
           <div className="stage-in flex items-center rounded-2xl bg-stock text-card-ink shadow-[0_10px_24px_-10px_rgba(0,0,0,.9)]">
             <button type="button" onClick={() => choose("learn")} className="box-focus flex min-h-16 flex-1 items-center gap-3 rounded-l-2xl py-2 pl-4 pr-2 text-left">
