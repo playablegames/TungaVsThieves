@@ -1,7 +1,7 @@
 "use client";
 // The action dock: what YOU can do right now, one step at a time. Irreversible moves go through a 5-second
 // timed confirm instead of undo (BGA: undo is impossible once hidden information is out).
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { tkGuesses } from "@/engine/setup";
 import { ACTION_CARDS, type Action, type ActionCard, type Card } from "@/engine/types";
 import type { PlayerView, PublicPlayer } from "@/engine/view";
@@ -72,8 +72,8 @@ export function Decide({ v, act }: { v: PlayerView; act: (a: Action) => void }) 
     case "surrender": return <Surrender stones={d.stones as Card[]} act={act} />;
     case "dal_pick": return <DalPick count={d.count} act={act} />;
     case "pass_on": return <PassOn v={v} passSize={d.passSize} held={d.held} act={act} />;
-    case "gift": return <OneOf title="Give your vote" hint="One extra vote in their next vote, then back to 1." options={others}
-      go={(s) => c.ask(`Give your vote to ${name(s)}`, { type: "gift", target: s })} skip={{ label: "Give it to nobody", action: { type: "gift", target: null } }} act={act} />;
+    case "gift": return <OneOf title="Give your vote" hint="One extra vote in their next vote. A later gift takes it away." options={others}
+      go={(s) => c.ask(`Give your vote to ${name(s)}`, { type: "gift", target: s })} act={act} />;
     case "handoff": return <OneOf title="Hand ALL your cards to someone" hint="Stones included. Only they see what you hand over." options={others}
       go={(s) => c.ask(`Hand everything to ${name(s)}`, { type: "handoff", target: s })} act={act} />;
   }
@@ -121,62 +121,16 @@ function Surrender({ stones, act }: { stones: Card[]; act: (a: Action) => void }
   );
 }
 
-/** BHUKAMP (2026-10-12): 1 card to your left (the next player), 1 to your right — tap the left one, then the right one */
+/** BHUKAMP (designer 2026-11-16, printed v8 card): ONE card to the next player — one tap */
 function Bhukamp({ v, act }: { v: PlayerView; act: (a: Action) => void }) {
-  const [first, setFirst] = useState<number | null>(null);
   const living = v.players.filter((p) => p.alive).map((p) => p.seat);
   const i = living.indexOf(v.me.seat);
-  const bare = (s: string) => s.replace(/\s*🤖$/, "");
-  const left = bare(v.players[living[(i + 1) % living.length]].name);
-  const right = bare(v.players[living[(i - 1 + living.length) % living.length]].name);
+  const next = v.players[living[(i + 1) % living.length]].name.replace(/\s*🤖$/, "");
   const hand = v.me.hand;
-  if (hand.length < 2) {
-    return (
-      <div className="flex flex-col gap-3">
-        <Head title={`Bhukamp — 1 card to ${left}`} />
-        <div className="pt-2"><HandRow cards={hand} onTap={(k) => act({ type: "batwara", card: hand[k] })} /></div>
-      </div>
-    );
-  }
-  // (designer 2026-10-13 evening: "give decision for one card, the other is automatic; a timer for which card goes to
-  // which") two cards: tap the one for the left — the other goes right; both are labelled for 2 s, then they go.
-  // Tap the other card in those 2 s to swap.
-  if (hand.length === 2) return <BhukampTwo hand={hand} left={left} right={right} act={act} />;
   return (
     <div className="flex flex-col gap-3">
-      <Head title={first === null ? `Bhukamp — which card to ${left}?` : `…and which to ${right}?`} />
-      <div className="pt-2">
-        <HandRow cards={hand} selected={first === null ? [] : [first]} labels={first === null ? {} : { [first]: left }}
-          onTap={(k) => {
-            if (first === null) return setFirst(k);
-            if (k === first) return setFirst(null);
-            act({ type: "batwara", card: hand[first], right: hand[k] });
-          }} />
-      </div>
-    </div>
-  );
-}
-
-const BHUKAMP_LOOK_MS = 2000;
-function BhukampTwo({ hand, left, right, act }: { hand: Card[]; left: string; right: string; act: (a: Action) => void }) {
-  const [pick, setPick] = useState<number | null>(null);
-  // the phone re-polls the hand every few seconds: the clock keys on the cards, not the array
-  const send = useRef({ act, hand });
-  useEffect(() => { send.current = { act, hand }; });
-  const key = hand.join();
-  useEffect(() => {
-    if (pick === null) return;
-    const t = setTimeout(() => { const { act: a, hand: h } = send.current; a({ type: "batwara", card: h[pick], right: h[1 - pick] }); }, BHUKAMP_LOOK_MS);
-    return () => clearTimeout(t);
-  }, [pick, key]);
-  return (
-    <div className="flex flex-col gap-3">
-      <Head title={pick === null ? `Bhukamp — which card to ${left}?` : `◀ ${left} · ${right} ▶`} />
-      <div className="pt-2">
-        <HandRow cards={hand} selected={pick === null ? [] : [pick]} labels={pick === null ? {} : { [pick]: `◀ ${left}`, [1 - pick]: `${right} ▶` }}
-          onTap={(k) => setPick(k)} />
-      </div>
-      {pick !== null && <div className="flex justify-center"><TapOn key={pick} ms={BHUKAMP_LOOK_MS} label="Tap the other card to swap" /></div>}
+      <Head title={`Bhukamp — which card to ${next}?`} />
+      <div className="pt-2"><HandRow cards={hand} onTap={(k) => act({ type: "batwara", card: hand[k] })} /></div>
     </div>
   );
 }
@@ -193,18 +147,18 @@ function DebateDalBadal({ v, act }: { v: PlayerView; act: (a: Action) => void })
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3">
-        <Head title="Dal Badal — swap with which 2?" />
+        <Head title="Dal Badal — shuffle with 3" />
         <button type="button" onClick={() => { setOpen(false); setSwap([]); }} className="min-h-10 shrink-0 text-[13px] text-stock/60 underline">Back</button>
       </div>
       <div className="grid grid-cols-2 gap-2">
         {others.map((p) => (
           <PlayerChip key={p.seat} p={p} selected={swap.includes(p.seat)} onClick={() => {
-            const next = swap.includes(p.seat) ? swap.filter((x) => x !== p.seat) : swap.length < 2 ? [...swap, p.seat] : swap;
+            const next = swap.includes(p.seat) ? swap.filter((x) => x !== p.seat) : swap.length < 3 ? [...swap, p.seat] : swap;
             setSwap(next);
-            if (next.length === 2) act({ type: "dal_badal", seats: next, pass: [] });
           }} />
         ))}
       </div>
+      <Btn voice="lethal" disabled={swap.length !== Math.min(3, others.length)} onClick={() => act({ type: "dal_badal", seats: swap, pass: [] })}>{swap.length === Math.min(3, others.length) ? "Shuffle" : `Pick ${Math.min(3, others.length) - swap.length} more`}</Btn>
       <p className="text-center text-[12px] text-stock/60">Everyone sees your role.</p>
     </div>
   );
@@ -220,16 +174,16 @@ function DalBadalShield({ v, on, act }: { v: PlayerView; on: "tk" | "kundli" | "
   return (
     <div className="flex flex-col gap-3">
       <Head title={title} />
-      <p className="-mt-2 text-[12px] text-stock/60">Pick 2 to shuffle role cards with. Everyone sees your role; then it lands on the card you hold.</p>
+      <p className="-mt-2 text-[12px] text-stock/60">Pick 3 players to shuffle role cards with. Everyone sees your role; then it lands on the card you hold.</p>
       <div className="grid grid-cols-2 gap-2">
         {others.map((p) => (
           <PlayerChip key={p.seat} p={p} selected={swap.includes(p.seat)} onClick={() => {
-            const next = swap.includes(p.seat) ? swap.filter((x) => x !== p.seat) : swap.length < 2 ? [...swap, p.seat] : swap;
+            const next = swap.includes(p.seat) ? swap.filter((x) => x !== p.seat) : swap.length < 3 ? [...swap, p.seat] : swap;
             setSwap(next);
-            if (next.length === 2) act({ type: "dal_badal", seats: next, pass: [] });
           }} />
         ))}
       </div>
+      <Btn voice="lethal" disabled={swap.length !== Math.min(3, others.length)} onClick={() => act({ type: "dal_badal", seats: swap, pass: [] })}>{swap.length === Math.min(3, others.length) ? "Shuffle" : `Pick ${Math.min(3, others.length) - swap.length} more`}</Btn>
       <Btn voice="ghost" onClick={() => act({ type: "ready" })}>Let it happen</Btn>
     </div>
   );
@@ -244,12 +198,12 @@ function DalBadalOut({ v, act }: { v: PlayerView; act: (a: Action) => void }) {
       <div className="grid grid-cols-2 gap-2">
         {others.map((p) => (
           <PlayerChip key={p.seat} p={p} selected={swap.includes(p.seat)} onClick={() => {
-            const next = swap.includes(p.seat) ? swap.filter((x) => x !== p.seat) : swap.length < 2 ? [...swap, p.seat] : swap;
+            const next = swap.includes(p.seat) ? swap.filter((x) => x !== p.seat) : swap.length < 3 ? [...swap, p.seat] : swap;
             setSwap(next);
-            if (next.length === 2) act({ type: "dal_badal", seats: next, pass: [] });
           }} />
         ))}
       </div>
+      <Btn voice="lethal" disabled={swap.length !== Math.min(3, others.length)} onClick={() => act({ type: "dal_badal", seats: swap, pass: [] })}>{swap.length === Math.min(3, others.length) ? "Shuffle" : `Pick ${Math.min(3, others.length) - swap.length} more`}</Btn>
       <Btn voice="ghost" onClick={() => act({ type: "dal_badal", seats: [], pass: [] })}>Keep it</Btn>
     </div>
   );
@@ -372,21 +326,22 @@ function Turn({ v, playable, passSize, dalBadal, act, ask }: { v: PlayerView; pl
   if (card === "DAL_BADAL") {
     // DAL BADAL on your turn (2026-10-14): show your role, pick 2 players to shuffle role cards with - then pass 3 and
     // draw back up to 2, like any play
-    const go = (sw: number[]) => { if (sw.length === 2) { act({ type: "dal_badal", seats: sw, pass: [] }); reset(); } };
+    const go = (sw: number[]) => { if (sw.length === Math.min(3, others.length)) { act({ type: "dal_badal", seats: sw, pass: [] }); reset(); } };
     return (
       <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between gap-3">
-          <Head title="Dal Badal — swap with which 2?" />
+          <Head title="Dal Badal — shuffle with 3" />
           <button type="button" onClick={reset} className="min-h-10 shrink-0 text-[13px] text-stock/60 underline">Back</button>
         </div>
         <div className="grid grid-cols-2 gap-2">
           {others.map((p) => (
             <PlayerChip key={p.seat} p={p} selected={swap.includes(p.seat)} onClick={() => {
-              const next = swap.includes(p.seat) ? swap.filter((x) => x !== p.seat) : swap.length < 2 ? [...swap, p.seat] : swap;
-              setSwap(next); go(next);
+              const next = swap.includes(p.seat) ? swap.filter((x) => x !== p.seat) : swap.length < 3 ? [...swap, p.seat] : swap;
+              setSwap(next);
             }} />
           ))}
         </div>
+      <Btn voice="lethal" disabled={swap.length !== Math.min(3, others.length)} onClick={() => go(swap)}>{swap.length === Math.min(3, others.length) ? "Shuffle" : `Pick ${Math.min(3, others.length) - swap.length} more`}</Btn>
         <p className="text-center text-[12px] text-stock/60">Everyone sees your role. Then you pass 3 and draw back to 2.</p>
       </div>
     );

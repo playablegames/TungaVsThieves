@@ -21,6 +21,8 @@ const noPublicRoles = (s: GameState) => {
   for (const p of viewFor(s, 0).players) expect(p.revealedRole).toBeNull();
 };
 
+const anyOther = (st: GameState, seat: number) => st.players.find((p) => p.alive && p.seat !== seat)?.seat ?? null;
+
 describe("SETUP", () => {
   it("deals the role table, 2 cards each, a 3-card pile, 63 cards, 1 vote each — 5 to 30 players", () => {
     for (let n = 5; n <= 30; n++) {
@@ -49,8 +51,9 @@ describe("SETUP", () => {
     expect(d.filter((c) => c === DB)).toHaveLength(1);
     expect(d.some((c) => (c as string) === "MAYA_JAAL")).toBe(false);
   });
-  it("refuses fewer than 5 or more than 30 players", () => {
-    expect(() => createGame(NAMES(4), 1)).toThrow();
+  it("(2026-11-16, box 4-12) refuses fewer than 4 or more than 30 players", () => {
+    expect(() => createGame(NAMES(4), 1)).not.toThrow();
+    expect(() => createGame(NAMES(3), 1)).toThrow();
     expect(() => createGame(NAMES(31), 1)).toThrow();
   });
   it("seat 1 picks up the pile first and holds 5", () => {
@@ -144,30 +147,27 @@ describe("THE CARDS", () => {
     expect(n.players[0].hand.sort()).toEqual([B, S1].sort()); // the steal was the "get": no draw
     expect(n.players[1].hand).toHaveLength(2 + 3); // drew 2, and is next: picked up the pass
   });
-  it("BHUKAMP (2026-10-14): every living player — the one who played it too, with their 3 — passes 1 card LEFT and 1 RIGHT; then the player passes 3 and draws 2", () => {
+  it("BHUKAMP (2026-11-16, printed v8): every living player — the one who played it too, with their 3 — passes ONE card to the next player; then the player passes 3 and draws 2", () => {
     const s = rig(5, { hands: [[B, B, F, K, H], [S1, T], [F, K], [T, H], [K, F]] });
     let n = apply(s, 0, { type: "play", card: "BATWARA" });
     expect(n.phase.kind).toBe("batwara");
     expect(n.players[0].hand.sort()).toEqual([F, K, H].sort()); // only the pair went down
     expect(waitingOn(n).sort()).toEqual([0, 1, 2, 3, 4]);
-    expect(() => apply(n, 1, { type: "batwara", card: H, right: T })).toThrow(RuleError); // only cards you hold
-    expect(() => apply(n, 1, { type: "batwara", card: S1 })).toThrow(RuleError); // with 2 in hand, one each way
-    // left = the next player in turn order (seat + 1); right = the one before (seat - 1)
-    n = apply(n, 0, { type: "batwara", card: F, right: K });
-    n = apply(n, 1, { type: "batwara", card: S1, right: T }); // a Stone CAN move by Bhukamp — the holder chose the way
-    n = apply(n, 2, { type: "batwara", card: F, right: K });
-    n = apply(n, 3, { type: "batwara", card: H, right: T });
-    n = apply(n, 4, { type: "batwara", card: K, right: F });
+    expect(() => apply(n, 1, { type: "batwara", card: H })).toThrow(RuleError); // only cards you hold
+    n = apply(n, 0, { type: "batwara", card: F });
+    n = apply(n, 1, { type: "batwara", card: S1 }); // a Stone CAN move by Bhukamp
+    n = apply(n, 2, { type: "batwara", card: F });
+    n = apply(n, 3, { type: "batwara", card: H });
+    n = apply(n, 4, { type: "batwara", card: K });
     expect(n.phase).toEqual({ kind: "pass_on", seat: 0 });
-    expect(n.players[0].hand.sort()).toEqual([H, T, K].sort()); // kept H, got T (seat 1) and K (seat 4)
-    expect(n.players[2].hand.sort()).toEqual([S1, T].sort()); // the Stone went left, to seat 2
-    expect(n.players[3].hand.sort()).toEqual([F, F].sort());
-    expect(n.players[4].hand.sort()).toEqual([K, H].sort());
-    n = apply(n, 0, { type: "pass", pass: [H, T, K] });
+    expect(n.players[0].hand.sort()).toEqual([K, H, K].sort()); // gave F, got K from seat 4
+    expect(n.players[2].hand.sort()).toEqual([K, S1].sort()); // the Stone went to the next player
+    expect(n.players[3].hand.sort()).toEqual([T, F].sort());
+    expect(n.players[4].hand.sort()).toEqual([F, H].sort());
+    n = apply(n, 0, { type: "pass", pass: [K, H, K] });
     expect(n.players[0].hand).toHaveLength(2); // drew 2 at the end
-    // seat 1 is next: it got F (seat 0) and K (seat 2) and picked up the 3 passed
-    expect(n.players[1].hand.sort()).toEqual([F, K, H, T, K].sort());
-    expect(totalCards(n)).toBe(totalCards(s)); // 2 came from the deck, nothing lost
+    expect(n.players[1].hand.sort()).toEqual([T, F, K, H, K].sort()); // kept T, got F, picked up the 3
+    expect(totalCards(n)).toBe(totalCards(s));
   });
   it("TEER KAMAN miss (2026-10-09): the shooter is OUT, role hidden; the target stays", () => {
     const s = rig(5, { sides: ["V", "T", "V", "T", "V"], hands: [[TK, TK, F, K, H], [B, B], [F], [T], [K]] });
@@ -176,7 +176,7 @@ describe("THE CARDS", () => {
     expect(n.players[0].alive).toBe(false);
     expect(n.players[1].alive).toBe(true);
     expect(n.events.some((e) => e.type === "eliminated_private")).toBe(false); // nobody learns the shooter's role
-    if (n.phase.kind === "elim") n = apply(n, 0, { type: "gift", target: null });
+    if (n.phase.kind === "elim") n = apply(n, 0, { type: "gift", target: anyOther(n, 0) });
     noPublicRoles(n);
   });
   it("TEER KAMAN names ONE role at a table that started with 2 thieves, TWO with 3 or more (2026-10-12)", () => {
@@ -267,7 +267,7 @@ describe("ELIMINATION — out, dying power, hand-off", () => {
     for (const v of [0, 1, 2, 3, 4]) n = apply(n, v, { type: "ready" });
     for (const v of [0, 1, 2, 3, 4]) n = apply(n, v, { type: "vote", target: v === 1 ? 0 : 1 });
     expect(n.players[1].alive).toBe(false);
-    n = apply(n, 1, { type: "gift", target: null });
+    n = apply(n, 1, { type: "gift", target: anyOther(n, 1) });
     n = apply(n, 0, { type: "pass", pass: [T, K, H] }); // (2026-10-14) the caller passes 3, then gets
     expect(n.players[0].hand).toEqual(expect.arrayContaining([S1, B])); // the caller took them
     // own Faisla (2026-10-14): the caller still holds their other cards — they go on as the pile, and the next living
@@ -277,7 +277,7 @@ describe("ELIMINATION — out, dying power, hand-off", () => {
     for (const v of [0, 1, 2, 3, 4]) m = apply(m, v, { type: "ready" });
     for (const v of [0, 1, 2, 3, 4]) m = apply(m, v, { type: "vote", target: v === 0 ? 1 : 0 });
     expect(m.players[0].alive).toBe(false);
-    m = apply(m, 0, { type: "gift", target: null });
+    m = apply(m, 0, { type: "gift", target: anyOther(m, 0) });
     expect(m.players[1].hand).toContain(S2);
   });
   it("a dying THIEF has the same power (2026-10-09): give 1 vote — there is no last shot", () => {
@@ -326,24 +326,26 @@ describe("DAL BADAL (2026-10-09) — a thief's whole turn", () => {
     expect(() => apply(v, 0, { type: "dal_badal", seats: [2, 4], pass: [F, K, H] })).toThrow(RuleError); // a villager can't
     expect(() => apply(swapGame(), 1, { type: "dal_badal", seats: [2, 4], pass: [F, K, H] })).toThrow(RuleError); // not their turn
   });
-  it("(2026-10-14) show the role, shuffle with 2 others — each picks one back from the thief on — then pass 3 and draw back to 2; the card leaves the game", () => {
+  it("(2026-11-16) show the role, shuffle with 3 others (4 role cards) — each picks one back from the thief on — then pass 3 and draw back to 2; the card leaves the game", () => {
     const s = swapGame();
-    expect(() => apply(s, 0, { type: "dal_badal", seats: [2], pass: [] })).toThrow(RuleError); // pick 2
-    expect(() => apply(s, 0, { type: "dal_badal", seats: [0, 2], pass: [] })).toThrow(RuleError); // 2 OTHERS
-    const before = [0, 2, 4].map((x) => role(s, x)).sort();
-    let n = apply(s, 0, { type: "dal_badal", seats: [4, 2], pass: [] });
+    expect(() => apply(s, 0, { type: "dal_badal", seats: [2, 4], pass: [] })).toThrow(RuleError); // pick 3
+    expect(() => apply(s, 0, { type: "dal_badal", seats: [0, 2, 4], pass: [] })).toThrow(RuleError); // 3 OTHERS
+    const before = [0, 2, 3, 4].map((x) => role(s, x)).sort();
+    let n = apply(s, 0, { type: "dal_badal", seats: [4, 2, 3], pass: [] });
     const pub = n.events.find((e) => e.type === "dal_badal")!;
     expect(pub.to).toBe("all");
     expect(pub.data!.role).toBe(role(s, 0)); // the thief shows their role
     expect(n.players[0].hand).toHaveLength(4); // nothing passed yet
-    expect(n.phase).toMatchObject({ kind: "dal_badal", actor: 0, pickers: [0, 2, 4] });
+    expect(n.phase).toMatchObject({ kind: "dal_badal", actor: 0, pickers: [0, 2, 3, 4] });
     expect(waitingOn(n)).toEqual([0]);
     n = apply(n, 0, { type: "dal_pick", index: 1 });
     expect(waitingOn(n)).toEqual([2]);
-    n = apply(n, 2, { type: "dal_pick", index: 0 }); // seat 4 takes what is left
-    expect([0, 2, 4].map((x) => role(n, x)).sort()).toEqual(before);
+    n = apply(n, 2, { type: "dal_pick", index: 0 });
+    expect(waitingOn(n)).toEqual([3]);
+    n = apply(n, 3, { type: "dal_pick", index: 0 }); // seat 4 takes what is left
+    expect([0, 2, 3, 4].map((x) => role(n, x)).sort()).toEqual(before);
     expect(n.players.filter((p) => p.side === "T")).toHaveLength(2);
-    for (const x of [0, 2, 4]) expect(n.events.some((e) => e.type === "role" && Array.isArray(e.to) && e.to[0] === x && e.data?.swapped)).toBe(true);
+    for (const x of [0, 2, 3, 4]) expect(n.events.some((e) => e.type === "role" && Array.isArray(e.to) && e.to[0] === x && e.data?.swapped)).toBe(true);
     expect(n.phase).toEqual({ kind: "pass_on", seat: 0 });
     n = apply(n, 0, { type: "pass", pass: [F, K, H] });
     // the thief drew back to 2; the turn is over and seat 1 picked up the 3
@@ -363,11 +365,12 @@ describe("DAL BADAL ANYTIME (designer 2026-10-14: out of turn)", () => {
     const on = { ...s, dbShield: true };
     expect(viewFor(on, 2).dalBadalNow).toBe(true);
     expect(viewFor(on, 3).dalBadalNow).toBeUndefined(); // a villager can't
-    let n = apply(on, 2, { type: "dal_badal", seats: [3, 5], pass: [] });
+    let n = apply(on, 2, { type: "dal_badal", seats: [3, 4, 5], pass: [] });
     expect(n.phase).toMatchObject({ kind: "dal_badal", actor: 2 });
     expect(n.events.find((e) => e.type === "dal_badal")!.data!.when).toBe("anytime");
     n = apply(n, 2, { type: "dal_pick", index: 0 });
     n = apply(n, 3, { type: "dal_pick", index: 0 });
+    n = apply(n, 4, { type: "dal_pick", index: 0 });
     expect(n.phase).toEqual({ kind: "turn", seat: 0 }); // seat 0's turn goes on
     expect(n.players[2].hand).toHaveLength(2); // drew back up to 2
     expect(n.players[0].hand).toEqual([F, F, T, K, H]); // nothing changed for the player whose turn it was
@@ -424,7 +427,7 @@ describe("THE END — Surrender, Mandatory Vote, then everyone reveals", () => {
     n = rigStones(n, [v1.seat, v2.seat]); // the village holds both — until it votes one holder out
     for (const p of n.players.filter((x) => x.alive)) n = apply(n, p.seat, { type: "ready" });
     for (const p of n.players.filter((x) => x.alive)) n = apply(n, p.seat, { type: "vote", target: v1.seat });
-    if (n.phase.kind === "elim") n = apply(n, v1.seat, { type: "gift", target: null });
+    if (n.phase.kind === "elim") n = apply(n, v1.seat, { type: "gift", target: anyOther(n, v1.seat) });
     expect(n.events.some((e) => e.type === "to_thieves")).toBe(true);
     expect(n.events.find((e) => e.type === "eliminated")!.data!.role).toBeUndefined();
     expect(n.phase).toMatchObject({ kind: "over", winner: "T" });
@@ -438,7 +441,7 @@ describe("THE END — Surrender, Mandatory Vote, then everyone reveals", () => {
     for (const p of n.players.filter((x) => x.alive)) n = apply(n, p.seat, { type: "vote", target: thief.seat });
     const out = n.events.find((e) => e.type === "eliminated")!;
     expect(out.data!.role).toBeUndefined();
-    if (n.phase.kind === "elim") n = apply(n, thief.seat, { type: "gift", target: null });
+    if (n.phase.kind === "elim") n = apply(n, thief.seat, { type: "gift", target: anyOther(n, thief.seat) });
     expect(n.events.some((e) => e.type === "handoff")).toBe(false);
     expect(n.events.some((e) => e.type === "to_village")).toBe(true);
     expect(n.phase).toMatchObject({ kind: "over", winner: "V" });
@@ -472,7 +475,7 @@ describe("DAL BADAL IN THE MANDATORY VOTE (2026-10-12) — during the debate, or
     n = apply(n, villager, { type: "ready" });
     expect(decisionFor(n, thief)).toMatchObject({ kind: "debate", dalBadal: true });
     expect(decisionFor(n, villager)).toBeNull(); // ready already — and a villager has no Dal Badal move
-    const two = n.players.filter((p) => p.alive && p.seat !== thief).slice(0, 2).map((p) => p.seat);
+    const two = n.players.filter((p) => p.alive && p.seat !== thief).slice(0, 3).map((p) => p.seat);
     const hand = n.players[thief].hand.length;
     n = apply(n, thief, { type: "dal_badal", seats: two, pass: [] });
     expect(n.events.at(-1)).toMatchObject({ type: "dal_badal", to: "all", data: { seat: thief, when: "debate" } });
@@ -489,7 +492,7 @@ describe("DAL BADAL IN THE MANDATORY VOTE (2026-10-12) — during the debate, or
     for (const p of n.players.filter((x) => x.alive)) n = apply(n, p.seat, { type: "ready" });
     for (const p of n.players.filter((x) => x.alive)) n = apply(n, p.seat, { type: "vote", target: thief });
     expect(n.phase).toMatchObject({ kind: "elim", seat: thief, step: "dying" });
-    n = apply(n, thief, { type: "gift", target: null });
+    n = apply(n, thief, { type: "gift", target: anyOther(n, thief) });
     expect(n.phase.kind).toBe("over");
     expect(n.events.some((e) => e.type === "dal_badal")).toBe(false);
   });
@@ -501,12 +504,12 @@ describe("DAL BADAL IN THE MANDATORY VOTE (2026-10-12) — during the debate, or
     for (const p of n.players.filter((x) => x.alive)) n = apply(n, p.seat, { type: "ready" });
     for (const p of n.players.filter((x) => x.alive)) n = apply(n, p.seat, { type: "vote", target: thief });
     expect(n.phase).toMatchObject({ kind: "vote", reason: "final", debate: false }); // the ballots are open until the clock
-    const two = n.players.filter((p) => p.alive && p.seat !== thief).slice(0, 2).map((p) => p.seat);
+    const two = n.players.filter((p) => p.alive && p.seat !== thief).slice(0, 3).map((p) => p.seat);
     n = apply(n, thief, { type: "dal_badal", seats: two, pass: [] });
     n = pickAll(n);
     expect(n.phase).toMatchObject({ kind: "vote", reason: "final", debate: false }); // back to the open ballots
     n = closeVote(n);
-    if (n.phase.kind === "elim") n = apply(n, (n.phase as { seat: number }).seat, { type: "gift", target: null });
+    if (n.phase.kind === "elim") n = apply(n, (n.phase as { seat: number }).seat, { type: "gift", target: anyOther(n, (n.phase as { seat: number }).seat) });
     expect(n.phase.kind).toBe("over");
   });
   it("not in a Faisla vote, and never for a villager", () => {

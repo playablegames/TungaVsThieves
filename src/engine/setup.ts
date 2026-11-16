@@ -9,12 +9,13 @@ import { shuffle } from "./rng";
  *  7p 2T 54/59/61 · 8p 3T 41/43/50 · 9p 3T 51/54/55 · 10p 3T 55/54/50 · 11p 4T 43/47/53 · 12p 4T 45/63/53.
  *  About one thief in three; 13-30 follow that ratio (not measured). Rounds fixed at 3. */
 export const ROLE_TABLE: Record<number, [number, number, number]> = {
+  // (designer 2026-11-16, rule sheet + box "4-12 players"): ROUNDS 2 at 4-5 players, 3 at 6-9, 4 at 10+. 4p = 3+1.
   // (designer 2026-10-14) 7 players back to 5 villagers + 2 thieves: with the rule-based bots 4+3 left the village 36%, 5+2 gives 60% (300 games)
   // (designer 2026-10-14: "we can have 4 round games if the balance is too thief-leaning") — measured with the live bots,
   // 2,000 games each: 5p 41.8% → 47.2% · 8p 44.1% → 48.6% · 10p 40.8% → 46.5% village with a 4th round
-  5: [3, 2, 4], 6: [4, 2, 3], 7: [5, 2, 3], 8: [5, 3, 4], 9: [6, 3, 3], 10: [6, 4, 4], 11: [7, 4, 3], 12: [8, 4, 3], 13: [9, 4, 3], 14: [9, 5, 3], 15: [10, 5, 3], 16: [11, 5, 3], 17: [11, 6, 3], 18: [12, 6, 3], 19: [13, 6, 3], 20: [13, 7, 3], 21: [14, 7, 3], 22: [15, 7, 3], 23: [15, 8, 3], 24: [16, 8, 3], 25: [17, 8, 3], 26: [17, 9, 3], 27: [18, 9, 3], 28: [19, 9, 3], 29: [19, 10, 3], 30: [20, 10, 3],
+  4: [3, 1, 2], 5: [3, 2, 2], 6: [4, 2, 3], 7: [5, 2, 3], 8: [5, 3, 3], 9: [6, 3, 3], 10: [6, 4, 4], 11: [7, 4, 4], 12: [8, 4, 4], 13: [9, 4, 4], 14: [9, 5, 4], 15: [10, 5, 4], 16: [11, 5, 4], 17: [11, 6, 4], 18: [12, 6, 4], 19: [13, 6, 4], 20: [13, 7, 4], 21: [14, 7, 4], 22: [15, 7, 4], 23: [15, 8, 4], 24: [16, 8, 4], 25: [17, 8, 4], 26: [17, 9, 4], 27: [18, 9, 4], 28: [19, 9, 4], 29: [19, 10, 4], 30: [20, 10, 4],
 };
-export const MIN_PLAYERS = 5;
+export const MIN_PLAYERS = 4;
 export const MAX_PLAYERS = 30;
 
 /** (designer 2026-10-12) the PRINTED role cards come first, in the box's order — 8 villagers and 4 thieves, enough for
@@ -33,7 +34,9 @@ export const PRINTED_ROLES = ["Kisaan", "Sarpanch", "Baba", "Teacher", "Police",
 
 /** (designer 2026-10-12) Teer Kaman names ONE role at a table that starts with 2 thieves, TWO roles with 3 or more.
  *  Counted from the roles dealt at the start (rolesInPlay never changes, Dal Badal included). */
-export const tkGuesses = (rolesInPlay: string[]): 1 | 2 => (rolesInPlay.filter((r) => THIEF_ROLES.includes(r)).length <= 2 ? 1 : 2);
+/** (designer 2026-11-16, printed v8 card) Teer Kaman names ONE role up to 6 players, TWO at 7 or more. rolesInPlay = one
+ *  role per seat dealt, so its length is the table size. */
+export const tkGuesses = (rolesInPlay: string[]): 1 | 2 => (rolesInPlay.length <= 6 ? 1 : 2);
 
 /** 6 action cards x 10 (designer 2026-10-09: Mayajaal cut) + one Dal Badal */
 export const COPIES_PER_ACTION = 10;

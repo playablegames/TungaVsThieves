@@ -132,6 +132,8 @@ function rawBeat(e: GameEvent, names: string[], history: GameEvent[]): Beat | nu
       return { ...base, title: "Dal Badal done", tone: "neutral", big: false, hold: SMALL };
     case "gift":
       return { ...base, title: target === undefined || d?.target === null ? `${nm(actor)} gives no vote` : `${nm(actor)}'s vote to ${nm(target)}`, tone: "vote", big: false, hold: SMALL };
+    case "gift_lost":
+      return { ...base, title: `${nm(actor)} loses the extra vote`, tone: "vote", big: false, hold: SMALL };
     case "handoff":
       // (designer 2026-10-12) the table never sees the cards — only that they moved
       return { ...base, title: `${nm(actor)}'s cards go to ${nm(target)}`, tone: "neutral", big: false, hold: SMALL };

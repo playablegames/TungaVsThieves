@@ -831,11 +831,13 @@ export function ruleGift(s: GameState, seat: number, skill: Skill, r: R): Decisi
   const sc = (x: number) => l.score.get(x) ?? 0;
   const friends = alive.filter((x) => l.known.get(x)?.side === me.side);
   if (friends.length) { const t = best(r, friends, (x) => -sc(x))!; return { action: { type: "gift", target: t }, why: `my vote to ${plain(s, t)} — on my side for sure` }; }
-  // a thief that knows no partner gives it to nobody — a vote thrown at a stranger may arm a villager
-  if (me.side === "T") return { action: { type: "gift", target: null }, why: "thief: no partner I know" };
+  // (2026-11-16) the vote MUST be given: a thief with no known partner gives it to the player the table suspects
+  // most (likeliest a partner); a villager to the one it trusts most
+  if (!alive.length) return { action: { type: "gift", target: null }, why: "nobody left" };
+  if (me.side === "T") { const t = best(r, alive, (x) => sc(x))!; return { action: { type: "gift", target: t }, why: `thief: my vote to ${plain(s, t)} — the table suspects them` }; }
   const pool = alive.filter((x) => l.known.get(x)?.side === undefined);
-  const t = best(r, pool, (x) => -sc(x));
-  if (t === undefined || sc(t) > 0) return { action: { type: "gift", target: null }, why: "nobody I trust" };
+  const t = best(r, pool.length ? pool : alive, (x) => -sc(x));
+  if (t === undefined) return { action: { type: "gift", target: pickOne(r, alive) }, why: "anyone" };
   return { action: { type: "gift", target: t }, why: `my vote to ${plain(s, t)} — the player I trust most` };
 }
 

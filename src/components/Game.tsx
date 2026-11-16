@@ -334,7 +334,7 @@ function status(v: PlayerView): string {
   if (p.endsWith("_debate")) return `${p.startsWith("final") ? "Last debate" : "Faisla"} — the floor is open`;
   if (p.endsWith("_vote")) return mine ? "Your vote" : `Voting — waiting for ${list}`;
   if (p === "surrender") return mine ? "Surrender your Stone?" : "The Stone holders are deciding…";
-  if (p === "batwara") return mine ? "Bhukamp — one card left, one right" : `Bhukamp — waiting for ${list}`;
+  if (p === "batwara") return mine ? "Bhukamp — one card to the next player" : `Bhukamp — waiting for ${list}`;
   if (p.startsWith("dal_badal")) return mine ? "Dal Badal — pick a role card" : `Dal Badal — ${list} picking a role card`;
   if (p.startsWith("elim")) {
     const seat = Number(p.split(":")[2]);
@@ -826,7 +826,7 @@ function CardFlights({ v, pos }: { v: PlayerView; pos: (seat: number) => { x: nu
       // Bhukamp: every living hand sends 1 card LEFT (the next player) and 1 RIGHT (the one before) — when the passes
       // really happen (batwara_done), not when the pair is played (designer 2026-10-13 evening: "it suddenly vanishes and
       // new cards appear"). Left first, then right, so the eye can follow each.
-      if (e.type === "batwara_done") for (const p of v.players) if (p.alive) { fly(p.seat, nextLiving(p.seat, 1), 1, 0); fly(p.seat, nextLiving(p.seat, -1), 1, 700); }
+      if (e.type === "batwara_done") for (const p of v.players) if (p.alive) { fly(p.seat, nextLiving(p.seat, 1), 1, 0); }
       if (e.type === "handoff" && seat !== null && target !== null) fly(seat, target, typeof d.count === "number" ? Math.min(3, d.count) : 2, 200);
     }
     if (!add.length) return;

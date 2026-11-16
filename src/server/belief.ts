@@ -438,10 +438,10 @@ export function stoneOdds(s: GameState, seat: number, seed: number, skill: Skill
       case "talashi_private": if (target !== null && actor === seat) p.set(target, has(d?.hand) ? 1 : 0); break;
       case "hera_pheri_private": if (has(d?.taken) && actor !== null) { p.set(actor, 1); } break;
       case "batwara": {
-        // (2026-10-12) everyone passes 1 card left and 1 right: with 2 in hand both leave, one each way — a seat's
-        // chance comes half from each neighbour
+        // (2026-11-16) everyone passes ONE card to the next player: a seat keeps part of its own chance and gets part
+        // of the one before it
         const was = new Map(p);
-        for (let x = 0; x < n; x++) p.set(x, 0.5 * was.get((x - 1 + n) % n)! + 0.5 * was.get((x + 1) % n)!);
+        for (let x = 0; x < n; x++) p.set(x, 0.5 * was.get(x)! + 0.5 * was.get((x - 1 + n) % n)!);
         break;
       }
       case "batwara_private": { const from = num(d, "from"), to = num(d, "to"); if (from !== null && to !== null && STONE(d?.card)) { p.set(to, 1); } break; }
@@ -815,7 +815,7 @@ function dalBadalMove(s: GameState, seat: number, seed: number, r: R, skill: Ski
   if (when !== "votedOut" && !canDalBadal(s, seat)) return null;
   const k = dalBadalPick(s, seat);
   const others = s.players.filter((p) => p.alive && p.seat !== seat).map((p) => p.seat);
-  if (k < 2) return null;
+  if (k < 1) return null;
   const plan = skill.dalBadal ?? "random";
   const turnPass = () => { const rest = [...me.hand]; rest.splice(rest.indexOf("DAL_BADAL"), 1); return stonesLastOf(rest, passSize(rest)); };
   const random = () => sampleOf(r, others, k);
@@ -862,37 +862,14 @@ function accusationShot(s: GameState, seat: number, seed: number, r: R, skill: S
     roles: [role, ...(more.length ? [pick(r, more)] : [])].slice(0, tkGuesses(s.rolesInPlay)) };
 }
 
-/** BHUKAMP: 1 card left, 1 right. A skilled player keeps Dal Badal if it can; a Stone it must give goes to the
- *  neighbour it trusts (a villager) or, as a thief, the neighbour it takes for a partner. A beginner deals at random. */
-function bhukampMove(s: GameState, seat: number, seed: number, r: R, skill: Skill): Action {
-  const me = s.players[seat];
-  const h = [...me.hand];
-  if (h.length < 2) return { type: "batwara", card: h[0] };
-  if (skill.dalBadal === "random") { const [a, b] = sampleOf(r, h, 2); return { type: "batwara", card: a, right: b }; }
-  // what to give: non-Stones and not Dal Badal first
-  const order = [...h].sort((x, y) => rank(x) - rank(y));
-  const [g1, g2] = order.slice(0, 2);
-  const left = nb(s, seat, 1), right = nb(s, seat, -1);
-  // (2026-10-12, game 9NAQM: Raju gave the Tunga Stone to a thief because an out player had called them a villager)
-  // an experienced player trusts evidence, not bare words, with a Stone
-  // (2026-10-13, STONE CRAFT) a thief sends its Stone by what IT knows (its reads, its own odds) — not by what the table
-  // suspects: the autopsy found Bhukamp handing thieves' Stones to villagers 378-782 times in 1,000 games
-  const bel = beliefOf(skill.followAnyAccusation ? s : withoutHearsay(s, seat), seat, seed, skill, me.side === "T" && !(STONECRAFT && skill.name !== "casual"));
-  const pT = (x: number) => bel.p.get(x) ?? 0.5;
-  // the "precious" card of the two (a Stone, else Dal Badal) goes to the friendlier side
-  const precious = [g1, g2].find(isStoneCard) ?? [g1, g2].find((c) => c === "DAL_BADAL");
-  if (!precious) return { type: "batwara", card: g1, right: g2 };
-  const other = precious === g1 ? g2 : g1;
-  const friendLeft = me.side === "V" ? pT(left) <= pT(right) : pT(left) >= pT(right);
-  return friendLeft ? { type: "batwara", card: precious, right: other } : { type: "batwara", card: other, right: precious };
-  function rank(c: Card) { return isStoneCard(c) ? 2 : c === "DAL_BADAL" ? 1 : 0; }
+/** BHUKAMP (designer 2026-11-16, printed v8 card): ONE card to the next player. A skilled player gives its least
+ *  precious card (never a Stone or Dal Badal if it can help it); a beginner gives one at random. */
+function bhukampMove(s: GameState, seat: number, _seed: number, r: R, skill: Skill): Action {
+  const h = [...s.players[seat].hand];
+  if (skill.dalBadal === "random") return { type: "batwara", card: sampleOf(r, h, 1)[0] };
+  const rank = (c: Card) => (isStoneCard(c) ? 2 : c === "DAL_BADAL" ? 1 : 0);
+  return { type: "batwara", card: [...h].sort((x, y) => rank(x) - rank(y))[0] };
 }
-const nb = (s: GameState, seat: number, dir: 1 | -1) => {
-  const n = s.players.length;
-  for (let k = 1; k < n; k++) { const x = (seat + dir * k + n * n) % n; if (s.players[x].alive) return x; }
-  return seat;
-};
-
 /** PLAYS WITH A REASON (playtest LLE3Q 2026-10-09: a Faisla in round 1 with no suspect; random targets). The pair the
  *  random policy picked keeps its card, but:
  *   · Faisla only when there is someone to vote out (a villager: a suspect who stands out; a thief: a villager the table

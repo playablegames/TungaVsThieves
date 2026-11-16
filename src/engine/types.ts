@@ -113,6 +113,8 @@ export interface GameState {
   /** cards of players put out in the MANDATORY vote: they belong to the village, Stones included (rule 2026-10-07).
    *  Optional so games saved before the rule still load. */
   villagePot?: Card[];
+  /** (2026-11-16) the seat holding the one extra vote now — a new gift takes it from them */
+  giftTo?: number | null;
   /** (2026-10-12) Stones of a VILLAGER put out by the mandatory vote: they go to the thieves and count for them */
   thiefPot?: Card[];
   /** OPEN VOTING (designer 2026-10-07): ballots stay open until the clock runs out — anyone may change their vote,

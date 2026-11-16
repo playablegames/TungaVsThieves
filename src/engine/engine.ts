@@ -86,7 +86,7 @@ export const playableCards = (s: GameState, seat: number) => ACTION_CARDS.filter
 export const canDalBadal = (s: GameState, seat: number) =>
   ((s.phase.kind === "turn" && s.phase.seat === seat) || (s.phase.kind === "vote" && (s.phase.reason === "final" || Boolean(s.dbShield)) && s.phase.debate)
     || (s.phase.kind === "react" && s.phase.seat === seat))
-  && Boolean(P(s, seat).alive) && P(s, seat).side === "T" && P(s, seat).hand.includes("DAL_BADAL") && living(s).length >= 3;
+  && Boolean(P(s, seat).alive) && P(s, seat).side === "T" && P(s, seat).hand.includes("DAL_BADAL") && living(s).length >= 2;
 
 /** DAL BADAL OUT OF TURN (designer 2026-10-14: "Dal Badal should be played anytime, out of turn"): with Dal Badal
  *  anytime on (state.dbShield), a thief holding it may use it while ANYONE ELSE is deciding — their turn, their pass, or
@@ -95,11 +95,12 @@ export const canDalBadalOutOfTurn = (s: GameState, seat: number) => {
   const ph = s.phase;
   if (!s.dbShield || waitingOn(s).includes(seat)) return false;
   const open = ((ph.kind === "turn" || ph.kind === "pass_on") && ph.seat !== seat) || (ph.kind === "vote" && !ph.debate);
-  return open && Boolean(P(s, seat).alive) && P(s, seat).side === "T" && P(s, seat).hand.includes("DAL_BADAL") && living(s).length >= 3;
+  return open && Boolean(P(s, seat).alive) && P(s, seat).side === "T" && P(s, seat).hand.includes("DAL_BADAL") && living(s).length >= 2;
 };
 
-/** how many other living players a Dal Badal takes in: 2, fewer only if fewer are left */
-export const dalBadalPick = (s: GameState, seat: number) => Math.min(2, living(s).filter((p) => p.seat !== seat).length);
+/** (designer 2026-11-16, card: "pick up to THREE ... their 4 role cards are reshuffled") the thief + 3 others = 4 roles;
+ *  fewer only when fewer than 3 others are left alive */
+export const dalBadalPick = (s: GameState, seat: number) => Math.min(3, living(s).filter((p) => p.seat !== seat).length);
 
 /** how many cards a pass must contain (normally 3; fewer only if the hand is starved) */
 export const passSize = (h: Card[]) => Math.min(3, h.length);
@@ -295,12 +296,11 @@ export function apply(prev: GameState, seat: number, action: Action): GameState 
     return s;
   }
   if (ph.kind === "batwara") {
-    if (action.type !== "batwara") throw new RuleError("Choose 1 card for your left and 1 for your right");
-    const h = P(s, seat).hand;
-    const give = h.length >= 2 ? [action.card, action.right] : [action.card];
-    if (give.some((c) => c === undefined)) throw new RuleError("Choose 1 card for your left and 1 for your right");
-    removeCards([...h], give as Card[]); // you must hold both (two of a kind if you name it twice)
-    ph.picks[seat] = { left: action.card, right: h.length >= 2 ? action.right! : null };
+    if (action.type !== "batwara") throw new RuleError("Choose 1 card to pass to the next player");
+    // (designer 2026-11-16, printed v8 card) ONE card to the next player; `right` is ignored
+    if (action.card === undefined) throw new RuleError("Choose 1 card to pass to the next player");
+    removeCards([...P(s, seat).hand], [action.card]);
+    ph.picks[seat] = { left: action.card, right: null };
     if (waitingOn(s).length === 0) resolveBatwara(s);
     return s;
   }
@@ -375,11 +375,10 @@ function doPlay(s: GameState, seat: number, a: Extract<Action, { type: "play" }>
       passOnOrEnd(s); return s;
     }
     case "BATWARA": {
-      // Bhukamp (designer 2026-10-12): every living player — the one who played it too, still holding their other 3
-      // (2026-10-14) — passes 1 card LEFT and 1 RIGHT, choosing which goes where, in secret. With 2 cards in hand you
-      // give both and get one from each side. The player then passes 3 and draws back up to 2.
+      // Bhukamp (designer 2026-11-16, printed v8 card): every living player — the one who played it too, still holding their other 3
+      // — passes ONE card to the next player, in secret. The player then passes 3 and draws back up to 2.
       const givers = living(s).filter((x) => x.hand.length > 0).map((x) => x.seat);
-      emit(s, "batwara", "all", `BHUKAMP — ${p.name} shakes the table: everyone passes 1 card left and 1 right.`, { seat });
+      emit(s, "batwara", "all", `BHUKAMP — ${p.name} shakes the table: everyone passes 1 card to the next player.`, { seat });
       s.phase = { kind: "batwara", actor: seat, givers, picks: {} };
       if (givers.length === 0) resolveBatwara(s);
       return s;
@@ -455,7 +454,7 @@ function resolveTeerKaman(s: GameState, seat: number, target: number, named: str
 /** DAL BADAL AS A SHIELD (designer 2026-10-14): a thief holding it, with 2 others left to shuffle with */
 function shieldUp(s: GameState, seat: number): boolean {
   const t = P(s, seat);
-  return Boolean(s.dbShield) && t.alive && t.side === "T" && t.hand.includes("DAL_BADAL") && living(s).length >= 3;
+  return Boolean(s.dbShield) && t.alive && t.side === "T" && t.hand.includes("DAL_BADAL") && living(s).length >= 2;
 }
 
 /** the shot, the read or the exit goes ahead — on whatever role card the seat holds now */
@@ -474,11 +473,11 @@ function doDalBadal(s: GameState, seat: number, chosen: number[], pass: Card[]):
   const votedOut = ph.kind === "elim" && ph.step === "dal_badal" && ph.seat === seat;
   const outOfTurn = canDalBadalOutOfTurn(s, seat);
   if (!votedOut && !outOfTurn && !canDalBadal(s, seat)) throw new RuleError("Only a thief holding Dal Badal can use it — on their turn, or in the mandatory vote");
-  if (ph.kind === "react" && ph.on.kind === "faisla_out" && living(s).length < 3) throw new RuleError("Not enough players left to shuffle with");
+  if (ph.kind === "react" && ph.on.kind === "faisla_out" && living(s).length < 2) throw new RuleError("Not enough players left to shuffle with");
   const p = P(s, seat);
   const seats = [...new Set(chosen)];
   const k = dalBadalPick(s, seat);
-  if (seats.length !== k || seats.some((x) => x === seat || !P(s, x)?.alive)) throw new RuleError(`Pick ${k} other living players`);
+  if (seats.length !== k || seats.length !== chosen.length || seats.some((x) => x === seat || !P(s, x)?.alive)) throw new RuleError(`Pick ${k} other living players`);
   const n = s.players.length;
   const pickers = [seat, ...seats].sort((x, y) => ((x - seat + n) % n) - ((y - seat + n) % n));
   const pool = shuffle(s, pickers.map((x) => ({ role: P(s, x).role, side: P(s, x).side })));
@@ -563,6 +562,7 @@ function resolveVote(s: GameState) {
     out === null ? "The vote is tied or empty — nobody is out." : `${P(s, out).name} is voted out (${max} votes).`,
     { reason: ph.reason, ballots, tally: Object.fromEntries(tally), out, spent });
   for (const v of spent) P(s, v).votes = 1;
+  if (s.giftTo !== undefined && s.giftTo !== null && spent.includes(s.giftTo)) s.giftTo = null;
 
   if (ph.reason === "final") {
     s.after = { kind: "finalReveal" };
@@ -658,10 +658,18 @@ function doElimStep(s: GameState, seat: number, a: Action): GameState {
 
   if (ph.step === "dying") {
     // (designer 2026-10-09, later) the same dying power for both sides: give 1 vote to a living player, or to nobody
-    if (a.type !== "gift") throw new RuleError("Give 1 vote to a living player, or to nobody");
+    // (designer 2026-11-16, rule sheet) an out player MUST give an extra vote; it is used once, and a new gift takes
+    // the old one away — only one extra vote is ever out on the table
+    if (a.type !== "gift") throw new RuleError("Give your extra vote to a living player");
+    if (a.target === null && living(s).length > 0) throw new RuleError("Give your extra vote to a living player");
     if (a.target !== null) {
       const t = P(s, a.target);
       if (!t.alive) throw new RuleError("Give it to a living player");
+      if (s.giftTo !== undefined && s.giftTo !== null) {
+        const old = s.players[s.giftTo];
+        if (old && old.alive && old.votes > 1) { old.votes -= 1; emit(s, "gift_lost", "all", `${old.name} loses the extra vote.`, { seat: old.seat }); }
+      }
+      s.giftTo = t.seat;
       t.votes += 1;
       emit(s, "gift", "all", `${p.name} gives 1 vote to ${t.name} — ${t.votes} votes in their next vote, then back to 1.`, { seat, target: t.seat });
     } else emit(s, "gift", "all", `${p.name} gives the vote to nobody.`, { seat, target: null });

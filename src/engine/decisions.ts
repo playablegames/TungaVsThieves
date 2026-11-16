@@ -72,7 +72,7 @@ export function defaultAction(s: GameState, seat: number): Action {
       const others = living(s).map((p) => p.seat).filter((x) => x !== seat);
       if (ph.step === "handoff") return { type: "handoff", target: others[0] };
       if (ph.step === "dal_badal") return { type: "dal_badal", seats: [], pass: [] }; // keep it
-      return { type: "gift", target: null };
+      return { type: "gift", target: others.length ? others[0] : null };
     }
     case "react": return { type: "ready" }; // let it happen
     case "pass_on": return { type: "pass", pass: plannedPass(s, seat) ?? stonesLast(h, passSize(h)) };
@@ -168,7 +168,7 @@ export function randomAction(s: GameState, seat: number, r: R, activity = 0.8, k
     case "elim": {
       if (ph.step === "handoff") return { type: "handoff", target: pick(r, others) };
       if (ph.step === "dal_badal") return { type: "dal_badal", seats: r() < 0.5 ? sample(r, others, dalBadalPick(s, seat)) : [], pass: [] };
-      return { type: "gift", target: r() < 0.2 ? null : pick(r, others) };
+      return { type: "gift", target: others.length ? pick(r, others) : null };
     }
     default: throw new Error("No decision");
   }

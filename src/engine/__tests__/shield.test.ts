@@ -21,7 +21,7 @@ describe("Dal Badal as a shield", () => {
     let n = apply(s, 0, { type: "play", card: "TEER_KAMAN", pass: [F, K, H], target: 1, roles: [thiefRole] });
     expect(n.phase).toMatchObject({ kind: "react", seat: 1 });
     expect(n.events.some((e) => e.type === "teer_kaman")).toBe(false); // not resolved yet
-    n = pickAll(apply(n, 1, { type: "dal_badal", seats: [2, 3], pass: [] }));
+    n = pickAll(apply(n, 1, { type: "dal_badal", seats: [2, 3, 4], pass: [] }));
     const shot = n.events.find((e) => e.type === "teer_kaman")!;
     expect(shot.data!.hit).toBe(n.players[1].role === thiefRole || (shot.data!.roles as string[]).includes(n.players[1].role));
     expect(n.players[1].hand).not.toContain("DAL_BADAL");
@@ -36,7 +36,7 @@ describe("Dal Badal as a shield", () => {
     const s = shielded(rig(5, { sides: ["V", "T", "V", "V", "T"], hands: [[K, K, F, T, H], [DB, B], [F], [T], [K]] }));
     let n = apply(s, 0, { type: "play", card: "KUNDLI", pass: [F, T, H], target: 1 });
     expect(n.phase).toMatchObject({ kind: "react", seat: 1 });
-    n = pickAll(apply(n, 1, { type: "dal_badal", seats: [0, 2], pass: [] }));
+    n = pickAll(apply(n, 1, { type: "dal_badal", seats: [0, 2, 3], pass: [] }));
     const read = n.events.find((e) => e.type === "kundli_private" && Array.isArray(e.to) && e.to[0] === 0)!;
     expect(read.data!.role).toBe(n.players[1].role);
   });
@@ -46,7 +46,7 @@ describe("Dal Badal as a shield", () => {
     for (const v of [0, 1, 2, 3, 4]) n = apply(n, v, { type: "ready" });
     for (const v of [0, 1, 2, 3, 4]) n = apply(n, v, { type: "vote", target: v === 1 ? 0 : 1 });
     expect(n.phase).toMatchObject({ kind: "react", seat: 1 });
-    n = pickAll(apply(n, 1, { type: "dal_badal", seats: [2, 3], pass: [] }));
+    n = pickAll(apply(n, 1, { type: "dal_badal", seats: [2, 3, 4], pass: [] }));
     expect(n.players[1].alive).toBe(false);
     const priv = n.events.find((e) => e.type === "eliminated_private")!;
     expect(priv.to).toEqual([0]);
@@ -55,7 +55,7 @@ describe("Dal Badal as a shield", () => {
   it("any debate: a thief may use it in a Faisla debate", () => {
     const s = shielded(rig(5, { sides: ["V", "T", "V", "V", "T"], hands: [[F, F, T, K, H], [DB, B], [F], [T], [K]] }));
     let n = apply(s, 0, { type: "play", card: "FAISLA", pass: [T, K, H] });
-    n = pickAll(apply(n, 1, { type: "dal_badal", seats: [2, 3], pass: [] }));
+    n = pickAll(apply(n, 1, { type: "dal_badal", seats: [2, 3, 4], pass: [] }));
     expect(n.phase).toMatchObject({ kind: "vote", debate: true });
     expect(n.players[1].hand).toHaveLength(2); // drew back to 2
   });
