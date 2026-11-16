@@ -24,6 +24,21 @@ export default function Home() {
   return <Suspense><Entry /></Suspense>;
 }
 
+/** TEMPORARY (2026-11-16): what this phone says about its own screen, to size Home from real numbers. Remove after. */
+function ScreenInfo() {
+  const fill = (el: HTMLParagraphElement | null) => {
+    if (!el) return;
+    const probe = document.createElement("div");
+    probe.style.cssText = "position:fixed;top:0;left:0;width:0;height:100dvh;padding-bottom:env(safe-area-inset-bottom);padding-top:env(safe-area-inset-top);box-sizing:content-box;visibility:hidden";
+    document.body.appendChild(probe);
+    const cs = getComputedStyle(probe);
+    const standalone = matchMedia("(display-mode: standalone)").matches ? "app" : "browser";
+    el.textContent = `Screen ${innerWidth}x${innerHeight} · vv ${Math.round(visualViewport?.height ?? 0)} · dvh ${Math.round(parseFloat(cs.height))} · doc ${document.documentElement.clientHeight} · scr ${screen.width}x${screen.height} · safe ${cs.paddingTop}/${cs.paddingBottom} · x${devicePixelRatio} · ${standalone}`;
+    probe.remove();
+  };
+  return <p ref={fill} className="text-center text-[11px] text-moon/50" />;
+}
+
 function Entry() {
   const router = useRouter();
   const invited = (useSearchParams().get("code") ?? "").toUpperCase().slice(0, 5);
@@ -156,6 +171,7 @@ function Entry() {
           <div role="dialog" aria-label="Settings" onClick={(e) => e.stopPropagation()} className="sheet-up flex w-full max-w-md flex-col gap-3 rounded-t-3xl bg-night px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-5 shadow-[0_-12px_40px_rgba(0,0,0,.6)]">
             <MotionSettings />
             <button type="button" onClick={() => setComfort(false)} className="btn-line min-h-12 rounded-full text-[15px] font-semibold">Done</button>
+            <ScreenInfo />
           </div>
         </div>
       )}

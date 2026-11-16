@@ -18,7 +18,10 @@ export const metadata: Metadata = {
   openGraph: { title: "Tunga vs Thieves", description: "Two ancient Stones are hidden among the players. Find the thieves before they walk off with one.", type: "website" },
 };
 
-export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: "#1f1007" };
+// (2026-11-16, real-phone check) no viewportFit "cover": with it an installed app on Android drew under the phone's own
+// bottom bar while reporting no safe area, so anything at the bottom edge was hidden. The phone now keeps the page
+// inside its bars by itself.
+export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#1f1007" };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
