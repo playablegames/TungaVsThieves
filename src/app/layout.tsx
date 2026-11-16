@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Cinzel, Playfair_Display, Plus_Jakarta_Sans } from "next/font/google";
+import { Cinzel, Playfair_Display, Plus_Jakarta_Sans, Poppins } from "next/font/google";
 import "./globals.css";
 import { CrashWatch } from "@/components/CrashWatch";
 
@@ -7,6 +7,9 @@ import { CrashWatch } from "@/components/CrashWatch";
 const playfair = Playfair_Display({ variable: "--font-playfair", subsets: ["latin"], weight: ["400", "700", "900"], style: ["normal"] });
 // Cinzel: the engraved capitals on the title screen buttons
 const cinzel = Cinzel({ variable: "--font-cinzel", subsets: ["latin"], weight: ["600", "700"] });
+// (2026-11-16) THE BOX'S OWN FACES: Cinzel for titles, Poppins for everything you read or tap. Screens move to Poppins
+// one at a time as they are redesigned (Home first); Playfair and Jakarta go when the last screen has moved.
+const poppins = Poppins({ variable: "--font-poppins", subsets: ["latin"], weight: ["400", "500", "600", "700"] });
 const jakarta = Plus_Jakarta_Sans({ variable: "--font-jakarta", subsets: ["latin"], weight: ["400", "500", "700", "800"] });
 
 export const metadata: Metadata = {
@@ -19,7 +22,7 @@ export const viewport: Viewport = { width: "device-width", initialScale: 1, view
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" suppressHydrationWarning className={`${playfair.variable} ${cinzel.variable} ${jakarta.variable} h-full antialiased`}>
+    <html lang="en" suppressHydrationWarning className={`${playfair.variable} ${cinzel.variable} ${jakarta.variable} ${poppins.variable} h-full antialiased`}>
       <body className="min-h-dvh"><CrashWatch />{children}</body>
     </html>
   );

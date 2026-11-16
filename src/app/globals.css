@@ -37,6 +37,16 @@
   --color-rust-deep: #7a2e0c;
   --color-brass: #e0a24a;
   --font-sans: var(--font-jakarta), "Plus Jakarta Sans", sans-serif;
+  /* THE BOX (2026-11-16, "tunga box latest"): a moonlit night — deep navy, gold lettering, lantern light. Colours
+     sampled from the box art. Screens move onto these one at a time; the older tokens above go when the last has moved. */
+  --color-night: #041c4a;        /* the box's sky */
+  --color-night-deep: #021230;   /* below the painting, behind sheets */
+  --color-night-lift: #0c2c6b;   /* a raised surface on the night */
+  --color-boxgold: #f7bb1f;      /* the logo's gold: titles, the one main button */
+  --color-boxgold-deep: #b9770a;
+  --color-boxgold-soft: #ffe7a6; /* gold lettering at text size */
+  --color-moon: #cfe3ff;         /* quiet text on the night */
+  --font-text: var(--font-poppins), "Poppins", sans-serif;
 }
 
 html, body { overflow-x: clip; }
@@ -68,6 +78,22 @@ body {
 .btn-primary { background: linear-gradient(180deg, #e8771a 0%, #b4461c 100%); color: #fbf3e1; border-color: #f3c66b;
   box-shadow: inset 0 1px 0 rgba(255,236,200,.45), 0 6px 14px -6px rgba(0,0,0,.85); text-shadow: 0 1px 0 rgba(90,30,8,.6); }
 .btn-primary:active { transform: translateY(1px); box-shadow: inset 0 1px 0 rgba(255,236,200,.3), 0 3px 8px -4px rgba(0,0,0,.85); }
+/* THE BOX BUTTONS (2026-11-16): gold = the one main action on a screen; outline = everything else. A press sinks 3%
+   (a button must answer the finger), 140 ms, strong ease-out; no pulsing. */
+.btn-gold, .btn-line { transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1); }
+.btn-gold { background: linear-gradient(180deg, #ffd24a 0%, var(--color-boxgold) 55%, #e59c10 100%); color: #2a1503;
+  box-shadow: inset 0 1px 0 rgba(255, 244, 200, .7), inset 0 -2px 0 rgba(140, 80, 0, .35), 0 8px 20px -8px rgba(0, 0, 0, .8); }
+.btn-line { border: 1.5px solid color-mix(in srgb, var(--color-boxgold) 70%, transparent); color: var(--color-boxgold-soft); background: rgba(2, 18, 48, .55); }
+.btn-gold:active, .btn-line:active { transform: scale(.97); }
+.btn-gold:disabled, .btn-line:disabled { opacity: .45; }
+.btn-gold:focus-visible, .btn-line:focus-visible, .box-focus:focus-visible { outline: 2px solid #fff3c4; outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) { .btn-gold, .btn-line { transition: none; } .btn-gold:active, .btn-line:active { transform: none; } }
+[data-motion="reduced"] .btn-gold:active, [data-motion="reduced"] .btn-line:active { transform: none; }
+/* a sheet rising from the bottom edge: its own height, 240 ms, the drawer curve */
+@keyframes sheet-up { from { transform: translateY(100%); } to { transform: none; } }
+.sheet-up { animation: sheet-up 240ms cubic-bezier(0.32, 0.72, 0, 1) both; }
+@media (prefers-reduced-motion: reduce) { .sheet-up { animation: stage-in 150ms linear both; } }
+[data-motion="reduced"] .sheet-up { animation: stage-in 150ms linear both; }
 /* NUDGE (designer 2026-10-13; research: one primary action per screen stands out by contrast — the isolation effect).
    GREEN = "this is your next step" or "you have something new". Never on a lethal or irreversible move, never a fake
    countdown (CCPA dark-pattern guidelines 2023: no false urgency, no nagging). It stops the moment it's used. */

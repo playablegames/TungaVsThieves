@@ -78,122 +78,107 @@ function Entry() {
   }
 
   return (
-    <main className="relative mx-auto flex min-h-dvh max-w-md flex-col items-center px-6 pb-10 pt-[9dvh]">
-      {/* firelit brown wash behind the emblem — this screen only */}
-      <div aria-hidden className="fixed inset-0 -z-10 bg-[radial-gradient(90%_55%_at_50%_30%,var(--color-ember-2)_0%,var(--color-ember)_65%,#120903_100%)]" />
+    <main className="relative mx-auto flex min-h-dvh max-w-md flex-col items-center px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] font-[family-name:var(--font-text)]">
+      {/* the box's night sky behind everything — this screen only */}
+      <div aria-hidden className="fixed inset-0 -z-10 bg-night-deep" />
 
       <h1 className="sr-only">Tunga vs Thieves</h1>
-      {/* THE COVER, ALIVE (designer: "the cover = the home screen"; 2026-10-13): the box art with a slow cinematic push-in,
-          the two Stones glowing on the shrine steps, dust drifting up through the light, the emblem in the sky */}
-      <div aria-hidden className="relative -mx-6 -mt-[9dvh] aspect-[1060/1484] w-[calc(100%+3rem)] overflow-hidden">
+      {/* THE BOX FRONT (2026-11-16, "tunga box latest"): the night painting with a slow push-in, the two Stones glowing on
+          the shrine, fireflies drifting up, and the box's own gold logo in the sky where the box has it */}
+      <div aria-hidden className="relative -mx-5 aspect-[1064/1478] w-[calc(100%+2.5rem)] overflow-hidden">
         {/* eslint-disable-next-line @next/next/no-img-element -- static art */}
-        <img src="/art/cover.webp" alt="" fetchPriority="high" decoding="async" className="cover-pushin absolute inset-0 h-full w-full object-cover" />
-        <span className="stone-glow" style={{ left: "42.5%", top: "70%", ["--g" as string]: "90,140,255" }} />
-        <span className="stone-glow" style={{ left: "58%", top: "70%", ["--g" as string]: "255,170,60", animationDelay: "-1.3s" }} />
-        {Array.from({ length: 16 }, (_, i) => (
+        <img src="/art/cover-night.webp" alt="" fetchPriority="high" decoding="async" className="cover-pushin absolute inset-0 h-full w-full object-cover" />
+        <span className="stone-glow" style={{ left: "43%", top: "70%", ["--g" as string]: "255,190,60" }} />
+        <span className="stone-glow" style={{ left: "56%", top: "70%", ["--g" as string]: "90,150,255", animationDelay: "-1.3s" }} />
+        {Array.from({ length: 12 }, (_, i) => (
           <span key={i} className="dust-mote" style={{ left: `${(i * 37 + 11) % 96}%`, top: `${40 + ((i * 23) % 50)}%`, animationDuration: `${9 + (i % 5) * 2}s`, animationDelay: `${-i * 1.1}s` }} />
         ))}
-        <div className="absolute inset-x-0 bottom-0 h-[28%] bg-gradient-to-b from-transparent to-[#120903]" />
-        {/* the title in the sky (the emblem card covered the villagers — screen check 2026-10-13) */}
-        <p className="cover-title absolute inset-x-0 top-[3%] text-center font-[family-name:var(--font-engraved)] font-black uppercase leading-[.95] text-[#ffe2a3]">
-          <span className="block text-[clamp(30px,10vw,44px)] tracking-[0.08em]">Tunga</span>
-          <span className="block text-[clamp(13px,4vw,18px)] tracking-[0.4em] text-[#f3c66b]">vs</span>
-          <span className="block text-[clamp(30px,10vw,44px)] tracking-[0.08em]">Thieves</span>
-        </p>
+        <div className="absolute inset-x-0 bottom-0 h-[30%] bg-gradient-to-b from-transparent via-night-deep/80 to-night-deep" />
+        {/* eslint-disable-next-line @next/next/no-img-element -- static art */}
+        <img src="/art/logo-gold.webp" alt="" decoding="async" className="absolute left-[25%] top-[max(2.5%,env(safe-area-inset-top))] w-[50%] drop-shadow-[0_6px_14px_rgba(0,8,30,.75)]" />
       </div>
 
-      <div className="-mt-6 flex w-full flex-col gap-7">
+      <div className="-mt-[22%] flex w-full flex-col gap-3">
         {newHere && !invited && (
-          <div className="stage-in -mb-2 rounded-2xl border-2 border-[#f0a32e]/80 bg-[#2a1a08] p-3 text-center">
-            <p className="text-[15px] text-stock">New here? Learn in a short guided game against bots.</p>
-            <div className="mt-2 flex items-center justify-center gap-5">
-              <button type="button" onClick={() => choose("learn")} className="nudge min-h-11 rounded-full bg-[#f0a32e] px-5 text-[14px] font-bold uppercase tracking-wide text-card-ink">Learn by playing</button>
-              <button type="button" onClick={skipLearn} className="min-h-11 text-[14px] text-stock/70 underline underline-offset-2">Skip</button>
-            </div>
+          <div className="stage-in flex items-center rounded-2xl bg-stock text-card-ink shadow-[0_10px_24px_-10px_rgba(0,0,0,.9)]">
+            <button type="button" onClick={() => choose("learn")} className="box-focus flex min-h-16 flex-1 items-center gap-3 rounded-l-2xl py-2 pl-4 pr-2 text-left">
+              <span className="flex-1">
+                <span className="block text-[13px] font-medium text-card-ink/70">First time here?</span>
+                <span className="block text-[17px] font-semibold leading-tight">Learn by playing</span>
+              </span>
+              <svg aria-hidden viewBox="0 0 24 24" className="size-5 shrink-0 fill-none stroke-current stroke-[2.4]"><path d="M9 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            </button>
+            <button type="button" onClick={skipLearn} className="box-focus min-h-16 rounded-r-2xl border-l border-card-ink/15 px-4 text-[14px] font-medium text-card-ink/70">Skip</button>
           </div>
         )}
         <button type="button" disabled={busy || (!!invited && !codeOk)} onClick={() => choose(invited ? "join" : "create")}
-          className="relative flex min-h-16 w-full items-center justify-center rounded-full border-2 border-brass/80 btn-primary px-12 font-[family-name:var(--font-engraved)] text-[21px] font-bold uppercase tracking-[0.12em] text-stock shadow-[inset_0_1px_0_rgba(255,220,170,.35),0_10px_30px_-8px_rgba(0,0,0,.7)] transition-transform active:translate-y-px disabled:opacity-50">
+          className="btn-gold flex min-h-14 w-full items-center justify-center whitespace-nowrap rounded-full px-6 text-[18px] font-semibold">
           {invited ? `Join table ${invited}` : "Play with friends"}
-          <svg aria-hidden viewBox="0 0 24 24" className="absolute right-6 size-6 fill-none stroke-stock stroke-2"><path d="M9 5l7 7-7 7" /></svg>
+        </button>
+        <button type="button" disabled={busy} onClick={() => choose(invited ? "create" : "bots")}
+          className="btn-line flex min-h-[52px] w-full items-center justify-center whitespace-nowrap rounded-full px-6 text-[16px] font-semibold">
+          {invited ? "Start my own table" : "Play with bots"}
         </button>
 
         {!invited && (
-          <button type="button" disabled={busy} onClick={() => choose("bots")}
-            className="-mt-3 flex min-h-14 w-full items-center justify-center gap-2 rounded-full border-2 border-brass/80 bg-black/40 font-[family-name:var(--font-engraved)] text-[18px] font-bold uppercase tracking-[0.12em] text-stock active:translate-y-px disabled:opacity-50">
-            <span aria-hidden>🤖</span> Play with bots
-          </button>
-        )}
-
-        <div className="flex items-center gap-3 font-[family-name:var(--font-engraved)] text-[13px] font-semibold uppercase tracking-[0.2em] text-stock/85">
-          <span className="h-px flex-1 bg-brass/50" /><span aria-hidden className="text-brass">◇</span>
-          {invited ? "or start your own" : "or join friends"}
-          <span aria-hidden className="text-brass">◇</span><span className="h-px flex-1 bg-brass/50" />
-        </div>
-
-        {invited ? (
-          <button type="button" disabled={busy} onClick={() => choose("create")}
-            className="min-h-14 rounded-2xl border border-brass/70 bg-black/40 font-[family-name:var(--font-engraved)] text-[15px] font-semibold uppercase tracking-[0.25em] text-stock active:translate-y-px disabled:opacity-50">
-            Create a table
-          </button>
-        ) : (
-          <div className="flex gap-4">
-            <label htmlFor="code" className="sr-only">Table code</label>
+          <div className="mt-2 flex items-center gap-2">
+            <label htmlFor="code" className="shrink-0 text-[14px] text-moon/80">Have a code?</label>
             <input id="code" value={code} maxLength={5} onChange={(e) => setCode(e.target.value.toUpperCase())}
               onKeyDown={(e) => { if (e.key === "Enter" && code.trim().length === 5) choose("join"); }}
-              placeholder="CODE" autoCapitalize="characters" autoComplete="off" spellCheck={false}
-              className="min-h-14 w-0 flex-1 rounded-2xl border-2 border-brass/80 bg-black/40 text-center font-[family-name:var(--font-engraved)] text-[17px] font-semibold uppercase tracking-[0.25em] text-stock caret-brass outline-none placeholder:text-stock/80 focus:border-brass" />
+              placeholder="ABCDE" autoCapitalize="characters" autoComplete="off" spellCheck={false}
+              className="box-focus min-h-12 w-0 flex-1 rounded-xl border border-moon/30 bg-night/70 text-center text-[16px] font-semibold uppercase tracking-[0.3em] text-white caret-boxgold outline-none placeholder:font-normal placeholder:text-moon/35 focus:border-boxgold" />
             <button type="button" disabled={busy || !codeOk} onClick={() => choose("join")}
-              className="min-h-14 flex-1 rounded-2xl border-2 border-brass/80 bg-black/40 font-[family-name:var(--font-engraved)] text-[15px] font-semibold uppercase tracking-[0.25em] text-stock transition active:translate-y-px disabled:border-brass/30 disabled:text-stock/45">
+              className="btn-line min-h-12 shrink-0 rounded-xl px-5 text-[15px] font-semibold">
               Join
             </button>
           </div>
         )}
 
-        {error && !ask && <p role="alert" className="rounded-xl bg-crimson-deep p-3 text-center text-[14px]">{error}</p>}
-        <div className="flex items-center justify-center gap-2">
-          <button type="button" onClick={() => setRules(true)} className="min-h-11 px-4 text-[15px] font-semibold text-brass underline underline-offset-4">How to play</button>
-          <button type="button" onClick={() => setComfort(true)} className="min-h-11 px-3 text-[13px] text-stock/60 underline underline-offset-4">Motion &amp; comfort</button>
-          <a href="/privacy" className="min-h-11 px-3 py-2.5 text-[13px] text-stock/60 underline underline-offset-4">Privacy</a>
-        </div>
+        {error && !ask && <p role="alert" className="rounded-xl bg-crimson-deep p-3 text-center text-[14px] text-white">{error}</p>}
+        <nav className="mt-1 flex items-center justify-between text-[14px] text-moon/75">
+          <button type="button" onClick={() => setRules(true)} className="box-focus min-h-11 whitespace-nowrap rounded-lg px-2 font-medium text-boxgold-soft">How to play</button>
+          <button type="button" onClick={() => setComfort(true)} className="box-focus min-h-11 whitespace-nowrap rounded-lg px-2">Settings</button>
+          <a href="/privacy" className="box-focus flex min-h-11 items-center whitespace-nowrap rounded-lg px-2">Privacy</a>
+        </nav>
       </div>
       {comfort && (
-        <div className="fixed inset-0 z-30 flex items-end justify-center bg-black/60" onClick={() => setComfort(false)}>
-          <div role="dialog" aria-label="Motion and comfort" onClick={(e) => e.stopPropagation()} className="stage-in flex w-full max-w-md flex-col gap-3 rounded-t-3xl border-t-2 border-brass/70 bg-ember px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-5">
+        <div className="fixed inset-0 z-30 flex items-end justify-center bg-night-deep/70" onClick={() => setComfort(false)}>
+          <div role="dialog" aria-label="Settings" onClick={(e) => e.stopPropagation()} className="sheet-up flex w-full max-w-md flex-col gap-3 rounded-t-3xl bg-night px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-5 shadow-[0_-12px_40px_rgba(0,0,0,.6)]">
             <MotionSettings />
-            <button type="button" onClick={() => setComfort(false)} className="min-h-12 rounded-full border-2 border-brass/70 text-[14px] font-bold uppercase tracking-wide text-stock">Done</button>
+            <button type="button" onClick={() => setComfort(false)} className="btn-line min-h-12 rounded-full text-[15px] font-semibold">Done</button>
           </div>
         </div>
       )}
       {rules && <HowToPlay onClose={() => setRules(false)} onLearn={() => { setRules(false); choose("learn"); }} />}
 
       {ask && (
-        <div className="fixed inset-0 z-20 flex items-end justify-center bg-black/60" onClick={() => !busy && setAsk(null)}>
+        <div className="fixed inset-0 z-20 flex items-end justify-center bg-night-deep/70" onClick={() => !busy && setAsk(null)}>
+          {/* a sheet of card stock: cream, brown ink — the printed card's own colours */}
           <form role="dialog" aria-labelledby="name-title" onClick={(e) => e.stopPropagation()}
             onSubmit={(e) => { e.preventDefault(); void go(); }}
-            className="stage-in flex w-full max-w-md flex-col gap-4 rounded-t-3xl border-t-2 border-brass/70 bg-ember px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-6">
-            <h2 id="name-title" className="text-center font-[family-name:var(--font-engraved)] text-[15px] font-semibold uppercase tracking-[0.2em] text-stock">
-              {ask === "join" ? `Joining ${code.trim().toUpperCase()}` : "What do they call you?"}
+            className="sheet-up flex w-full max-w-md flex-col gap-4 rounded-t-3xl bg-stock px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-6 font-[family-name:var(--font-text)] text-card-ink shadow-[0_-12px_40px_rgba(0,0,0,.6)]">
+            <h2 id="name-title" className="text-[20px] font-semibold leading-tight">
+              {ask === "join" ? `Joining table ${code.trim().toUpperCase()}` : "What do they call you?"}
             </h2>
             <label htmlFor="name" className="sr-only">Your name</label>
             <input id="name" ref={nameRef} value={name} maxLength={20} onChange={(e) => setName(e.target.value)} placeholder="Your name" autoComplete="nickname"
-              className="min-h-14 rounded-2xl border-2 border-brass/80 bg-black/40 px-4 text-center text-[17px] text-stock caret-brass outline-none placeholder:text-stock/40" />
+              className="min-h-14 rounded-xl border-[1.5px] border-card-ink/30 bg-white/60 px-4 text-[17px] font-medium text-card-ink caret-marigold-deep outline-none placeholder:font-normal placeholder:text-card-ink/40 focus:border-marigold-deep" />
             {ask === "bots" && (
-              <div className="flex items-center justify-between gap-3 rounded-2xl border-2 border-brass/50 bg-black/30 px-3 py-2">
+              <div className="flex items-center justify-between gap-3 rounded-xl border-[1.5px] border-card-ink/20 px-2 py-2">
                 <button type="button" aria-label="One bot fewer" disabled={busy || bots <= BOTS_MIN} onClick={() => setBots((b) => Math.max(BOTS_MIN, b - 1))}
-                  className="size-12 rounded-full border-2 border-brass/70 text-[24px] font-bold text-stock disabled:opacity-30">−</button>
-                <p className="text-center text-stock" aria-live="polite">
-                  <span className="block font-display text-[22px] font-bold leading-tight">{bots} bots</span>
-                  <span className="text-[13px] text-stock/70">{bots + 1} players</span>
+                  className="size-12 rounded-full border-[1.5px] border-card-ink/40 text-[24px] font-medium transition-transform duration-150 active:scale-95 disabled:opacity-30">−</button>
+                <p className="text-center" aria-live="polite">
+                  <span className="block text-[20px] font-semibold leading-tight tabular-nums">{bots} bots</span>
+                  <span className="text-[13px] text-card-ink/70">{bots + 1} players at the table</span>
                 </p>
                 <button type="button" aria-label="One bot more" disabled={busy || bots >= BOTS_MAX} onClick={() => setBots((b) => Math.min(BOTS_MAX, b + 1))}
-                  className="size-12 rounded-full border-2 border-brass/70 text-[24px] font-bold text-stock disabled:opacity-30">+</button>
+                  className="size-12 rounded-full border-[1.5px] border-card-ink/40 text-[24px] font-medium transition-transform duration-150 active:scale-95 disabled:opacity-30">+</button>
               </div>
             )}
-            {error && <p role="alert" className="rounded-xl bg-crimson-deep p-3 text-center text-[14px]">{error}</p>}
+            {error && <p role="alert" className="rounded-xl bg-crimson-deep p-3 text-center text-[14px] text-white">{error}</p>}
             <button type="submit" disabled={busy || !name.trim()}
-              className="min-h-14 rounded-full border-2 border-brass/80 btn-primary font-[family-name:var(--font-engraved)] text-[17px] font-bold uppercase tracking-[0.12em] text-stock active:translate-y-px disabled:opacity-50">
-              {busy ? "…" : ask === "create" ? "Open the table" : ask === "bots" || ask === "learn" ? "Start the game" : "Take a seat"}
+              className="btn-gold min-h-14 whitespace-nowrap rounded-full text-[17px] font-semibold">
+              {busy ? "One moment…" : ask === "create" ? "Open the table" : ask === "bots" || ask === "learn" ? "Start the game" : "Take a seat"}
             </button>
           </form>
         </div>
