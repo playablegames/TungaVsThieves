@@ -8,8 +8,8 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "Two ancient Stones, hidden thieves — play on your phones with your group.",
     start_url: "/",
     display: "standalone",
-    background_color: "#1f1007",
-    theme_color: "#1f1007",
+    background_color: "#021230", // (2026-11-16) the box's night: the installed app's bottom bar and splash
+    theme_color: "#021230",
     icons: [{ src: "/icon.png", sizes: "192x192", type: "image/png" }, { src: "/icon-512.webp", sizes: "512x512", type: "image/webp" }],
   };
 }
