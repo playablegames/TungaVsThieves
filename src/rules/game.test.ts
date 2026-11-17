@@ -8,8 +8,8 @@ import { int } from "@/engine/rng";
 const names = (n: number) => Array.from({ length: n }, (_, i) => `P${i}`);
 const turnSeat = (s: State) => (s.phase.kind === "turn" ? s.phase.seat : -1);
 /** a state at the start of someone's turn, with their 5 cards set by hand */
-function at(n: number, hand: Card[], seed = 1, anytime = false) {
-  const s = newGame(names(n), seed, { dalBadalAnytime: anytime });
+function at(n: number, hand: Card[], seed = 1) {
+  const s = newGame(names(n), seed);
   const me = turnSeat(s);
   s.players[me].hand = [...hand];
   return { s, me };
@@ -201,9 +201,9 @@ describe("3 · action cards", () => {
 });
 
 describe("4 · Dal Badal", () => {
-  const thiefTurn = (n: number, anytime = false) => {
+  const thiefTurn = (n: number) => {
     for (let seed = 1; seed < 500; seed++) {
-      const { s, me } = at(n, ["DAL_BADAL", "FAISLA", "KUNDLI", "TALASHI", "TUNGA_STONE"], seed, anytime);
+      const { s, me } = at(n, ["DAL_BADAL", "FAISLA", "KUNDLI", "TALASHI", "TUNGA_STONE"], seed);
       if (s.players[me].side === "T") return { s, me };
     }
     throw new Error("no thief start");
@@ -243,18 +243,15 @@ describe("4 · Dal Badal", () => {
       return;
     }
   });
-  it("balance (A) own turn only · (B) also out of turn", () => {
-    for (const anytime of [false, true]) {
-      for (let seed = 1; seed < 300; seed++) {
-        const s = newGame(names(6), seed, { dalBadalAnytime: anytime });
-        const me = turnSeat(s);
-        const thief = s.players.find((p) => p.side === "T" && p.seat !== me)!;
-        thief.hand = ["DAL_BADAL", "FAISLA"];
-        const o = living(s).filter((p) => p.seat !== thief.seat).slice(0, 3).map((p) => p.seat);
-        if (anytime) { const t = move(s, thief.seat, { kind: "dal_badal", targets: o }); expect(t.players[thief.seat].hand.length).toBe(2); }
-        else expect(() => move(s, thief.seat, { kind: "dal_badal", targets: o })).toThrow();
-        break;
-      }
+  it("only on the thief's own turn (owner 2026-11-17)", () => {
+    for (let seed = 1; seed < 300; seed++) {
+      const s = newGame(names(6), seed);
+      const me = turnSeat(s);
+      const thief = s.players.find((p) => p.side === "T" && p.seat !== me)!;
+      thief.hand = ["DAL_BADAL", "FAISLA"];
+      const o = living(s).filter((p) => p.seat !== thief.seat).slice(0, 3).map((p) => p.seat);
+      expect(() => move(s, thief.seat, { kind: "dal_badal", targets: o })).toThrow();
+      break;
     }
   });
 });
@@ -398,30 +395,12 @@ describe("talk + Teer Kaman aim", () => {
     t = move(t, o[1], { kind: "say", talk: { t: "react", emoji: "cry" } }); // out, still talks
     expect(t.events.at(-1)!.data!.seat).toBe(o[1]);
   });
-  it("(B) a thief being aimed at may Dal Badal before the shot; the shot checks the NEW role", () => {
-    for (let seed = 1; seed < 400; seed++) {
-      const s = newGame(names(8), seed, { dalBadalAnytime: true });
-      const me = turnSeat(s);
-      const thief = s.players.find((p) => p.side === "T" && p.seat !== me);
-      if (!thief || s.players[me].side !== "V") continue;
-      s.players[me].hand = ["TEER_KAMAN", "TEER_KAMAN", "FAISLA", "KUNDLI", "TALASHI"];
-      thief.hand = ["DAL_BADAL", "FAISLA"];
-      const oldRole = thief.role;
-      let t = move(s, me, { kind: "teer_kaman", target: thief.seat });
-      const vills = living(t).filter((p) => p.side === "V" && p.seat !== me).slice(0, 3).map((p) => p.seat);
-      t = move(t, thief.seat, { kind: "dal_badal", targets: vills });
-      const other = t.rolesInPlay.find((r) => r !== oldRole && r !== t.players[thief.seat].role)!;
-      t = move(t, me, { kind: "shoot", roles: [oldRole, other] });
-      expect(t.players[thief.seat].alive).toBe(t.players[thief.seat].role !== oldRole);
-      return;
-    }
-  });
 });
 
 describe("every game, random moves", () => {
   it("cards are never lost or made; the living hold 2 between turns; every game ends", () => {
-    for (const anytime of [false, true]) for (let n = 4; n <= 12; n++) for (let g = 0; g < 120; g++) {
-      let s = newGame(names(n), g * 31 + n, { dalBadalAnytime: anytime });
+    for (let n = 4; n <= 12; n++) for (let g = 0; g < 240; g++) {
+      let s = newGame(names(n), g * 31 + n);
       let steps = 0;
       while (s.phase.kind !== "over") {
         expect(total(s)).toBe(63);

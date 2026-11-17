@@ -1,6 +1,6 @@
 // TUNGA VS THIEVES — THE RULES (rebuilt 2026-11-17 from docs/RULES_ABSOLUTE.md, nothing else).
 // Every rule carries its number from that file, e.g. [3.2]. Pure: apply(state, seat, move) -> new state or RuleError.
-//   newGame(names, seed, opts)   the deal
+//   newGame(names, seed)   the deal
 //   apply(state, seat, move)     one move
 //   waitingOn(state)             who must move now
 //   legalMoves(state, seat)      every legal move (bots, tests, timeouts)
@@ -22,10 +22,6 @@ export const TABLE: Record<number, [number, number, number]> = {
 export const VILLAGERS = ["Kisaan", "Sarpanch", "Baba", "Teacher", "Police", "Doctor", "NRI", "Deewani"];
 export const THIEVES = ["Chor", "Lootera", "Gunda", "Daku"];
 
-export interface Options {
-  /** BALANCE CHECK (owner 2026-11-17): false = (A) Dal Badal on the thief's own turn only · true = (B) any time */
-  dalBadalAnytime: boolean;
-}
 
 export interface Player { seat: number; name: string; role: string; side: Side; alive: boolean; hand: Card[] }
 
@@ -48,7 +44,6 @@ type Next = { kind: "pass"; seat: number; keep: number; draw: number } | { kind:
 export interface Event { n: number; to: "all" | number[]; type: string; msg: string; data?: Record<string, unknown> }
 
 export interface State {
-  opts: Options;
   rng: number;
   players: Player[];
   deck: Card[];
@@ -128,12 +123,12 @@ function draw(s: State, seat: number, k: number) {
 export const tkRoles = (s: State) => (s.rolesInPlay.length <= 6 ? 1 : 2);
 
 // ---------------------------------------------------------------- setup
-export function newGame(names: string[], seed: number, opts: Options = { dalBadalAnytime: false }): State {
+export function newGame(names: string[], seed: number): State {
   const n = names.length;
   if (!TABLE[n]) throw new RuleError("Tunga plays 4 to 12 players"); // [1.1]
   const [nv, nt, rounds] = TABLE[n];
   const s: State = {
-    opts, rng: seed >>> 0, players: [], deck: [], discard: [], pile: [], round: 1, rounds, played: [], extraVote: null,
+    rng: seed >>> 0, players: [], deck: [], discard: [], pile: [], round: 1, rounds, played: [], extraVote: null,
     rolesInPlay: [], phase: { kind: "turn", seat: 0 }, events: [],
   };
   // [1.4] [1.5] roles: taken in order, shuffled, one each; no powers
@@ -287,13 +282,11 @@ export function waitingOn(s: State): number[] {
   }
 }
 
-/** [4.1] [4.3] (A) on your own turn instead of a pair · (B) also any time another player is deciding or a vote is open */
+/** [4.1] [4.3] only on the thief's own turn, instead of a pair (owner 2026-11-17: "on their turn, simple") */
 export function canDalBadal(s: State, seat: number): boolean {
   const p = P(s, seat), ph = s.phase;
   if (!p.alive || p.side !== "T" || !p.hand.includes("DAL_BADAL") || living(s).length < 2) return false;
-  if (ph.kind === "turn" && ph.seat === seat) return true;
-  if (!s.opts.dalBadalAnytime) return false;
-  return ((ph.kind === "turn" || ph.kind === "pass") && ph.seat !== seat) || (ph.kind === "vote" && !(seat in ph.ballots)) || (ph.kind === "aim" && ph.shooter !== seat);
+  return ph.kind === "turn" && ph.seat === seat;
 }
 
 // ---------------------------------------------------------------- the moves

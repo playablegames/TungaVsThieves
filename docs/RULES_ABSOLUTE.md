@@ -59,10 +59,9 @@ Sources: **[P]** = the owner's 10 How-to-play pages (approved 2026-11-17) · **[
 | 4.4 | Fewer than 3 others alive: **the thief picks all of them** (e.g. 2 others left → 3 role cards shuffled). | owner |
 | 4.5 | A villager holding it can never use it; it is passed like any card. | [P] |
 
-### ⚖ Decided by balance check (owner 2026-11-17)
-**Dal Badal timing.** In the owner's mind a thief can use Dal Badal ANYTIME — out of turn, even during the final vote.
-The final rule will be set by a balance check. Candidates to measure: (A) on the thief's own turn only, as that turn's
-play (Q16) · (B) anytime, including during votes and the final vote. Elimination card flow (Q17) is also balance-subject.
+### ✅ Dal Badal timing — DECIDED (owner 2026-11-17)
+**Only on the thief's own turn**, as that turn's play (4.1, 4.3) — "just do Dal Badal on their turn, simple". Never out
+of turn, never during a vote or a Teer Kaman. Team sizes stay as 1.2 (owner 2026-11-17: 5 = 3+2, 8 = 5+3, 10 = 6+4).
 
 ## 5. Elimination
 

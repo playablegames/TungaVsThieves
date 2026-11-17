@@ -206,3 +206,15 @@ The robbed player's new 2 cards are secret — but "I drew a Stone" is a PROVABL
 1. ~~Do thieves know each other?~~ **No** (owner).
 2. ~~Stones in the draw pile?~~ Everyone knows a Stone is ALWAYS with a player or in the Procession Pile — "I drew a Stone" is a provable lie. Everyone is also told the roles in play at the start (team counts + names), so a claim of a role NOT in play is a provable lie, and two players claiming the same role means one is lying.
 3. ~~Out players talk?~~ **Yes, freely** — they just can't hold cards, play, vote or be picked.
+
+---
+
+## Bot memory and hunches (owner 2026-11-17)
+- Memory is imperfect like people's: details fade turn by turn, big moments (robbed of a Stone, accused, a Teer Kaman,
+  a Faisla) fade slowly, impressions stay; some bots are sharp, some forgetful; rarely two players get mixed up.
+- Hunches come from memory of players' ACTIONS (votes, Faisla timing, Teer Kaman targets, Stone thefts, silence when
+  accused, contradictions over time), not only from talk.
+- Nobody blabbers: a hunch is said once when it forms — and it RESURFACES at big moments (a Faisla, the final vote, a
+  Teer Kaman aim), where people bring up old suspicions again.
+- Base: the existing bot brain (deduce.ts exact deduction, fading memory, 3 skill levels, docs/BOT_LOGIC.md) moved
+  onto the new rules.
