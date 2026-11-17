@@ -46,9 +46,6 @@ function Entry() {
     document.body.style.background = NIGHT;
     return () => { if (meta && was.theme) meta.content = was.theme; document.body.style.background = was.bg; };
   }, []);
-  const [skipped, setSkipped] = useState(false);
-  const newHere = hydrated && !skipped && (() => { try { return localStorage.getItem(LEARNED) === null; } catch { return false; } })();
-  const skipLearn = () => { setSkipped(true); try { localStorage.setItem(LEARNED, "skipped"); } catch {} };
   const [rules, setRules] = useState(false);
   const [comfort, setComfort] = useState(false);
   const [name, setName] = useState("");
@@ -122,18 +119,6 @@ function Entry() {
       </div>
 
       <div className="relative z-10 -mt-[22%] flex w-full flex-col gap-3">
-        {newHere && !invited && (
-          <div className="stage-in flex items-center rounded-2xl bg-stock text-card-ink shadow-[0_10px_24px_-10px_rgba(0,0,0,.9)]">
-            <button type="button" onClick={() => choose("learn")} className="box-focus flex min-h-16 flex-1 items-center gap-3 rounded-l-2xl py-2 pl-4 pr-2 text-left">
-              <span className="flex-1">
-                <span className="block text-[13px] font-medium text-card-ink/70">First time here?</span>
-                <span className="block text-[17px] font-semibold leading-tight">Learn by playing</span>
-              </span>
-              <svg aria-hidden viewBox="0 0 24 24" className="size-5 shrink-0 fill-none stroke-current stroke-[2.4]"><path d="M9 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" /></svg>
-            </button>
-            <button type="button" onClick={skipLearn} className="box-focus min-h-16 rounded-r-2xl border-l border-card-ink/15 px-4 text-[14px] font-medium text-card-ink/70">Skip</button>
-          </div>
-        )}
         {minor && <p className="rounded-xl bg-night/80 p-3 text-center text-[14px] text-moon">Under 18: you play with bots. Tables with other people open at 18.</p>}
         {!minor && <button type="button" disabled={busy || (!!invited && !codeOk)} onClick={() => choose(invited ? "join" : "create")}
           className="btn-gold flex min-h-14 w-full items-center justify-center whitespace-nowrap rounded-full px-6 text-[18px] font-semibold">
