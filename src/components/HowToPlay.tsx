@@ -3,12 +3,27 @@
 // wording (from the rule sheet). NO animations — still art only. Swipe or tap Next.
 // (2026-11-17, "low class effort") v2: every page is built around one BIG piece of the game's own art, the words sit
 // in the middle of the screen (no empty bottom half), the box painting glows behind the title, no emoji.
-import { useRef, useState } from "react";
+import { Children, Fragment, createContext, isValidElement, useContext, useEffect, useRef, useState, type ReactElement } from "react";
+import { spring } from "@/lib/anim";
+import { motionReduced } from "@/lib/motion";
 import type { Card } from "@/engine/types";
 import { CARD } from "@/lib/cards";
 import { roleArt } from "./CardIcon";
 
 /* eslint-disable @next/next/no-img-element -- static art throughout */
+
+// (2026-11-17, "make it pop and animate as per that screen — no new concept") THE SAME SCREENS, NOW MOVING: when a page
+// comes into view its title, art and boxes spring in one after another (Remotion's spring maths, lib/anim); the art
+// then floats and its gold halo breathes. Nothing new is drawn.
+const FPS = 30;
+const Frame = createContext(0);
+const pop = (frame: number, at: number) => spring({ frame: frame - at, fps: FPS, config: { damping: 12, stiffness: 120 } });
+/** springs its children in at frame `d` */
+function Pop({ d = 0, children }: { d?: number; children: React.ReactNode }) {
+  const f = useContext(Frame);
+  const s = Math.min(1.2, pop(f, d));
+  return <div style={{ opacity: Math.min(1, s * 1.4), transform: `translateY(${(1 - s) * 28}px) scale(${0.92 + 0.08 * s})` }}>{children}</div>;
+}
 
 const ART: Partial<Record<Card, string>> = {
   TALASHI: "/art/v2/talashi-art.webp", HERA_PHERI: "/art/v2/hera_pheri-art.webp", KUNDLI: "/art/v2/kundli-art.webp",
@@ -17,33 +32,42 @@ const ART: Partial<Record<Card, string>> = {
 };
 
 /** a piece of art on a soft gold halo */
-const Halo = ({ src, size = 200, alt = "" }: { src: string; size?: number; alt?: string }) => (
-  <div className="relative grid place-items-center" style={{ width: size, height: size }}>
-    <div className="absolute inset-[8%] rounded-full bg-[radial-gradient(circle,rgba(247,187,31,.28)_0%,rgba(247,187,31,.08)_45%,transparent_70%)]" />
-    <img src={src} alt={alt} className="relative max-h-full max-w-full object-contain drop-shadow-[0_14px_22px_rgba(0,0,0,.6)]" />
-  </div>
+function Halo({ src, size = 200, alt = "" }: { src: string; size?: number; alt?: string }) {
+  const f = useContext(Frame);
+  const s = pop(f, 4);
+  const seed = src.length;
+  return (
+    <div className="relative grid place-items-center" style={{ width: size, height: size }}>
+      <div className="absolute inset-[2%] rounded-full bg-[radial-gradient(circle,rgba(247,187,31,.55)_0%,rgba(247,187,31,.16)_42%,transparent_70%)]"
+        style={{ opacity: Math.min(1, s) * (0.75 + 0.25 * Math.sin(f / 14 + seed)), transform: `scale(${0.9 + 0.1 * Math.sin(f / 14 + seed)})` }} />
+      <img src={src} alt={alt} className="relative max-h-full max-w-full object-contain drop-shadow-[0_16px_24px_rgba(0,0,0,.75)]"
+        style={{ transform: `translateY(${Math.sin(f / 18 + seed) * 5}px) scale(${Math.min(1.15, s)}) rotate(${(1 - Math.min(1, s)) * -12}deg)` }} />
+    </div>
+  );
+}
+function Role({ r, w = 128 }: { r: string; w?: number }) {
+  const f = useContext(Frame);
+  return <img src={roleArt(r)!} alt={r} className="rounded-xl shadow-[0_18px_30px_-12px_rgba(0,0,0,.95),0_0_24px_rgba(247,187,31,.35)] ring-2 ring-boxgold/70"
+    style={{ width: w, transform: `translateY(${Math.sin(f / 18 + r.length) * 4}px)` }} />;
+}
+const Panel = ({ children }: { children: React.ReactNode }) => (
+  <div className={`rounded-2xl border p-4 border-boxgold/60 bg-night-lift/80 shadow-[0_10px_26px_-12px_rgba(0,0,0,.9)]`}>{children}</div>
 );
-const Role = ({ r, w = 128 }: { r: string; w?: number }) => (
-  <img src={roleArt(r)!} alt={r} className="rounded-xl shadow-[0_18px_30px_-12px_rgba(0,0,0,.95)] ring-1 ring-boxgold/40" style={{ width: w }} />
-);
-const Panel = ({ children, tone = "gold" }: { children: React.ReactNode; tone?: "gold" | "red" }) => (
-  <div className={`rounded-2xl border p-4 ${tone === "red" ? "border-crimson-soft/40 bg-[#2a0d1c]/70" : "border-boxgold/35 bg-night/75"}`}>{children}</div>
-);
-const Label = ({ children, tone = "gold" }: { children: React.ReactNode; tone?: "gold" | "red" }) => (
-  <p className={`text-[12px] font-bold uppercase tracking-[0.18em] ${tone === "red" ? "text-crimson-soft" : "text-boxgold"}`}>{children}</p>
+const Label = ({ children }: { children: React.ReactNode }) => (
+  <p className={`text-[12px] font-bold uppercase tracking-[0.18em] text-boxgold`}>{children}</p>
 );
 const Big = ({ children }: { children: React.ReactNode }) => <p className="text-center text-[19px] leading-[1.45] text-white">{children}</p>;
 const Gold = ({ children }: { children: React.ReactNode }) => <b className="font-semibold text-boxgold-soft">{children}</b>;
 
 /** one action card: its art on a medallion, the name, one line */
 const ActionCard = ({ c, children }: { c: Card; children: React.ReactNode }) => (
-  <div className="flex items-center gap-4 rounded-2xl border border-boxgold/25 bg-night/70 p-3 pr-4">
-    <div className="grid size-[84px] shrink-0 place-items-center rounded-full bg-[radial-gradient(circle,#123a7a_0%,#061d47_70%)] ring-2 ring-boxgold/60">
+  <div className="flex items-center gap-4 rounded-2xl border border-boxgold/60 bg-night-lift/80 shadow-[0_10px_26px_-12px_rgba(0,0,0,.9)] p-3 pr-4">
+    <div className="grid size-[84px] shrink-0 place-items-center rounded-full bg-night ring-2 ring-boxgold shadow-[0_0_18px_rgba(247,187,31,.45)]">
       <img src={ART[c]} alt="" className="size-[68px] object-contain drop-shadow-[0_6px_10px_rgba(0,0,0,.6)]" />
     </div>
     <div className="flex-1">
-      <p className="font-[family-name:var(--font-display)] text-[20px] font-bold leading-tight text-boxgold">{CARD[c].name}</p>
-      <p className="mt-0.5 text-[15px] leading-snug text-moon">{children}</p>
+      <p className="font-[family-name:var(--font-engraved)] text-[20px] font-bold leading-tight text-boxgold">{CARD[c].name}</p>
+      <p className="mt-0.5 text-[15px] leading-snug text-white">{children}</p>
     </div>
   </div>
 );
@@ -55,7 +79,7 @@ const PAGES: { title: string; body: React.ReactNode }[] = [
       <>
         <div className="flex items-center justify-center -space-x-6"><Halo src={ART.STONE_2!} size={170} alt="Tunga Stone" /><Halo src={ART.STONE_1!} size={170} alt="Bhadra Stone" /></div>
         <Panel><Label>Team Tunga</Label><p className="mt-1 text-[17px] leading-snug">Villagers win by holding <Gold>both Stones</Gold> at the end of the game.</p></Panel>
-        <Panel tone="red"><Label tone="red">Team Thieves</Label><p className="mt-1 text-[17px] leading-snug">Thieves win by holding <Gold>either one of the Stones</Gold> at the end of the game.</p></Panel>
+        <Panel><Label>Team Thieves</Label><p className="mt-1 text-[17px] leading-snug">Thieves win by holding <Gold>either one of the Stones</Gold> at the end of the game.</p></Panel>
       </>
     ),
   },
@@ -65,8 +89,8 @@ const PAGES: { title: string; body: React.ReactNode }[] = [
       <>
         <div className="flex items-center justify-center gap-3">
           <div className="flex -rotate-6 flex-col items-center gap-2"><Role r="Kisaan" /><Label>Team Tunga</Label></div>
-          <span className="font-[family-name:var(--font-display)] text-[22px] italic text-moon/60">or</span>
-          <div className="flex rotate-6 flex-col items-center gap-2"><Role r="Chor" /><Label tone="red">Team Thieves</Label></div>
+          <span className="font-[family-name:var(--font-engraved)] text-[22px] italic text-moon/60">or</span>
+          <div className="flex rotate-6 flex-col items-center gap-2"><Role r="Chor" /><Label>Team Thieves</Label></div>
         </div>
         <Big>At the start of the game, you get a <Gold>secret role</Gold>. You are either on Team Tunga or on Team Thieves.</Big>
       </>
@@ -79,8 +103,8 @@ const PAGES: { title: string; body: React.ReactNode }[] = [
         <Big>The number of rounds depends on how many people play.</Big>
         <div className="grid grid-cols-3 gap-2">
           {[["2", "4–5"], ["3", "6–9"], ["4", "10–12"]].map(([r, p]) => (
-            <div key={r} className="flex flex-col items-center rounded-2xl border border-boxgold/35 bg-night/75 py-4">
-              <span className="font-[family-name:var(--font-display)] text-[46px] font-bold leading-none text-boxgold">{r}</span>
+            <div key={r} className="flex flex-col items-center rounded-2xl border border-boxgold/60 bg-night-lift/80 shadow-[0_10px_26px_-12px_rgba(0,0,0,.9)] py-4">
+              <span className="font-[family-name:var(--font-engraved)] text-[46px] font-bold leading-none text-boxgold">{r}</span>
               <span className="mt-1 text-[12px] font-bold uppercase tracking-[0.15em] text-boxgold-soft">rounds</span>
               <span className="mt-2 text-[14px] text-moon">{p} players</span>
             </div>
@@ -94,11 +118,7 @@ const PAGES: { title: string; body: React.ReactNode }[] = [
     title: "The final vote",
     body: (
       <>
-        <div className="relative overflow-hidden rounded-2xl ring-1 ring-boxgold/40">
-          <img src="/art/v2/shrine.webp" alt="" className="h-48 w-full object-cover" />
-          <div className="absolute inset-0 bg-gradient-to-b from-transparent to-night-deep/90" />
-          <div className="absolute inset-0 grid place-items-center"><Halo src={ART.FAISLA!} size={130} /></div>
-        </div>
+        <div className="flex justify-center"><Halo src={ART.FAISLA!} size={190} alt="Faisla" /></div>
         <Big>When the last round ends, everyone must <Gold>vote one player out</Gold>. That player&apos;s cards go to the other team.</Big>
         <Big>If the vote is a tie, nothing happens.</Big>
       </>
@@ -107,18 +127,18 @@ const PAGES: { title: string; body: React.ReactNode }[] = [
   {
     title: "Your turn",
     body: (
-      <ol className="flex flex-col gap-3">
+      <div className="flex flex-col gap-3">
         {[
           ["Pick up", <>Pick up <Gold>3 cards</Gold>. You now hold 5.</>],
           ["Play or keep", <>Play a <Gold>matching pair</Gold>, or just keep any 2 cards.</>],
           ["Pass", <>Pass the other <Gold>3 cards</Gold> face down to the next player.</>],
         ].map(([h, t], i) => (
-          <li key={i} className="flex items-center gap-4 rounded-2xl border border-boxgold/30 bg-night/75 p-4">
-            <span className="grid size-14 shrink-0 place-items-center rounded-full bg-gradient-to-b from-[#ffd24a] to-[#e59c10] font-[family-name:var(--font-display)] text-[28px] font-bold text-[#2a1503]">{i + 1}</span>
+          <Pop key={i} d={10 + i * 6}><div className="flex items-center gap-4 rounded-2xl border border-boxgold/60 bg-night-lift/80 shadow-[0_10px_26px_-12px_rgba(0,0,0,.9)] p-4">
+            <span className="grid size-14 shrink-0 place-items-center rounded-full bg-boxgold font-[family-name:var(--font-engraved)] text-[28px] font-bold text-night-deep">{i + 1}</span>
             <div><Label>{h}</Label><p className="mt-0.5 text-[17px] leading-snug">{t}</p></div>
-          </li>
+          </div></Pop>
         ))}
-      </ol>
+      </div>
     ),
   },
   {
@@ -162,8 +182,8 @@ const PAGES: { title: string; body: React.ReactNode }[] = [
     title: "Dal Badal",
     body: (
       <>
-        <div className="flex justify-center"><Halo src={ART.DAL_BADAL!} size={220} alt="Dal Badal" /></div>
-        <p className="mx-auto rounded-full border border-crimson-soft/50 bg-[#2a0d1c]/70 px-4 py-1.5 text-[12px] font-bold uppercase tracking-[0.18em] text-crimson-soft">Thieves only</p>
+        <div className="flex justify-center"><Halo src={ART.DAL_BADAL!} size={170} alt="Dal Badal" /></div>
+        <p className="mx-auto w-fit rounded-full border border-boxgold bg-night-lift px-4 py-1.5 text-[12px] font-bold uppercase tracking-[0.18em] text-boxgold">Thieves only</p>
         <Big>A special card that only <Gold>Team Thieves</Gold> can use.</Big>
         <Big>On their turn, a thief shows their role and chooses 3 other players. Those players <Gold>swap role cards</Gold> and play on with their new roles.</Big>
       </>
@@ -172,27 +192,42 @@ const PAGES: { title: string; body: React.ReactNode }[] = [
   {
     title: "Golden rules",
     body: (
-      <ol className="flex flex-col gap-3">
+      <div className="flex flex-col gap-3">
         {[
           <>Never show your role to everyone.</>,
           <>You must hold <Gold>2 action cards</Gold> after your turn.</>,
           <>You cannot draw action cards while you hold the <Gold>3-card Procession Pile</Gold>.</>,
         ].map((t, i) => (
-          <li key={i} className="flex items-center gap-4 rounded-2xl border border-boxgold/30 bg-night/75 p-4">
-            <span className="grid size-12 shrink-0 place-items-center rounded-full ring-2 ring-boxgold font-[family-name:var(--font-display)] text-[24px] font-bold text-boxgold">{i + 1}</span>
+          <Pop key={i} d={10 + i * 6}><div className="flex items-center gap-4 rounded-2xl border border-boxgold/60 bg-night-lift/80 shadow-[0_10px_26px_-12px_rgba(0,0,0,.9)] p-4">
+            <span className="grid size-12 shrink-0 place-items-center rounded-full ring-2 ring-boxgold font-[family-name:var(--font-engraved)] text-[24px] font-bold text-boxgold">{i + 1}</span>
             <p className="text-[17px] leading-snug">{t}</p>
-          </li>
+          </div></Pop>
         ))}
-      </ol>
+      </div>
     ),
   },
 ];
+
+/** each box on a page springs in a beat after the one above it */
+function staggered(body: React.ReactNode) {
+  const kids = isValidElement(body) && (body.type as unknown) === Fragment
+    ? Children.toArray((body as ReactElement<{ children?: React.ReactNode }>).props.children) : [body];
+  return kids.map((k, j) => <Pop key={j} d={6 + j * 6}>{k}</Pop>);
+}
 
 export function HowToPlay({ onClose, onLearn }: { onClose: () => void; onLearn: () => void }) {
   const [at, setAt] = useState(0);
   const strip = useRef<HTMLDivElement>(null);
   const go = (k: number) => { const el = strip.current; if (el) el.scrollTo({ left: k * el.clientWidth, behavior: "smooth" }); };
   const last = at === PAGES.length - 1;
+  // the clock for the page in view: restarts at 0 each time a page arrives, runs while it is shown
+  const [frame, setFrame] = useState(0);
+  useEffect(() => {
+    let raf = 0; const t0 = performance.now(); const still = motionReduced();
+    const tick = (now: number) => { if (still) { setFrame(600); return; } setFrame(((now - t0) / 1000) * FPS); raf = requestAnimationFrame(tick); };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [at]);
   return (
     <div role="dialog" aria-labelledby="htp"
       className="fixed inset-0 z-30 mx-auto flex h-dvh max-w-md flex-col overflow-hidden bg-night-deep pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(0.5rem,env(safe-area-inset-top))] font-[family-name:var(--font-text)] text-white">
@@ -207,13 +242,15 @@ export function HowToPlay({ onClose, onLearn }: { onClose: () => void; onLearn: 
       <div ref={strip} onScroll={(e) => { const el = e.currentTarget; setAt(Math.round(el.scrollLeft / el.clientWidth)); }}
         className="relative flex min-h-0 flex-1 snap-x snap-mandatory overflow-x-auto [scrollbar-width:none]">
         {PAGES.map((p, i) => (
-          <section key={i} aria-label={`${i + 1} of ${PAGES.length}: ${p.title}`} className="flex w-full shrink-0 snap-center flex-col overflow-y-auto px-5">
+          <section key={i} aria-label={`${i + 1} of ${PAGES.length}: ${p.title}`} className="flex w-full shrink-0 snap-center flex-col overflow-y-auto px-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <div className="my-auto flex flex-col gap-5 py-4">
-              <div className="flex flex-col items-center gap-1">
-                <h2 id={i === 0 ? "htp" : undefined} className="font-[family-name:var(--font-display)] text-[34px] font-bold leading-none text-boxgold drop-shadow-[0_2px_10px_rgba(247,187,31,.35)]">{p.title}</h2>
+              <Frame.Provider value={i === at ? frame : 0}>
+              <Pop d={0}><div className="flex flex-col items-center gap-1">
+                <h2 id={i === 0 ? "htp" : undefined} className="font-[family-name:var(--font-engraved)] text-[34px] font-bold uppercase leading-none tracking-wide text-boxgold [text-shadow:0_0_22px_rgba(247,187,31,.55),0_3px_0_var(--color-boxgold-deep)]">{p.title}</h2>
                 <span aria-hidden className="flex items-center gap-2 text-boxgold/70"><span className="h-px w-14 bg-boxgold/50" />✦<span className="h-px w-14 bg-boxgold/50" /></span>
-              </div>
-              {p.body}
+              </div></Pop>
+              {staggered(p.body)}
+              </Frame.Provider>
             </div>
           </section>
         ))}
