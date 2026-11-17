@@ -51,23 +51,23 @@ function Role({ r, w = 128 }: { r: string; w?: number }) {
     style={{ width: w, transform: `translateY(${Math.sin(f / 18 + r.length) * 4}px)` }} />;
 }
 const Panel = ({ children }: { children: React.ReactNode }) => (
-  <div className={`rounded-2xl border p-4 border-boxgold/60 bg-night-lift/80 shadow-[0_10px_26px_-12px_rgba(0,0,0,.9)]`}>{children}</div>
+  <div className={`rounded-2xl border p-4 htp-tile`}>{children}</div>
 );
 const Label = ({ children }: { children: React.ReactNode }) => (
-  <p className={`text-[12px] font-bold uppercase tracking-[0.18em] text-boxgold`}>{children}</p>
+  <p className={"text-[12px] font-bold uppercase tracking-[0.18em] text-[var(--t-label)]"}>{children}</p>
 );
 const Big = ({ children }: { children: React.ReactNode }) => <p className="text-center text-[19px] leading-[1.45] text-white">{children}</p>;
 const Gold = ({ children }: { children: React.ReactNode }) => <b className="font-semibold text-boxgold-soft">{children}</b>;
 
 /** one action card: its art on a medallion, the name, one line */
 const ActionCard = ({ c, children }: { c: Card; children: React.ReactNode }) => (
-  <div className="flex items-center gap-4 rounded-2xl border border-boxgold/60 bg-night-lift/80 shadow-[0_10px_26px_-12px_rgba(0,0,0,.9)] p-3 pr-4">
+  <div className="flex items-center gap-4 rounded-2xl border htp-tile p-3 pr-4">
     <div className="grid size-[84px] shrink-0 place-items-center rounded-full bg-night ring-2 ring-boxgold shadow-[0_0_18px_rgba(247,187,31,.45)]">
       <img src={ART[c]} alt="" className="size-[68px] object-contain drop-shadow-[0_6px_10px_rgba(0,0,0,.6)]" />
     </div>
     <div className="flex-1">
-      <p className="font-[family-name:var(--font-engraved)] text-[20px] font-bold leading-tight text-boxgold">{CARD[c].name}</p>
-      <p className="mt-0.5 text-[15px] leading-snug text-white">{children}</p>
+      <p className="font-[family-name:var(--font-engraved)] text-[20px] font-bold leading-tight text-[var(--t-label)]">{CARD[c].name}</p>
+      <p className="mt-0.5 text-[15px] leading-snug text-[var(--t-text)]">{children}</p>
     </div>
   </div>
 );
@@ -103,10 +103,10 @@ const PAGES: { title: string; body: React.ReactNode }[] = [
         <Big>The number of rounds depends on how many people play.</Big>
         <div className="grid grid-cols-3 gap-2">
           {[["2", "4–5"], ["3", "6–9"], ["4", "10–12"]].map(([r, p]) => (
-            <div key={r} className="flex flex-col items-center rounded-2xl border border-boxgold/60 bg-night-lift/80 shadow-[0_10px_26px_-12px_rgba(0,0,0,.9)] py-4">
-              <span className="font-[family-name:var(--font-engraved)] text-[46px] font-bold leading-none text-boxgold">{r}</span>
-              <span className="mt-1 text-[12px] font-bold uppercase tracking-[0.15em] text-boxgold-soft">rounds</span>
-              <span className="mt-2 text-[14px] text-moon">{p} players</span>
+            <div key={r} className="flex flex-col items-center rounded-2xl border htp-tile py-4">
+              <span className="font-[family-name:var(--font-engraved)] text-[46px] font-bold leading-none text-[var(--t-label)]">{r}</span>
+              <span className="mt-1 text-[12px] font-bold uppercase tracking-[0.15em] text-[var(--t-label)]">rounds</span>
+              <span className="mt-2 text-[14px] text-[var(--t-text)]">{p} players</span>
             </div>
           ))}
         </div>
@@ -133,7 +133,7 @@ const PAGES: { title: string; body: React.ReactNode }[] = [
           ["Play or keep", <>Play a <Gold>matching pair</Gold>, or just keep any 2 cards.</>],
           ["Pass", <>Pass the other <Gold>3 cards</Gold> face down to the next player.</>],
         ].map(([h, t], i) => (
-          <Pop key={i} d={10 + i * 6}><div className="flex items-center gap-4 rounded-2xl border border-boxgold/60 bg-night-lift/80 shadow-[0_10px_26px_-12px_rgba(0,0,0,.9)] p-4">
+          <Pop key={i} d={10 + i * 6}><div className="flex items-center gap-4 rounded-2xl border htp-tile p-4">
             <span className="grid size-14 shrink-0 place-items-center rounded-full bg-boxgold font-[family-name:var(--font-engraved)] text-[28px] font-bold text-night-deep">{i + 1}</span>
             <div><Label>{h}</Label><p className="mt-0.5 text-[17px] leading-snug">{t}</p></div>
           </div></Pop>
@@ -171,8 +171,8 @@ const PAGES: { title: string; body: React.ReactNode }[] = [
         <Panel>
           <Label>When you are eliminated</Label>
           <ul className="mt-2 flex flex-col gap-2 text-[16px] leading-snug">
-            <li className="flex gap-2"><span className="text-boxgold">✦</span>Pass your cards to the player who eliminated you.</li>
-            <li className="flex gap-2"><span className="text-boxgold">✦</span>Give an extra vote to any living player you choose.</li>
+            <li className="flex gap-2"><span className="text-[var(--t-label)]">✦</span>Pass your cards to the player who eliminated you.</li>
+            <li className="flex gap-2"><span className="text-[var(--t-label)]">✦</span>Give an extra vote to any living player you choose.</li>
           </ul>
         </Panel>
       </>
@@ -198,8 +198,8 @@ const PAGES: { title: string; body: React.ReactNode }[] = [
           <>You must hold <Gold>2 action cards</Gold> after your turn.</>,
           <>You cannot draw action cards while you hold the <Gold>3-card Procession Pile</Gold>.</>,
         ].map((t, i) => (
-          <Pop key={i} d={10 + i * 6}><div className="flex items-center gap-4 rounded-2xl border border-boxgold/60 bg-night-lift/80 shadow-[0_10px_26px_-12px_rgba(0,0,0,.9)] p-4">
-            <span className="grid size-12 shrink-0 place-items-center rounded-full ring-2 ring-boxgold font-[family-name:var(--font-engraved)] text-[24px] font-bold text-boxgold">{i + 1}</span>
+          <Pop key={i} d={10 + i * 6}><div className="flex items-center gap-4 rounded-2xl border htp-tile p-4">
+            <span className="grid size-12 shrink-0 place-items-center rounded-full ring-2 ring-[var(--t-label)] font-[family-name:var(--font-engraved)] text-[24px] font-bold text-[var(--t-label)]">{i + 1}</span>
             <p className="text-[17px] leading-snug">{t}</p>
           </div></Pop>
         ))}
@@ -215,11 +215,25 @@ function staggered(body: React.ReactNode) {
   return kids.map((k, j) => <Pop key={j} d={6 + j * 6}>{k}</Pop>);
 }
 
+/** (2026-11-17, "experiment with some colours") the boxes' colours, all from the box: night navy, gold, and the
+ *  Bhadra Stone's blue. ?htp=night|gold|royal picks one while we choose. */
+const THEMES = {
+  night: { "--t-bg": "rgba(12,44,107,.8)", "--t-border": "rgba(247,187,31,.6)", "--t-label": "#f7bb1f", "--t-text": "#ffffff", "--t-hi": "#ffe7a6" },
+  gold: { "--t-bg": "linear-gradient(180deg,#ffe7a6,#f7bb1f)", "--t-border": "#ffe7a6", "--t-label": "#021230", "--t-text": "#021230", "--t-hi": "#0c2c6b" },
+  royal: { "--t-bg": "linear-gradient(135deg,#0c2c6b,#2a56b8)", "--t-border": "#f7bb1f", "--t-label": "#ffe7a6", "--t-text": "#ffffff", "--t-hi": "#f7bb1f" },
+} as const;
+const TILE_CSS = `.htp-tile{background:var(--t-bg);border-color:var(--t-border);box-shadow:0 10px 26px -12px rgba(0,0,0,.9);color:var(--t-text)}.htp-tile b{color:var(--t-hi)}`;
+function pickTheme(): keyof typeof THEMES {
+  try { const t = new URLSearchParams(location.search).get("htp"); if (t && t in THEMES) return t as keyof typeof THEMES; } catch {}
+  return "night";
+}
+
 export function HowToPlay({ onClose, onLearn }: { onClose: () => void; onLearn: () => void }) {
   const [at, setAt] = useState(0);
   const strip = useRef<HTMLDivElement>(null);
   const go = (k: number) => { const el = strip.current; if (el) el.scrollTo({ left: k * el.clientWidth, behavior: "smooth" }); };
   const last = at === PAGES.length - 1;
+  const [theme] = useState(pickTheme);
   // the clock for the page in view: restarts at 0 each time a page arrives, runs while it is shown
   const [frame, setFrame] = useState(0);
   useEffect(() => {
@@ -230,7 +244,8 @@ export function HowToPlay({ onClose, onLearn }: { onClose: () => void; onLearn: 
   }, [at]);
   return (
     <div role="dialog" aria-labelledby="htp"
-      className="fixed inset-0 z-30 mx-auto flex h-dvh max-w-md flex-col overflow-hidden bg-night-deep pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(0.5rem,env(safe-area-inset-top))] font-[family-name:var(--font-text)] text-white">
+      className="fixed inset-0 z-30 mx-auto flex h-dvh max-w-md flex-col overflow-hidden bg-night-deep pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(0.5rem,env(safe-area-inset-top))] font-[family-name:var(--font-text)] text-white" style={THEMES[theme] as React.CSSProperties}>
+      <style>{TILE_CSS}</style>
       {/* the box painting, faint, behind the top of every page */}
       <img src="/art/cover-night.webp" alt="" aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-[55%] w-full object-cover object-top opacity-25" />
       <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-[60%] bg-gradient-to-b from-night-deep/40 via-night-deep/70 to-night-deep" />
