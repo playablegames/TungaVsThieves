@@ -11,7 +11,7 @@ Sources: **[P]** = the owner's 10 How-to-play pages (approved 2026-11-17) · **[
 | # | Rule | Source |
 |---|---|---|
 | 1.1 | 4 to 12 players. | [P] box |
-| 1.2 | Teams by player count (villagers + thieves): 4→3+1 · 5→3+2 · 6→4+2 · 7→5+2 · 8→5+3 · 9→6+3 · 10→6+4 · 11→7+4 · 12→8+4. | [C] |
+| 1.2 | Teams by player count (villagers + thieves): 4→3+1 · 5→3+2 · 6→4+2 · 7→4+3 (owner 2026-11-17, was 5+2) · 8→5+3 · 9→6+3 · 10→6+4 · 11→7+4 · 12→8+4. | [C] |
 | 1.3 | Rounds: 2 at 4–5 players · 3 at 6–9 · 4 at 10–12. | [P] |
 | 1.4 | Role names: villagers Kisaan, Sarpanch, Baba, Teacher, Police, Doctor, NRI, Deewani · thieves Chor, Lootera, Gunda, Daku. Taken in that order up to the team size, then shuffled and dealt one each. | [C] |
 | 1.4b | **Thieves do NOT know each other.** Each player knows only their own role. | owner |

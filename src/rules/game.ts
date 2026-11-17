@@ -16,7 +16,7 @@ const isAction = (c: Card): c is Action => (ACTIONS as Card[]).includes(c);
 
 /** [1.2] [1.3] players -> villagers, thieves, rounds */
 export const TABLE: Record<number, [number, number, number]> = {
-  4: [3, 1, 2], 5: [3, 2, 2], 6: [4, 2, 3], 7: [5, 2, 3], 8: [5, 3, 3], 9: [6, 3, 3], 10: [6, 4, 4], 11: [7, 4, 4], 12: [8, 4, 4],
+  4: [3, 1, 2], 5: [3, 2, 2], 6: [4, 2, 3], 7: [4, 3, 3], 8: [5, 3, 3], 9: [6, 3, 3], 10: [6, 4, 4], 11: [7, 4, 4], 12: [8, 4, 4],
 };
 /** [1.4] */
 export const VILLAGERS = ["Kisaan", "Sarpanch", "Baba", "Teacher", "Police", "Doctor", "NRI", "Deewani"];
