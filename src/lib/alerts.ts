@@ -2,12 +2,14 @@
 // TURN ALERTS (2026-10-09): the phone subscribes to web push; while it is switched away from the game it tells the
 // server so, and the server pushes "Your turn" / "Vote now". iPhones only allow it once the game is on the Home Screen.
 import { useEffect } from "react";
+import { isMinor } from "./gate";
 
 const KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
 
 export type AlertSupport = "yes" | "home-screen" | "no";
 export function alertSupport(): AlertSupport {
-  if (typeof window === "undefined" || !KEY) return "no";
+  // under 18: no turn alerts (lib/gate.ts)
+  if (typeof window === "undefined" || !KEY || isMinor()) return "no";
   if ("serviceWorker" in navigator && "PushManager" in window && "Notification" in window) return "yes";
   // iPhone Safari outside the Home Screen: push exists only for installed web apps
   return /iPhone|iPad/.test(navigator.userAgent) ? "home-screen" : "no";

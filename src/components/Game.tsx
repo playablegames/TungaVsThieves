@@ -11,6 +11,7 @@ import type { Action, Card, GameEvent, Side } from "@/engine/types";
 import type { StoneStep } from "@/engine/stonepath";
 import { MIN_PLAYERS, THIEF_ROLES, VILLAGER_ROLES } from "@/engine/setup";
 import { report as reportIssue } from "@/lib/report";
+import { setBlocked, useBlocked } from "@/lib/blocks";
 import { MotionSettings } from "./MotionSettings";
 import { setStreamer, useStreamer } from "@/lib/streamer";
 import type { PlayerView, PublicPlayer } from "@/engine/view";
@@ -356,10 +357,23 @@ function initialsOf(names: string[]) {
   });
 }
 
-function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
+function Table({ s, v, act, now, extend, code, token, voice, messages: allMessages, solo }: {
   s: ClientState; v: PlayerView; act: (a: Action) => void; now: () => number;
   extend?: () => void; code: string; token: string; voice: VoiceCtl; messages: ChatMessage[]; solo: boolean;
 }) {
+  // (2026-11-17) REPORT / BLOCK: a blocked player's messages never reach this phone's feed
+  const blocked = useBlocked(code);
+  const messages = useMemo(() => (blocked.length ? allMessages.filter((m) => !blocked.includes(m.seat)) : allMessages), [allMessages, blocked]);
+  const reportPlayer = (seat: number, reason: string, note: string) => {
+    const who = v.players[seat]?.name ?? `seat ${seat}`;
+    const theirs = allMessages.filter((m) => m.seat === seat).slice(-10).map((m) => `  [${m.at}] ${m.text}`).join("\n");
+    return reportIssue("player", `PLAYER REPORT: ${who} (seat ${seat}), reported by ${v.players[v.me.seat]?.name ?? "?"}\nReason: ${reason}${note ? `\nNote: ${note}` : ""}\nTheir last messages:\n${theirs || "  (none)"}`);
+  };
+  const block = (seat: number, on: boolean) => {
+    setBlocked(code, seat, on);
+    const peer = voice.peers[seat];
+    if (peer && Boolean(peer.hushed) !== on) voice.hush(seat);
+  };
   const stage = useStage(v.events, v.players.map((p) => p.name), s.timers.speed ?? 1);
   const bots = useBotSpeech(messages);
   const [menu, setMenu] = useState(false);
@@ -581,7 +595,7 @@ function Table({ s, v, act, now, extend, code, token, voice, messages, solo }: {
       <Ring v={v} voice={voice} moment={beat && TABLE_MOMENTS.has(beat.type) ? beat : null} speed={s.timers.speed ?? 1} onHistory={setHistory} onMessage={(to, voice) => setCompose({ to, voice })} muted={s.muted ?? []}
         onHostMute={s.you.host ? (seat, m) => { api.mute(code, token, seat, m).catch(() => {}); } : undefined} hint={!v.tutorial && v.me.alive && !tipsSeen.includes("seats")} talking={bots.current?.seat ?? null} floorSeat={s.floor && s.floor.until > now() ? s.floor.seat : null} actor={headline?.actor} target={headline?.target} pick={v.decision?.kind === "vote" ? v.decision.mine ?? null : null} tally={live ?? voteShown?.tally}
         flying={flying} onThrow={s.status === "playing" ? throwAt : undefined}
-        away={s.away} marks={marks} onMark={setMark}
+        away={s.away} marks={marks} onMark={setMark} onReport={reportPlayer} blocked={blocked} onBlock={block}
         onClaim={s.status === "playing" ? claimAt : undefined}>
         {stage.current?.big
           ? <Stage stage={stage} skip={stage.skip} names={v.players.map((p) => p.name)} inline small={v.players.length > 8} />
@@ -693,11 +707,12 @@ function RolePeek({ v }: { v: PlayerView }) {
 }
 
 /** Seats on an oval in turn order, you at the bottom, a thin brass line joining them. */
-function Ring({ v, voice, moment = null, speed = 1, talking, floorSeat = null, actor, target, pick, tally, flying = [], away = [], marks = {}, onMark, onThrow, onPick, onClaim, onHistory, onMessage, muted = [], onHostMute, hint = false, children }: {
+function Ring({ v, voice, moment = null, speed = 1, talking, floorSeat = null, actor, target, pick, tally, flying = [], away = [], marks = {}, onMark, onThrow, onPick, onClaim, onHistory, onMessage, muted = [], onHostMute, onReport, blocked = [], onBlock, hint = false, children }: {
   v: PlayerView; voice: VoiceCtl; moment?: Beat | null; speed?: number; talking: number | null; floorSeat?: number | null; actor?: number; target?: number; pick: number | null; tally?: Record<string, number>;
   flying?: Throw[]; away?: number[]; marks?: Record<number, Mark>; onMark?: (seat: number, m: Mark | null) => void; onThrow?: (seat: number, emoji: string) => void; onPick?: (seat: number) => void;
   onClaim?: (kind: "kundli" | "stone", seat: number, role?: string, has?: boolean, stone?: Card) => void; onHistory?: (seat: number) => void;
   onMessage?: (to: number | null, voice: boolean) => void; muted?: number[]; onHostMute?: (seat: number, muted: boolean) => void;
+  onReport?: (seat: number, reason: string, note: string) => Promise<void>; blocked?: number[]; onBlock?: (seat: number, on: boolean) => void;
   hint?: boolean; children: React.ReactNode;
 }) {
   const n = v.players.length;
@@ -775,6 +790,7 @@ function Ring({ v, voice, moment = null, speed = 1, talking, floorSeat = null, a
           onThrow={onThrow ? (e) => { onThrow(picker, e); setPicker(null); } : undefined}
           hush={peerOf(picker) && !onHostMute ? { hushed: peerOf(picker)!.hushed, toggle: () => { voice.hush(picker); setPicker(null); } } : undefined}
           hostMute={onHostMute ? { muted: muted.includes(picker), toggle: () => { onHostMute(picker, !muted.includes(picker)); setPicker(null); } } : undefined}
+          safety={onReport && onBlock && !/🤖$/.test(v.players[picker].name) ? { blocked: blocked.includes(picker), report: (r, n) => onReport(picker, r, n), block: (on) => onBlock(picker, on) } : undefined}
           />
       )}
       <CardFlights v={v} pos={pos} />
@@ -1585,10 +1601,11 @@ export const TOUR: [string, React.ReactNode][] = [
 /** THE ACCUSE SHEET (designer 2026-10-14): what the table has said about them so far, then ONE tap — a role card
  *  (thief cards first, in red: accuse · village cards in gold: clear) or the Stone. Your own read wears 🔮. Private
  *  marks, throws, mute and history sit below. An out player: "was…", no Stone. */
-function AccuseSheet({ v, seat, said, seen, mark, onClose, onClaim, onMark, onThrow, hush, hostMute, onMessage }: {
+function AccuseSheet({ v, seat, said, seen, mark, onClose, onClaim, onMark, onThrow, hush, hostMute, onMessage, safety }: {
   v: PlayerView; seat: number; said?: SaidAbout; seen?: string; mark?: Mark; onClose: () => void;
   onClaim?: (kind: "kundli" | "stone", role?: string, has?: boolean, stone?: Card) => void; onMark?: (m: Mark | null) => void; onThrow?: (e: string) => void;
   hush?: { hushed: boolean; toggle: () => void }; hostMute?: { muted: boolean; toggle: () => void }; onMessage?: (voice: boolean) => void;
+  safety?: { blocked: boolean; report: (reason: string, note: string) => Promise<void>; block: (on: boolean) => void };
 }) {
   const p = v.players[seat];
   const name = p.name.replace(/\s*🤖$/, "");
@@ -1665,8 +1682,50 @@ function AccuseSheet({ v, seat, said, seen, mark, onClose, onClaim, onMark, onTh
           {hostMute && <button type="button" onClick={hostMute.toggle} className="min-h-10 rounded-full px-3 text-[13px] font-bold text-stock ring-1 ring-brass/50">{hostMute.muted ? "🔊 Unmute for everyone" : "🔇 Mute for everyone"}</button>}
           {hush && <button type="button" aria-label={hush.hushed ? "Unmute for me" : "Mute for me"} onClick={hush.toggle} className="grid h-10 w-10 place-items-center rounded-full text-[20px]">{hush.hushed ? "🔊" : "🔇"}</button>}
         </div>
+        {safety && <PlayerSafety name={name} {...safety} />}
       </div>
     </div>
+  );
+}
+
+/** REPORT / BLOCK A PLAYER (2026-11-17, Google Play user-content policy + the Contact page): a reason and an optional
+ *  note, sent with their last messages and the table code. Block hides their messages and mutes them, for you only. */
+const REPORT_REASONS = ["Rude or abusive", "Asked for personal details", "Sexual or adult talk", "Seems under 18", "Cheating or spamming", "Something else"];
+function PlayerSafety({ name, blocked, report, block }: { name: string; blocked: boolean; report: (reason: string, note: string) => Promise<void>; block: (on: boolean) => void }) {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState<string | null>(null);
+  const [note, setNote] = useState("");
+  const [state, setState] = useState<"idle" | "busy" | "sent">("idle");
+  if (state === "sent") return (
+    <div className="flex flex-col gap-2 rounded-xl border border-brass/30 p-3 text-center text-[14px] text-stock">
+      <p className="text-jade-soft">Thanks. We&rsquo;ll look at it within 24 hours.</p>
+      {!blocked && <button type="button" onClick={() => block(true)} className="min-h-11 rounded-full text-[14px] font-bold text-crimson-soft ring-1 ring-crimson">Block {name} too</button>}
+    </div>
+  );
+  if (!open) return (
+    <div className="grid grid-cols-2 gap-2">
+      <button type="button" onClick={() => setOpen(true)} className="min-h-11 rounded-full text-[14px] font-bold text-crimson-soft ring-1 ring-crimson/70">🚩 Report</button>
+      <button type="button" onClick={() => block(!blocked)} aria-pressed={blocked} className="min-h-11 rounded-full text-[14px] font-bold text-stock/80 ring-1 ring-brass/50">{blocked ? "Unblock" : "⛔ Block"}</button>
+    </div>
+  );
+  return (
+    <form className="flex flex-col gap-2 rounded-xl border border-crimson/50 p-3" onSubmit={(e) => { e.preventDefault(); if (!reason) return; setState("busy"); void report(reason, note.trim()).then(() => setState("sent")); }}>
+      <p className="text-[14px] font-bold text-stock">Report {name}: what happened?</p>
+      <div className="flex flex-wrap gap-2">
+        {REPORT_REASONS.map((r) => (
+          <button key={r} type="button" aria-pressed={reason === r} onClick={() => setReason(r)}
+            className={`min-h-10 rounded-full px-3 text-[13px] font-semibold ${reason === r ? "bg-crimson-deep text-white ring-2 ring-crimson" : "text-stock/85 ring-1 ring-brass/50"}`}>{r}</button>
+        ))}
+      </div>
+      <label htmlFor="report-note" className="text-[13px] text-stock/70">Anything to add? (optional)</label>
+      <textarea id="report-note" value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={500}
+        className="rounded-xl border border-brass/50 bg-black/40 p-2 text-[15px] text-stock outline-none focus:border-crimson" />
+      <p className="text-[12px] text-stock/60">We get the table code and {name}&rsquo;s last messages. {name} isn&rsquo;t told.</p>
+      <div className="grid grid-cols-2 gap-2">
+        <button type="button" onClick={() => setOpen(false)} className="min-h-11 rounded-full text-[14px] text-stock/80 ring-1 ring-brass/40">Cancel</button>
+        <button type="submit" disabled={!reason || state === "busy"} className="min-h-11 rounded-full bg-crimson-deep text-[14px] font-bold text-white disabled:opacity-50">{state === "busy" ? "Sending…" : "Send report"}</button>
+      </div>
+    </form>
   );
 }
 

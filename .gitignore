@@ -47,3 +47,6 @@ art-source/
 
 # real players' game logs (names, chats) — scripts/learn-from-games.mts
 /analysis/logs/
+
+.vercel
+.env*

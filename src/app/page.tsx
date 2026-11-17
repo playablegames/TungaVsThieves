@@ -9,6 +9,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { api, saveToken, useHydrated } from "@/lib/client";
 import { HowToPlay } from "@/components/HowToPlay";
 import { MotionSettings } from "@/components/MotionSettings";
+import { AgeGate } from "@/components/AgeGate";
+import { NICKNAMES, isMinor, readGate } from "@/lib/gate";
 
 const NAME_KEY = "tunga:name";
 const LEARNED = "tunga:learned";
@@ -22,21 +24,6 @@ function savedName(): string {
 
 export default function Home() {
   return <Suspense><Entry /></Suspense>;
-}
-
-/** TEMPORARY (2026-11-16): what this phone says about its own screen, to size Home from real numbers. Remove after. */
-function ScreenInfo() {
-  const fill = (el: HTMLParagraphElement | null) => {
-    if (!el) return;
-    const probe = document.createElement("div");
-    probe.style.cssText = "position:fixed;top:0;left:0;width:0;height:100dvh;padding-bottom:env(safe-area-inset-bottom);padding-top:env(safe-area-inset-top);box-sizing:content-box;visibility:hidden";
-    document.body.appendChild(probe);
-    const cs = getComputedStyle(probe);
-    const standalone = matchMedia("(display-mode: standalone)").matches ? "app" : "browser";
-    el.textContent = `Screen ${innerWidth}x${innerHeight} · vv ${Math.round(visualViewport?.height ?? 0)} · dvh ${Math.round(parseFloat(cs.height))} · doc ${document.documentElement.clientHeight} · scr ${screen.width}x${screen.height} · safe ${cs.paddingTop}/${cs.paddingBottom} · x${devicePixelRatio} · ${standalone}`;
-    probe.remove();
-  };
-  return <p ref={fill} className="text-center text-[11px] text-moon/50" />;
 }
 
 function Entry() {
@@ -71,8 +58,17 @@ function Entry() {
   const nameRef = useRef<HTMLInputElement>(null);
   const codeOk = code.trim().length === 5;
 
+  // THE DOOR (2026-11-17): the first Play tap asks age + Terms of use once; under 18 plays with bots only
+  const [gateFor, setGateFor] = useState<null | "create" | "join" | "bots" | "learn">(null);
+  const minor = hydrated && isMinor();
   function choose(kind: "create" | "join" | "bots" | "learn") {
     setError(null);
+    if (!readGate()) { setGateFor(kind); return; }
+    if (isMinor()) {
+      if (kind === "create" || kind === "join") { setError("Under 18, you can play with bots. Tables with other people open at 18."); return; }
+      const nick = NICKNAMES.includes(savedName()) ? savedName() : NICKNAMES[0];
+      setName(nick); setAsk(kind); return;
+    }
     setName(savedName());
     setAsk(kind);
     // (2026-10-12, "bot picker doesn't work") the keyboard only opens when there is no name yet: popping it over the
@@ -110,9 +106,11 @@ function Entry() {
       <h1 className="sr-only">Tunga vs Thieves</h1>
       {/* THE BOX FRONT (2026-11-16, "tunga box latest"): the night painting with a slow push-in, the two Stones glowing on
           the shrine, fireflies drifting up, and the box's own gold logo in the sky where the box has it */}
-      <div aria-hidden className="relative -mx-5 aspect-[1064/1478] w-[calc(100%+2.5rem)] overflow-hidden">
+      {/* (2026-11-17, owner's phone 442x884, installed app, no hidden bars) the painting GROWS to fill a tall screen so the
+          buttons sit at the bottom with no empty band; never shorter than the painting's own shape */}
+      <div aria-hidden className="relative -mx-5 w-[calc(100%+2.5rem)] flex-1 overflow-hidden" style={{ minHeight: "min(calc(100vw * 1478 / 1064), calc(28rem * 1478 / 1064))" }}>
         {/* eslint-disable-next-line @next/next/no-img-element -- static art */}
-        <img src="/art/cover-night.webp" alt="" fetchPriority="high" decoding="async" className="cover-pushin absolute inset-0 h-full w-full object-cover" />
+        <img src="/art/cover-night.webp" alt="" fetchPriority="high" decoding="async" className="cover-pushin absolute inset-0 h-full w-full object-cover object-top" />
         <span className="stone-glow" style={{ left: "43%", top: "70%", ["--g" as string]: "255,190,60" }} />
         <span className="stone-glow" style={{ left: "56%", top: "70%", ["--g" as string]: "90,150,255", animationDelay: "-1.3s" }} />
         {Array.from({ length: 12 }, (_, i) => (
@@ -136,16 +134,17 @@ function Entry() {
             <button type="button" onClick={skipLearn} className="box-focus min-h-16 rounded-r-2xl border-l border-card-ink/15 px-4 text-[14px] font-medium text-card-ink/70">Skip</button>
           </div>
         )}
-        <button type="button" disabled={busy || (!!invited && !codeOk)} onClick={() => choose(invited ? "join" : "create")}
+        {minor && <p className="rounded-xl bg-night/80 p-3 text-center text-[14px] text-moon">Under 18: you play with bots. Tables with other people open at 18.</p>}
+        {!minor && <button type="button" disabled={busy || (!!invited && !codeOk)} onClick={() => choose(invited ? "join" : "create")}
           className="btn-gold flex min-h-14 w-full items-center justify-center whitespace-nowrap rounded-full px-6 text-[18px] font-semibold">
           {invited ? `Join table ${invited}` : "Play with friends"}
-        </button>
-        <button type="button" disabled={busy} onClick={() => choose(invited ? "create" : "bots")}
-          className="btn-line flex min-h-[52px] w-full items-center justify-center whitespace-nowrap rounded-full px-6 text-[16px] font-semibold">
-          {invited ? "Start my own table" : "Play with bots"}
+        </button>}
+        <button type="button" disabled={busy} onClick={() => choose(invited && !minor ? "create" : "bots")}
+          className={`${minor ? "btn-gold min-h-14 text-[18px]" : "btn-line"} flex min-h-[52px] w-full items-center justify-center whitespace-nowrap rounded-full px-6 text-[16px] font-semibold`}>
+          {invited && !minor ? "Start my own table" : "Play with bots"}
         </button>
 
-        {!invited && (
+        {!invited && !minor && (
           <div className="mt-2 flex items-center gap-2">
             <label htmlFor="code" className="shrink-0 text-[14px] text-moon/80">Have a code?</label>
             <input id="code" value={code} maxLength={5} onChange={(e) => setCode(e.target.value.toUpperCase())}
@@ -163,7 +162,7 @@ function Entry() {
         <nav className="mt-1 flex items-center justify-between text-[14px] text-moon/75">
           <button type="button" onClick={() => setRules(true)} className="box-focus min-h-11 whitespace-nowrap rounded-lg px-2 font-medium text-boxgold-soft">How to play</button>
           <button type="button" onClick={() => setComfort(true)} className="box-focus min-h-11 whitespace-nowrap rounded-lg px-2">Settings</button>
-          <a href="/privacy" className="box-focus flex min-h-11 items-center whitespace-nowrap rounded-lg px-2">Privacy</a>
+          <a href="/legal" className="box-focus flex min-h-11 items-center whitespace-nowrap rounded-lg px-2">Legal</a>
         </nav>
       </div>
       {comfort && (
@@ -171,10 +170,10 @@ function Entry() {
           <div role="dialog" aria-label="Settings" onClick={(e) => e.stopPropagation()} className="sheet-up flex w-full max-w-md flex-col gap-3 rounded-t-3xl bg-night px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-5 shadow-[0_-12px_40px_rgba(0,0,0,.6)]">
             <MotionSettings />
             <button type="button" onClick={() => setComfort(false)} className="btn-line min-h-12 rounded-full text-[15px] font-semibold">Done</button>
-            <ScreenInfo />
           </div>
         </div>
       )}
+      {gateFor && <AgeGate onClose={() => setGateFor(null)} onDone={() => { const k = gateFor; setGateFor(null); choose(k); }} />}
       {rules && <HowToPlay onClose={() => setRules(false)} onLearn={() => { setRules(false); choose("learn"); }} />}
 
       {ask && (
@@ -184,11 +183,16 @@ function Entry() {
             onSubmit={(e) => { e.preventDefault(); void go(); }}
             className="sheet-up flex w-full max-w-md flex-col gap-4 rounded-t-3xl bg-stock px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-6 font-[family-name:var(--font-text)] text-card-ink shadow-[0_-12px_40px_rgba(0,0,0,.6)]">
             <h2 id="name-title" className="text-[20px] font-semibold leading-tight">
-              {ask === "join" ? `Joining table ${code.trim().toUpperCase()}` : "What do they call you?"}
+              {ask === "join" ? `Joining table ${code.trim().toUpperCase()}` : minor ? "Pick a nickname" : "What do they call you?"}
             </h2>
             <label htmlFor="name" className="sr-only">Your name</label>
-            <input id="name" ref={nameRef} value={name} maxLength={20} onChange={(e) => setName(e.target.value)} placeholder="Your name" autoComplete="nickname"
-              className="min-h-14 rounded-xl border-[1.5px] border-card-ink/30 bg-white/60 px-4 text-[17px] font-medium text-card-ink caret-marigold-deep outline-none placeholder:font-normal placeholder:text-card-ink/40 focus:border-marigold-deep" />
+            {minor ? (
+              <select id="name" value={name} onChange={(e) => setName(e.target.value)}
+                className="min-h-14 rounded-xl border-[1.5px] border-card-ink/30 bg-white/60 px-4 text-[17px] font-medium text-card-ink outline-none focus:border-marigold-deep">
+                {NICKNAMES.map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+            ) : <input id="name" ref={nameRef} value={name} maxLength={20} onChange={(e) => setName(e.target.value)} placeholder="Your name" autoComplete="nickname"
+              className="min-h-14 rounded-xl border-[1.5px] border-card-ink/30 bg-white/60 px-4 text-[17px] font-medium text-card-ink caret-marigold-deep outline-none placeholder:font-normal placeholder:text-card-ink/40 focus:border-marigold-deep" />}
             {ask === "bots" && (
               <div className="flex items-center justify-between gap-3 rounded-xl border-[1.5px] border-card-ink/20 px-2 py-2">
                 <button type="button" aria-label="One bot fewer" disabled={busy || bots <= BOTS_MIN} onClick={() => setBots((b) => Math.max(BOTS_MIN, b - 1))}

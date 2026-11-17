@@ -1,4 +1,5 @@
 // Room service: create / join / start / act / tick / view / chat. The engine is the only thing that changes state.
+import { mailReport } from "./mail";
 import { iceServers } from "./turn";
 import { livekitConfigured, voicePasses } from "./livekit";
 import { randomBytes, randomInt } from "node:crypto";
@@ -908,6 +909,11 @@ export async function report(body: { kind?: unknown; code?: unknown; text?: unkn
   const where = String(body.where ?? "").slice(0, 300);
   console.error(JSON.stringify({ report: kind, code: body.code ?? null, where, text: text.slice(0, 500) }));
   const code = typeof body.code === "string" ? body.code.toUpperCase().slice(0, 8) : "";
+  // (2026-11-17) a person's report (a player, or "Report a problem") is emailed to the owner; crashes are not
+  if (kind === "player") {
+    const head = text.startsWith("PLAYER REPORT") ? "Player reported" : "Problem reported";
+    await mailReport(`[Tunga] ${head}${code ? ` at table ${code}` : ""}`, `${text}\n\nTable: ${code || "(none)"}\nPage: ${where}\nTime: ${new Date().toISOString()}\n\nAcknowledge within 24 hours, answer within 15 days (IT Rules 2021).`);
+  }
   if (!code) return;
   await mutate(code, (row) => {
     if (!row.state) return row;
