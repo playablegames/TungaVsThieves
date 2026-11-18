@@ -983,3 +983,16 @@ export async function exportLog(code: string, token: string | null) {
   const bots = row.lobby.flatMap((p, seat) => (p.bot ? [seat] : []));
   return { code: row.code, createdAt: row.createdAt, timers: row.timers, bots, state: row.state, messages: (await store.messages(row.code, 0)).map((m) => (isWhisper(m.text) ? { ...m, text: redactWhisper(m.text) } : m)) };
 }
+
+/** (2026-11-18, Make / join sheet) what a code leads to BEFORE you type your name: no token, no names — only whether
+ *  the table exists, whether it still takes players, and how many sit there. A finished game's code follows on to the
+ *  PLAY AGAIN table, the same way joinRoom does. */
+export async function peekRoom(code: string, hops = 0): Promise<{ code: string; open: boolean; players: number; max: number; reason: string | null }> {
+  const row = await load(code);
+  if (row.status === "over" && row.state?.next && hops < 5) return peekRoom(row.state.next, hops + 1);
+  const full = row.lobby.length >= ONLINE_MAX_PLAYERS;
+  const reason = row.status === "over" ? "This game is over — ask for the new table's code"
+    : row.status !== "lobby" ? "This game has already started — join with the name you played under to take your seat back"
+    : full ? `The table is full (${ONLINE_MAX_PLAYERS})` : null;
+  return { code: row.code, open: row.status === "lobby" && !full, players: row.lobby.length, max: ONLINE_MAX_PLAYERS, reason };
+}

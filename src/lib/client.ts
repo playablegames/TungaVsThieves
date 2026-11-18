@@ -30,6 +30,8 @@ export const api = {
   create: (name: string) => call<{ code: string; token: string }>("/api/games", { method: "POST", body: JSON.stringify({ name }) }),
   /** Play with bots: you + `bots` bots, dealt and started, in one call (2026-10-14) */
   createWithBots: (name: string, bots: number) => call<{ code: string; token: string }>("/api/games", { method: "POST", body: JSON.stringify({ name, bots }) }),
+  /** (2026-11-18) what a code leads to, before you type a name */
+  peek: (code: string) => call<{ code: string; open: boolean; players: number; max: number; reason: string | null }>(`/api/games/${code}/peek`),
   join: (code: string, name: string) =>
     call<{ code: string; token: string }>(`/api/games/${code}/join`, { method: "POST", body: JSON.stringify({ name }) }),
   start: (code: string, token: string) => call(`/api/games/${code}/start`, { method: "POST", token }),

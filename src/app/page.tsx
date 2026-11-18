@@ -11,12 +11,20 @@ import { HowToPlay } from "@/components/HowToPlay";
 import { MotionSettings } from "@/components/MotionSettings";
 import { AgeGate } from "@/components/AgeGate";
 import { NICKNAMES, isMinor, readGate } from "@/lib/gate";
+import { TABLE } from "@/rules/game";
 
 const NAME_KEY = "tunga:name";
 const LEARNED = "tunga:learned";
-/** Play with bots (designer 2026-10-12: "must open a screen to add however many bots we want"): 4 to 11 bots —
- *  5 to 12 players — 5 to start with */
-const BOTS_MIN = 4, BOTS_MAX = 11, BOTS_START = 5;
+/** Play with bots (designer 2026-10-12: "must open a screen to add however many bots we want"): 3 to 11 bots —
+ *  4 to 12 players, the box's own range (rules 1.1; 2026-11-18 it stopped at 5 players) — 5 to start with */
+const BOTS_MIN = 3, BOTS_MAX = 11, BOTS_START = 5;
+/** the sheet's heading and one line under it, per way in (2026-11-18 Make / join sheet) */
+const SHEET: Record<"create" | "join" | "bots" | "learn", { title: string; line: string; button: string }> = {
+  create: { title: "Open a table", line: "Friends join with a code you’ll share next", button: "Open the table" },
+  join: { title: "Join table", line: "", button: "Take a seat" },
+  bots: { title: "Play with bots", line: "Learn the game, no waiting", button: "Start the game" },
+  learn: { title: "Learn by playing", line: "A table of bots, explained as you go", button: "Start the game" },
+};
 
 function savedName(): string {
   try { return localStorage.getItem(NAME_KEY) ?? ""; } catch { return ""; }
@@ -54,6 +62,17 @@ function Entry() {
   const [bots, setBots] = useState(BOTS_START);
   const nameRef = useRef<HTMLInputElement>(null);
   const codeOk = code.trim().length === 5;
+  // JOIN checks the code BEFORE the name (2026-11-18): found + how many sit there, or why you can't sit
+  const [peek, setPeek] = useState<null | "looking" | { open: boolean; players: number; reason: string | null }>(null);
+  useEffect(() => {
+    if (ask !== "join") return;
+    let live = true;
+    api.peek(code.trim().toUpperCase())
+      .then((r) => live && setPeek(r))
+      .catch((e) => live && setPeek({ open: false, players: 0, reason: (e as Error).message }));
+    return () => { live = false; };
+  }, [ask, code]);
+  const joinBlocked = ask === "join" && (peek === null || peek === "looking" || !peek.open);
 
   // THE DOOR (2026-11-17): the first Play tap asks age + Terms of use once; under 18 plays with bots only
   const [gateFor, setGateFor] = useState<null | "create" | "join" | "bots" | "learn">(null);
@@ -67,6 +86,7 @@ function Entry() {
       setName(nick); setAsk(kind); return;
     }
     setName(savedName());
+    setPeek(kind === "join" ? "looking" : null);
     setAsk(kind);
     // (2026-10-12, "bot picker doesn't work") the keyboard only opens when there is no name yet: popping it over the
     // bots stepper moved the sheet under the finger and the − / + taps were lost
@@ -167,9 +187,18 @@ function Entry() {
           <form role="dialog" aria-labelledby="name-title" onClick={(e) => e.stopPropagation()}
             onSubmit={(e) => { e.preventDefault(); void go(); }}
             className="sheet-up flex w-full max-w-md flex-col gap-4 rounded-t-3xl bg-stock px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-6 font-[family-name:var(--font-text)] text-card-ink shadow-[0_-12px_40px_rgba(0,0,0,.6)]">
-            <h2 id="name-title" className="text-[20px] font-semibold leading-tight">
-              {ask === "join" ? `Joining table ${code.trim().toUpperCase()}` : minor ? "Pick a nickname" : "What do they call you?"}
-            </h2>
+            <span aria-hidden className="mx-auto -mt-2 h-1 w-10 rounded-full bg-card-ink/20" />
+            <div className="flex flex-col gap-1">
+              <h2 id="name-title" className="font-[family-name:var(--font-engraved)] text-[24px] font-bold uppercase leading-tight tracking-wide text-card-ink">
+                {SHEET[ask].title}{ask === "join" && <span className="tracking-[0.2em] text-boxgold-deep"> {code.trim().toUpperCase()}</span>}
+              </h2>
+              {ask === "join" ? (
+                <p aria-live="polite" className={`text-[15px] ${peek && peek !== "looking" && !peek.open ? "font-semibold text-crimson-deep" : "text-card-ink/75"}`}>
+                  {peek === null || peek === "looking" ? "Looking for the table…"
+                    : peek.open ? `✓ Table found · ${peek.players} here` : peek.reason}
+                </p>
+              ) : <p className="text-[15px] text-card-ink/75">{minor ? "Pick a nickname, then play" : SHEET[ask].line}</p>}
+            </div>
             <label htmlFor="name" className="sr-only">Your name</label>
             {minor ? (
               <select id="name" value={name} onChange={(e) => setName(e.target.value)}
@@ -184,16 +213,17 @@ function Entry() {
                   className="size-12 rounded-full border-[1.5px] border-card-ink/40 text-[24px] font-medium transition-transform duration-150 active:scale-95 disabled:opacity-30">−</button>
                 <p className="text-center" aria-live="polite">
                   <span className="block text-[20px] font-semibold leading-tight tabular-nums">{bots} bots</span>
-                  <span className="text-[13px] text-card-ink/70">{bots + 1} players at the table</span>
+                  <span className="block text-[13px] text-card-ink/70">{bots + 1} players · {TABLE[bots + 1][2]} rounds</span>
+                  <span className="block text-[13px] text-card-ink/70">{TABLE[bots + 1][0]} villagers · {TABLE[bots + 1][1]} {TABLE[bots + 1][1] === 1 ? "thief" : "thieves"}</span>
                 </p>
                 <button type="button" aria-label="One bot more" disabled={busy || bots >= BOTS_MAX} onClick={() => setBots((b) => Math.min(BOTS_MAX, b + 1))}
                   className="size-12 rounded-full border-[1.5px] border-card-ink/40 text-[24px] font-medium transition-transform duration-150 active:scale-95 disabled:opacity-30">+</button>
               </div>
             )}
             {error && <p role="alert" className="rounded-xl bg-crimson-deep p-3 text-center text-[14px] text-white">{error}</p>}
-            <button type="submit" disabled={busy || !name.trim()}
+            <button type="submit" disabled={busy || !name.trim() || joinBlocked}
               className="btn-gold min-h-14 whitespace-nowrap rounded-full text-[17px] font-semibold">
-              {busy ? "One moment…" : ask === "create" ? "Open the table" : ask === "bots" || ask === "learn" ? "Start the game" : "Take a seat"}
+              {busy ? "One moment…" : SHEET[ask].button}
             </button>
           </form>
         </div>
