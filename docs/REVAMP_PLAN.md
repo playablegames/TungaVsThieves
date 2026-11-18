@@ -122,7 +122,6 @@ Settings and problems
 
 ## State at the end of 2026-11-18
 - Rules: 10 players = 6 villagers + 4 thieves (8e3a4b0). 37/37 rule tests pass.
-- Clock fix written (supabase/migrations/0003_sweep_new_address.sql) — owner to paste it in the Supabase SQL Editor,
-  then check `select jobname, command from cron.job;` shows tunga.playablegames.in.
+- Clock fix (supabase/migrations/0003_sweep_new_address.sql) RUN by the owner in the Supabase SQL Editor 2026-11-18.
 - Screen 3 + GET /api/games/[code]/peek + the role film: committed, NOT deployed (deploy = `npx vercel deploy --prod --yes`).
 - NEXT: Step 1 — connect the new rules engine to the server.
