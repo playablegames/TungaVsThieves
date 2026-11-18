@@ -11,7 +11,7 @@ Sources: **[P]** = the owner's 10 How-to-play pages (approved 2026-11-17) · **[
 | # | Rule | Source |
 |---|---|---|
 | 1.1 | 4 to 12 players. | [P] box |
-| 1.2 | Teams by player count (villagers + thieves): 4→3+1 · 5→4+1 · 6→4+2 · 7→5+2 · 8→6+2 · 9→6+3 · 10→7+3 (owner 2026-11-17: 5, 8, 10 were 3+2, 5+3, 6+4) · 11→7+4 · 12→8+4. | [C] |
+| 1.2 | Teams by player count (villagers + thieves): 4→3+1 · 5→4+1 · 6→4+2 · 7→5+2 · 8→6+2 · 9→6+3 · 10→6+4 (owner 2026-11-17: 5 and 8 were 3+2, 5+3; 10 tried 7+3, back to 6+4) · 11→7+4 · 12→8+4. | [C] |
 | 1.3 | Rounds: 2 at 4–5 players · 3 at 6–9 · 4 at 10–12. | [P] |
 | 1.4 | Role names: villagers Kisaan, Sarpanch, Baba, Teacher, Police, Doctor, NRI, Deewani · thieves Chor, Lootera, Gunda, Daku. Taken in that order up to the team size, then shuffled and dealt one each. | [C] |
 | 1.4b | **Thieves do NOT know each other.** Each player knows only their own role. | owner |
@@ -61,7 +61,7 @@ Sources: **[P]** = the owner's 10 How-to-play pages (approved 2026-11-17) · **[
 
 ### ✅ Dal Badal timing — DECIDED (owner 2026-11-17)
 **Only on the thief's own turn**, as that turn's play (4.1, 4.3) — "just do Dal Badal on their turn, simple". Never out
-of turn, never during a vote or a Teer Kaman. Team sizes per 1.2 (owner 2026-11-17: 5 = 4+1, 7 = 5+2, 8 = 6+2, 10 = 7+3).
+of turn, never during a vote or a Teer Kaman. Team sizes per 1.2 (owner 2026-11-17: 5 = 4+1, 7 = 5+2, 8 = 6+2, 10 = 6+4).
 
 ## 5. Elimination
 
