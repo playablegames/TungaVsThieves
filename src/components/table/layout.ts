@@ -3,11 +3,11 @@
 export const W = 442;
 export const H = 884;
 /** centre of the courtyard circle and its radius */
-export const CY = 342;
+export const CY = 330;
 export const R = 148;
 /** the ellipse the players stand on */
-export const RX = 184;
-export const RY = 198;
+export const RX = 180;
+export const RY = 196;
 /** where your area (the mat with your cards) begins */
 export const HAND_TOP = 588;
 

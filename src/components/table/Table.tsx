@@ -1,12 +1,12 @@
 "use client";
-// THE TABLE (owner 2026-11-19, revamp step 2): the night village, the players round the courtyard, announcements in
-// the centre, your real cards on the mat. Tap a card → its screen opens (CardSheet). Pass is the small button.
-// One fixed design size (layout.ts) scaled to the phone.
+// THE TABLE (owner + team 2026-11-19, approved sketch "village-classy" with the dusk plum circle): the night
+// village, players as the card back round the courtyard (your seat shows your role card), the centre panel with
+// whose turn it is and what just happened, the countdown top right, your real cards on the mat. Tap a card → its
+// screen opens (CardSheet). Pass is the small button. One fixed design size (layout.ts) scaled to the phone.
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { SHORT } from "@/lib/cards";
 import type { Card, Move } from "@/rules/game";
 import type { TableView } from "@/server/game";
-import { ANNOUNCE, Centre } from "./Centre";
+import { Centre } from "./Centre";
 import { CardFace, CardSheet } from "./CardSheet";
 import { H, HAND_TOP, W } from "./layout";
 import { Seats } from "./Seats";
@@ -24,7 +24,7 @@ function useClock(now: () => number) {
   return t;
 }
 
-/** who the game is waiting on, for the turn ring */
+/** who the game is waiting on — they glow gold */
 function activeSeats(v: TableView): number[] {
   const ph = v.phase;
   switch (ph.kind) {
@@ -36,6 +36,8 @@ function activeSeats(v: TableView): number[] {
   }
 }
 
+const RING = 2 * Math.PI * 19;
+
 export function Table({ view, deadline, now, total = 20, onMove, initialOpen = null }: {
   view: TableView; deadline: number | null; now: () => number; total?: number; onMove: (m: Move) => void;
   /** dev preview only: start with this card's screen open */
@@ -45,15 +47,15 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
   const t = useClock(now);
   const [open, setOpen] = useState<Card | null>(initialOpen);
   const you = view.you;
-  const hand = view.players[you]?.hand ?? [];
+  const me = view.players[you];
+  const hand = me?.hand ?? [];
   const myTurn = view.phase.kind === "turn" && view.phase.seat === you;
   const left = deadline && t !== null ? Math.max(0, (deadline - t) / 1000) : null;
-  const last = [...view.events].reverse().find((e) => ANNOUNCE.has(e.type)) ?? null;
-  const names = view.players.map((p) => p.name);
 
-  // fan your cards across the mat
-  const n = hand.length, cw = 90;
-  const step = n > 1 ? Math.min(cw + 6, (W - 60 - cw) / (n - 1)) : 0;
+  // your cards in their printed near-square shape: big when you hold 2, smaller and overlapping when you hold 5
+  const n = hand.length;
+  const cw = n <= 2 ? 150 : n === 3 ? 124 : 100;
+  const step = n > 1 ? Math.min(cw + 16, (W - 24 - cw) / (n - 1)) : 0;
   const x0 = (W - (cw + step * (n - 1))) / 2;
 
   return (
@@ -61,35 +63,45 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
       <div className="absolute left-1/2 top-1/2 origin-center" style={{ width: W, height: H, transform: `translate(-50%,-50%) scale(${scale})`, fontFamily: "var(--font-poppins), Poppins, sans-serif" }}>
         <VillageScene />
 
-        <div className="absolute inset-x-3 top-3 z-10 flex items-center justify-between">
-          <div className="flex items-center gap-2 rounded-xl bg-[#021230cc] py-1.5 pl-2.5 pr-3 shadow-[inset_0_0_0_1.5px_rgba(247,187,31,.6),0_4px_0_rgba(0,0,0,.35)]">
-            <b className="font-[family-name:var(--font-cinzel)] text-[13px] font-bold tracking-wider text-[#f7bb1f]">ROUND {view.round}</b>
-            {Array.from({ length: view.rounds }, (_, i) => (
-              <span key={i} className="size-[9px] rotate-45" style={i < view.round ? { background: "#f7bb1f", boxShadow: "0 0 6px #f7bb1f" } : { boxShadow: "inset 0 0 0 1.5px rgba(247,187,31,.6)" }} />
-            ))}
+        <div className="absolute inset-x-3.5 top-3 z-10 flex h-[46px] items-center justify-between">
+          <span className="size-10" aria-hidden />
+          <div className="rounded-xl bg-[#021230d1] px-3.5 py-[7px] font-[family-name:var(--font-cinzel)] text-[12.5px] font-bold tracking-[2px] text-[#f7bb1f] shadow-[inset_0_0_0_1.5px_rgba(247,187,31,.6)]">
+            ROUND {view.round} OF {view.rounds}
+          </div>
+          <div className="relative grid size-11 place-items-center font-[family-name:var(--font-cinzel)] text-[19px] font-bold text-[#f7bb1f]" aria-label={left !== null ? `${Math.ceil(left)} seconds left` : undefined}>
+            {left !== null && (
+              <>
+                <svg className="absolute inset-0" viewBox="0 0 44 44" aria-hidden>
+                  <circle cx={22} cy={22} r={19} fill="#021230" stroke="rgba(247,187,31,.2)" strokeWidth={3} />
+                  <circle cx={22} cy={22} r={19} fill="none" stroke="#f7bb1f" strokeWidth={3} strokeLinecap="round" transform="rotate(-90 22 22)"
+                    strokeDasharray={`${RING * Math.min(1, left / total)} 999`} />
+                </svg>
+                <span className="relative">{Math.ceil(left)}</span>
+              </>
+            )}
           </div>
         </div>
 
-        <Centre event={last} names={names} />
-        <Seats players={view.players} you={you} active={activeSeats(view)} left={left} total={total} />
+        <Centre view={view} />
+        <Seats players={view.players} you={you} myRole={me?.role ?? null} active={activeSeats(view)} />
 
-        <div className="absolute inset-x-0 bottom-0" style={{ top: HAND_TOP }}>
+        <div className="absolute inset-x-0 bottom-0 z-[1]" style={{ top: HAND_TOP }}>
           <div className="absolute inset-0 shadow-[0_-10px_24px_rgba(0,0,0,.5)]" style={{ background: "linear-gradient(rgba(2,10,30,.35), rgba(2,8,24,.9)), repeating-linear-gradient(90deg, rgba(255,231,166,.035) 0 1px, transparent 1px 12px), repeating-linear-gradient(0deg, #0e1a3c 0 6px, #0a1532 6px 12px)" }} />
-          <p className="absolute inset-x-0 top-6 text-center text-[12px] text-[#ffe7a6cc]">{myTurn ? "Your turn — tap a card" : "Your cards"}</p>
-          <div className="absolute inset-x-0 top-[62px] h-[150px]">
+          <p className="absolute inset-x-0 top-10 text-center text-[12px] text-[#ffe7a6d9]">{myTurn ? "Your turn — tap a card" : "Your cards"}</p>
+          <div className="absolute inset-x-0 top-[74px]" style={{ height: cw }}>
             {hand.map((c, i) => {
-              const mid = (n - 1) / 2, off = i - mid;
+              const off = i - (n - 1) / 2;
               return (
                 <button key={i} onClick={() => setOpen(c)} aria-label={c}
-                  className="tt-card absolute bottom-0 rounded-[9px] shadow-[0_8px_14px_rgba(0,0,0,.6)] active:scale-95"
-                  style={{ left: x0 + i * step, transform: `rotate(${off * 5}deg) translateY(${Math.abs(off) * 5}px)`, transformOrigin: "50% 120%" }}>
-                  <CardFace c={c} width={cw} line={SHORT[c]} />
+                  className="tt-card absolute top-0 rounded-[8px] shadow-[0_10px_18px_rgba(0,0,0,.6)] active:scale-95"
+                  style={{ left: x0 + i * step, transform: `rotate(${off * (n <= 2 ? 6 : 4)}deg) translateY(${Math.abs(off) * 4}px)`, transformOrigin: "50% 120%" }}>
+                  <CardFace c={c} width={cw} />
                 </button>
               );
             })}
           </div>
           {myTurn && (
-            <button onClick={() => onMove({ kind: "pass" })} className="absolute bottom-5 left-1/2 -translate-x-1/2 rounded-full bg-[#021230e6] px-6 py-2 text-[13px] font-semibold text-[#ffe7a6] shadow-[inset_0_0_0_1.5px_rgba(247,187,31,.6),0_3px_0_#000a1c]">
+            <button onClick={() => onMove({ kind: "pass" })} className="absolute bottom-[22px] left-1/2 -translate-x-1/2 rounded-full bg-[#021230e6] px-6 py-[7px] text-[13px] font-semibold text-[#ffe7a6] shadow-[inset_0_0_0_1.5px_rgba(247,187,31,.6)]">
               Pass
             </button>
           )}

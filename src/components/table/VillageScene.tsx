@@ -1,5 +1,5 @@
 // THE NIGHT VILLAGE (owner 2026-11-19, every piece approved on a sketch): night navy sky with a moon, far huts and
-// coconut palms, the mud courtyard circle with Warli dancers in rice-paste white and diyas round it, and the
+// coconut palms, the courtyard circle in dusk plum (owner picked it) with Warli dancers in rice-paste white and diyas round it, and the
 // lanterns hanging over YOUR area. Owner removed: flags, rangolis, banana plants, temple, tulsi pot, cart wheel,
 // bullock, the hut behind the top player. The Stones are NEVER drawn (they pass secretly). Pure SVG, no images.
 import { CY, H, HAND_TOP, R, W } from "./layout";
@@ -45,7 +45,7 @@ export function VillageScene() {
       <defs>
         <filter id="tt-glow" x="-1" y="-1" width="3" height="3"><feGaussianBlur stdDeviation="1.8" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
         <radialGradient id="tt-halo"><stop offset=".5" stopColor="#fff6d8" /><stop offset="1" stopColor="#fff6d8" stopOpacity="0" /></radialGradient>
-        <radialGradient id="tt-mud"><stop offset="0" stopColor="#7a4321" /><stop offset=".7" stopColor="#4a2814" /><stop offset="1" stopColor="#2e190c" /></radialGradient>
+        <radialGradient id="tt-dusk"><stop offset="0" stopColor="#2a2236" /><stop offset=".7" stopColor="#1b1628" /><stop offset="1" stopColor="#110e1c" /></radialGradient>
         <linearGradient id="tt-sky" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor="#0a2258" /><stop offset=".13" stopColor="#0d2a66" /><stop offset=".19" stopColor="#0a2152" />
           <stop offset=".2" stopColor="#15193a" /><stop offset=".5" stopColor="#191a37" /><stop offset="1" stopColor="#15142c" />
@@ -58,9 +58,9 @@ export function VillageScene() {
       <rect width={W} height={H} fill="url(#tt-fire)" />
 
       {STARS.map(([x, y], i) => <circle key={i} cx={x} cy={y} r={i % 3 ? 0.9 : 1.3} fill="#fff" opacity={0.6} />)}
-      <circle cx={252} cy={68} r={34} fill="url(#tt-halo)" opacity={0.2} />
-      <circle cx={252} cy={68} r={15} fill="#fff3cf" />
-      <circle cx={246} cy={65} r={2.4} fill="#e9dcb4" /><circle cx={257} cy={73} r={1.6} fill="#e9dcb4" />
+      <circle cx={334} cy={52} r={34} fill="url(#tt-halo)" opacity={0.2} />
+      <circle cx={334} cy={52} r={15} fill="#fff3cf" />
+      <circle cx={328} cy={49} r={2.4} fill="#e9dcb4" /><circle cx={339} cy={57} r={1.6} fill="#e9dcb4" />
 
       {PALMS.map(([x, h, lean]) => <Palm key={x} x={x} h={h} lean={lean} />)}
       {HUTS.map(([x, y, w]) => (
@@ -72,7 +72,7 @@ export function VillageScene() {
       ))}
       <rect x={0} y={GROUND} width={W} height={4} fill={SIL} />
 
-      <circle cx={W / 2} cy={CY} r={R} fill="url(#tt-mud)" stroke={GOLD} strokeOpacity={0.7} strokeWidth={2} />
+      <circle cx={W / 2} cy={CY} r={R} fill="url(#tt-dusk)" stroke={GOLD} strokeOpacity={0.7} strokeWidth={2} />
       <circle cx={W / 2} cy={CY} r={R - 6} fill="none" stroke={CHALK} strokeOpacity={0.35} />
       <circle cx={W / 2} cy={CY} r={R - 32} fill="none" stroke={CHALK} strokeOpacity={0.35} />
       {Array.from({ length: 30 }, (_, i) => <Dancer key={i} i={i} n={30} />)}
@@ -96,7 +96,7 @@ export function MatEdge() {
   }
   const lanterns: [number, number, string][] = [[20, 26, "#ff8a2a"], [58, 14, "#e8434b"], [384, 14, "#ffcf4a"], [422, 26, "#ff8a2a"]];
   return (
-    <svg className="pointer-events-none absolute left-0" style={{ top: HAND_TOP - 9 }} width={W} height={80} aria-hidden>
+    <svg className="pointer-events-none absolute left-0 z-[2]" style={{ top: HAND_TOP - 9 }} width={W} height={80} aria-hidden>
       <g opacity={0.75}><path d={`M0 8 Q110 22 221 10 Q332 22 442 8`} stroke="#2f6a2a" strokeWidth={2} fill="none" />{flowers}</g>
       {lanterns.map(([x, len, c], i) => (
         <g key={x} className="tt-sway" style={{ animationDelay: `-${i}s` }}>

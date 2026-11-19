@@ -1,45 +1,37 @@
-// THE PLAYERS round the courtyard (owner 2026-11-19): Warli figure in the seat colour standing on a soft glow, name
-// plate under it. The player whose turn it is gets the gold ring that counts down. No piles or stacks are shown —
-// the pile passes player to player clockwise and the Stones pass secretly.
-import { Figure } from "@/components/Figure";
-import { seatColour } from "@/lib/seats";
+// THE PLAYERS round the courtyard (owner + team 2026-11-19, "classy"): every player is the CARD BACK with a gold
+// name plate and how many cards they hold; whoever is up glows gold. YOUR seat shows your own role card face-up.
+// No piles or Stones are ever shown — the pile passes player to player clockwise and the Stones pass secretly.
+/* eslint-disable @next/next/no-img-element */
+import { CARD_BACK, roleArt } from "@/components/CardIcon";
 import { seatSpot } from "./layout";
 
-export interface SeatInfo { seat: number; name: string; alive: boolean }
+export interface SeatInfo { seat: number; name: string; alive: boolean; cards?: number }
 
-const GOLD = "#f7bb1f";
-const RING = 2 * Math.PI * 33;
-
-export function Seats({ players, you, active, left, total }: {
-  players: SeatInfo[]; you: number; active: number[];
-  /** seconds left on the active player's clock, and the full clock */
-  left: number | null; total: number;
+export function Seats({ players, you, myRole, active }: {
+  players: SeatInfo[]; you: number; myRole: string | null; active: number[];
 }) {
   return (
     <>
       {players.map((p) => {
         const { x, y } = seatSpot(p.seat, you, players.length);
-        const c = seatColour(p.seat).hex;
         const turn = active.includes(p.seat) && p.alive;
         const me = p.seat === you;
+        const face = me ? roleArt(myRole) : null;
+        const ring = turn ? "0 0 0 2.5px #f7bb1f, 0 0 22px rgba(247,187,31,.8)" : me ? "0 0 0 2px #f7bb1f" : "0 0 0 1.5px rgba(247,187,31,.55)";
         return (
-          <div key={p.seat} className="absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center" style={{ left: x, top: y, opacity: p.alive ? 1 : 0.35 }}>
-            {turn && (
-              <>
-                <svg className="tt-pulse absolute left-1/2 top-[30px] -translate-x-1/2 -translate-y-1/2" width={74} height={74} viewBox="0 0 74 74" aria-hidden>
-                  <circle cx={37} cy={37} r={33} fill="none" stroke="rgba(247,187,31,.2)" strokeWidth={4} />
-                  <circle cx={37} cy={37} r={33} fill="none" stroke={GOLD} strokeWidth={4} strokeLinecap="round" transform="rotate(-90 37 37)"
-                    strokeDasharray={`${RING * Math.max(0, Math.min(1, (left ?? total) / total))} 999`} style={{ filter: `drop-shadow(0 0 4px ${GOLD})` }} />
-                </svg>
-                {left !== null && <div className="absolute -top-5 rounded-md bg-[#f7bb1f] px-2 py-px text-[10px] font-bold text-[#021230] shadow-[0_2px_0_#8a6200]">{Math.ceil(left)}s</div>}
-              </>
-            )}
-            <div className="absolute bottom-[22px] -z-10 h-4 w-[58px] rounded-[50%]" style={{ background: `radial-gradient(${c}88, transparent 70%)` }} />
-            <div style={{ filter: "drop-shadow(0 3px 2px rgba(0,0,0,.5))" }}>
-              <Figure colour={p.alive ? c : "#7d8496"} size={42} label={p.name} />
+          <div key={p.seat} className="absolute z-[2] flex -translate-x-1/2 -translate-y-1/2 flex-col items-center"
+            style={{ left: x, top: y, opacity: p.alive ? 1 : 0.4, filter: p.alive ? undefined : "grayscale(1)" }}>
+            <div className="relative">
+              <img src={face ?? CARD_BACK} alt={me && myRole ? `You are ${myRole}` : ""} draggable={false}
+                className="h-[86px] w-[60px] rounded-[6px] object-cover" style={{ boxShadow: `${ring}, 0 8px 16px rgba(0,0,0,.6)` }} />
+              {p.cards !== undefined && p.alive && (
+                <span className="absolute -right-[9px] -top-2 grid size-[22px] place-items-center rounded-full bg-[#021230] text-[11px] font-bold text-[#ffe7a6] shadow-[inset_0_0_0_1.5px_rgba(247,187,31,.7)]"
+                  aria-label={`${p.cards} cards`}>{p.cards}</span>
+              )}
             </div>
-            <div className="mt-0.5 rounded-lg bg-[#021230e0] px-2.5 py-px text-[11.5px] font-semibold" style={{ color: me ? GOLD : "#fff", boxShadow: `inset 0 0 0 1.5px ${me ? GOLD : c + "aa"}` }}>
-              {me ? "YOU" : p.name}
+            <div className="relative -mt-1.5 whitespace-nowrap rounded-full bg-[#021230f0] px-3 py-[3px] text-[12.5px] font-semibold"
+              style={{ color: me ? "#f7bb1f" : turn ? "#ffe7a6" : "#fff", boxShadow: `inset 0 0 0 ${me || turn ? 1.5 : 1}px rgba(247,187,31,${me || turn ? 1 : 0.55})` }}>
+              {me ? `${p.name} · you` : p.name}
             </div>
           </div>
         );

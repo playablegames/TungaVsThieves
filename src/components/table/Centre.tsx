@@ -1,35 +1,51 @@
-// THE CENTRE of the courtyard (owner 2026-11-19): announcements and results ONLY — who played what on whom, who is
-// out, the round, the winner. Never the draw deck or the pile.
-/* eslint-disable @next/next/no-img-element */
-import { CARD_ART } from "@/components/CardIcon";
-import { CARD } from "@/lib/cards";
-import { seatColour } from "@/lib/seats";
-import type { Card } from "@/rules/game";
+// THE CENTRE PANEL (owner 2026-11-19): whose turn it is, and what just happened — announcements and results only.
+// Never the draw deck or the pile.
+import type { TableView } from "@/server/game";
 import { CY, W } from "./layout";
 
-export interface CentreEvent { n: number; type: string; msg: string; data?: Record<string, unknown> }
+type View = TableView;
+type Ev = View["events"][number];
 
 /** the events worth announcing in the middle of the table */
-export const ANNOUNCE = new Set(["play", "out", "teer_kaman", "dal_badal", "round", "over", "gift"]);
+export const ANNOUNCE = new Set(["play", "pass", "out", "teer_kaman", "dal_badal", "round", "over", "gift"]);
 
-export function Centre({ event, names }: { event: CentreEvent | null; names: string[] }) {
-  if (!event) return null;
-  const d = event.data ?? {};
-  const who = (seat: unknown) => typeof seat === "number" && names[seat] !== undefined
-    ? <span style={{ color: seatColour(seat).hex }}>{names[seat]}</span> : null;
+/** the short line for the big text — "Shyam passed", "Asha played Kundli on Om" */
+function said(e: Ev, names: string[]): string {
+  const d = e.data ?? {};
+  const n = (s: unknown) => (typeof s === "number" ? names[s] : undefined);
+  if (e.type === "pass") return e.msg.replace(/ passes \d cards face down\.?$/, " passed");
+  if (e.type === "play") return e.msg.replace(" plays ", " played ").replace(/\.$/, "");
+  if (e.type === "teer_kaman" && n(d.target)) return e.msg.replace(/\.$/, "");
+  return e.msg.replace(/\.$/, "");
+}
+
+/** the small line — who the game is waiting on */
+function waiting(v: View): string {
+  const ph = v.phase, name = (s: number) => (s === v.you ? "Your" : `${v.players[s]?.name}'s`);
+  switch (ph.kind) {
+    case "turn": return `${name(ph.seat)} turn`;
+    case "pass": return ph.seat === v.you ? "You are passing 3 cards" : `${v.players[ph.seat]?.name} is passing 3 cards`;
+    case "vote": return ph.final ? "The final vote" : "Faisla — everyone votes";
+    case "bhukamp": return "Bhukamp — everyone picks a card";
+    case "aim": return `${v.players[ph.shooter]?.name} is aiming Teer Kaman`;
+    case "gift": return `${v.players[ph.seat]?.name} gives the extra vote`;
+    case "over": return "Game over";
+  }
+}
+
+export function Centre({ view }: { view: View }) {
+  const names = view.players.map((p) => p.name);
+  const last = [...view.events].reverse().find((e) => ANNOUNCE.has(e.type)) ?? null;
   return (
-    <div key={event.n} className="tt-pop absolute w-[230px] -translate-x-1/2 -translate-y-1/2 text-center" style={{ left: W / 2, top: CY }} role="status" aria-live="polite">
-      {event.type === "play" && typeof d.card === "string" ? (
-        <>
-          <img src={CARD_ART[d.card as Card]} alt="" className="mx-auto size-[84px] rounded-full object-cover shadow-[0_0_0_3px_#f3e6cc55,0_6px_14px_rgba(0,0,0,.5)]" />
-          <div className="mt-1 text-[15px] font-semibold text-white">{who(d.seat)} played</div>
-          <div className="font-display text-[30px] font-black uppercase leading-none tracking-wide text-[#ef7a14] [text-shadow:0_2px_0_#5a1e04,0_0_18px_rgba(239,122,20,.35)]">
-            {CARD[d.card as Card].name}
-          </div>
-          {d.target !== undefined && d.target !== null && <div className="mt-1 text-[15px] font-semibold text-white">on {who(d.target)}</div>}
-        </>
-      ) : (
-        <div className="font-display text-[24px] font-black leading-tight text-[#ffe7a6] [text-shadow:0_2px_0_#3a1a04]">{event.msg}</div>
+    <div className="absolute z-[2] w-[196px] -translate-x-1/2 -translate-y-1/2 rounded-[14px] px-3 pb-3 pt-[11px] text-center shadow-[inset_0_0_0_1px_rgba(247,187,31,.55),0_10px_24px_rgba(0,0,0,.55)]"
+      style={{ left: W / 2, top: CY, background: "linear-gradient(rgba(12,44,107,.94), rgba(2,18,48,.96))" }} role="status" aria-live="polite">
+      <span className="absolute -top-[5px] left-1/2 size-2.5 -translate-x-1/2 rotate-45 bg-[#f7bb1f]" aria-hidden />
+      <span className="absolute -bottom-[5px] left-1/2 size-2.5 -translate-x-1/2 rotate-45 bg-[#f7bb1f]" aria-hidden />
+      <p className="text-[12px] text-[#ffe7a6e6]">{waiting(view)}</p>
+      {last && (
+        <p key={last.n} className="tt-pop font-display mt-[7px] rounded-lg bg-[#021230bf] px-2 py-[7px] text-[16px] font-black leading-tight text-white shadow-[inset_0_0_0_1px_rgba(247,187,31,.3)]">
+          {said(last, names)}
+        </p>
       )}
     </div>
   );

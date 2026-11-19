@@ -1,12 +1,10 @@
 // THE CARD SCREEN (owner 2026-11-19): tap a card in your hand and its screen opens over the dimmed table — the big
 // real card, ONE short line, and only the choices that make sense now. Every play is a PAIR. X at the top closes;
-// tapping anywhere outside the card closes too.
+// tapping anywhere outside the card closes too. Players to pick are shown as the card back, like at the table.
 /* eslint-disable @next/next/no-img-element */
 import { useState } from "react";
-import { Figure } from "@/components/Figure";
-import { CARD_FACE } from "@/components/CardIcon";
+import { CARD_BACK, CARD_FACE } from "@/components/CardIcon";
 import { CARD, isStoneCard } from "@/lib/cards";
-import { seatColour } from "@/lib/seats";
 import type { Card, Move } from "@/rules/game";
 import type { SeatInfo } from "./Seats";
 
@@ -23,16 +21,19 @@ export const LINE: Record<Card, string> = {
 };
 
 const NEEDS_TARGET = new Set<Card>(["TALASHI", "KUNDLI", "HERA_PHERI", "TEER_KAMAN"]);
+/** the printed face files are 600×513 */
+const FACE_RATIO = 513 / 600;
 
-/** the printed card: art in the frame, title, and its line in the space below — like the rules text on the real card */
-export function CardFace({ c, width, line }: { c: Card; width: number; line?: string }) {
+/** the printed card in its own near-square shape: art in the frame, title in the space above the divider */
+export function CardFace({ c, width }: { c: Card; width: number }) {
+  const long = CARD[c].name.length;
   return (
-    <div className="relative overflow-hidden rounded-[9px] bg-[#fbf0d9]" style={{ width, height: width * 1.4 }}>
-      <img src={CARD_FACE[c]} alt="" draggable={false} className="block w-full" />
-      <div className="font-display absolute inset-x-[4%] top-[62%] text-center font-black uppercase leading-none text-[#ef7a14] [text-shadow:0_1px_0_#7a2e0a]" style={{ fontSize: width * (CARD[c].name.length > 10 ? 0.092 : CARD[c].name.length > 8 ? 0.105 : 0.14), whiteSpace: "nowrap" }}>
+    <div className="relative overflow-hidden rounded-[8px] bg-[#fbf0d9]" style={{ width, height: width * FACE_RATIO }}>
+      <img src={CARD_FACE[c]} alt="" draggable={false} className="block size-full" />
+      <div className="font-display absolute inset-x-[4%] top-[61%] text-center font-black uppercase leading-none text-[#ef7a14] [text-shadow:0_1px_0_#7a2e0a]"
+        style={{ fontSize: width * (long > 10 ? 0.075 : long > 8 ? 0.095 : 0.13), whiteSpace: "nowrap" }}>
         {CARD[c].name}
       </div>
-      {line && <div className="absolute inset-x-[8%] top-[76%] text-center font-semibold leading-tight text-[#5a2a10]" style={{ fontSize: Math.max(10, width * 0.085) }}>{line}</div>}
     </div>
   );
 }
@@ -64,18 +65,19 @@ export function CardSheet({ card, hand, myTurn, players, you, onPlay, onClose }:
       <button onClick={onClose} aria-label="Close" className="absolute right-3 top-3 grid size-10 place-items-center rounded-xl bg-[#021230e6] text-[#f7bb1f] shadow-[inset_0_0_0_1.5px_rgba(247,187,31,.6)]">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M5 5l14 14M19 5L5 19" /></svg>
       </button>
-      <div className="tt-pop absolute left-1/2 top-[46%] flex -translate-x-1/2 -translate-y-1/2 w-[340px] flex-col items-center" onClick={(e) => e.stopPropagation()}>
-        <div className="rounded-[10px] shadow-[0_0_0_3px_#f7bb1f,0_18px_40px_rgba(0,0,0,.6)]"><CardFace c={card} width={200} line={LINE[card]} /></div>
+      <div className="tt-pop absolute left-1/2 top-[46%] flex w-[380px] -translate-x-1/2 -translate-y-1/2 flex-col items-center" onClick={(e) => e.stopPropagation()}>
+        <div className="rounded-[9px] shadow-[0_0_0_3px_#f7bb1f,0_18px_40px_rgba(0,0,0,.6)]"><CardFace c={card} width={260} /></div>
+        <p className="mt-4 text-center text-[16px] font-semibold text-[#ffe7a6]">{LINE[card]}</p>
         {aim && (
-          <div className="mt-4 flex flex-wrap justify-center gap-2">
+          <div className="mt-4 flex flex-wrap justify-center gap-2.5">
             {others.map((p) => {
               const on = target === p.seat;
               return (
-                <button key={p.seat} onClick={() => setTarget(p.seat)} aria-pressed={on}
-                  className="flex w-[70px] flex-col items-center rounded-xl py-1.5 text-[11.5px] font-semibold text-white transition-transform active:scale-95"
-                  style={{ background: on ? "rgba(247,187,31,.18)" : "rgba(2,18,48,.7)", boxShadow: on ? "inset 0 0 0 2px #f7bb1f" : `inset 0 0 0 1px ${seatColour(p.seat).hex}66` }}>
-                  <Figure colour={seatColour(p.seat).hex} size={30} />
-                  {p.name}
+                <button key={p.seat} onClick={() => setTarget(p.seat)} aria-pressed={on} className="flex w-[66px] flex-col items-center transition-transform active:scale-95">
+                  <img src={CARD_BACK} alt="" className="h-[60px] w-[42px] rounded-[4px] object-cover"
+                    style={{ boxShadow: on ? "0 0 0 2.5px #f7bb1f, 0 0 14px rgba(247,187,31,.7)" : "0 0 0 1px rgba(247,187,31,.5)" }} />
+                  <span className="relative -mt-1.5 max-w-full truncate rounded-full bg-[#021230f0] px-2 py-px text-[11px] font-semibold"
+                    style={{ color: on ? "#ffe7a6" : "#fff", boxShadow: `inset 0 0 0 ${on ? 1.5 : 1}px rgba(247,187,31,${on ? 1 : 0.55})` }}>{p.name}</span>
                 </button>
               );
             })}
