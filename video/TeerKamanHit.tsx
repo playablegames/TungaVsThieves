@@ -20,7 +20,7 @@ const FROM = { x: -260, y: 1360 }, TO = { x: CX - 20, y: CY + 30 };
 const ANGLE = (Math.atan2(TO.y - FROM.y, TO.x - FROM.x) * 180) / Math.PI;
 
 /** the arrow, pointing right, its tip at (0,0) */
-function Arrow() {
+export function Arrow() {
   return (
     <svg width={420} height={60} viewBox="-400 -30 420 60" style={{ overflow: "visible" }}>
       <path d="M-370 -16 L-330 0 L-370 16 L-350 0Z M-340 -16 L-300 0 L-340 16 L-320 0Z" fill="#e8434b" stroke="#7a1a10" strokeWidth={2} />
