@@ -4,12 +4,14 @@
 // whose turn it is and what just happened, the countdown top right, your real cards on the mat. Tap a card → its
 // screen opens (CardSheet). Pass is the small button. One fixed design size (layout.ts) scaled to the phone.
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { play } from "@/lib/sfx";
 import type { Card, Move } from "@/rules/game";
 import type { TableView } from "@/server/game";
 import { Centre } from "./Centre";
 import { CardFace, CardSheet } from "./CardSheet";
 import { H, HAND_TOP, W } from "./layout";
 import { Seats } from "./Seats";
+import { useTableSounds } from "./useTableSounds";
 import { MatEdge, VillageScene } from "./VillageScene";
 import "./table.css";
 
@@ -51,6 +53,7 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
   const hand = me?.hand ?? [];
   const myTurn = view.phase.kind === "turn" && view.phase.seat === you;
   const left = deadline && t !== null ? Math.max(0, (deadline - t) / 1000) : null;
+  useTableSounds(view, left);
 
   // your cards in their printed near-square shape: big when you hold 2, smaller and overlapping when you hold 5
   const n = hand.length;
@@ -92,7 +95,7 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
             {hand.map((c, i) => {
               const off = i - (n - 1) / 2;
               return (
-                <button key={i} onClick={() => setOpen(c)} aria-label={c}
+                <button key={i} onClick={() => { play("tap"); setOpen(c); }} aria-label={c}
                   className="tt-card absolute top-0 rounded-[8px] shadow-[0_10px_18px_rgba(0,0,0,.6)] active:scale-95"
                   style={{ left: x0 + i * step, transform: `rotate(${off * (n <= 2 ? 6 : 4)}deg) translateY(${Math.abs(off) * 4}px)`, transformOrigin: "50% 120%" }}>
                   <CardFace c={c} width={cw} />

@@ -90,8 +90,8 @@ function dhol(c: Ctx, at: number, bass: boolean, vol = 0.7) {
 // ---------------------------------------------------------------- the sounds
 const SOUNDS = {
   tap: (c: Ctx) => tone(c, { f: 900, dur: 0.05, vol: 0.15 }),
-  /** a card leaving the hand */
-  whoosh: (c: Ctx) => hiss(c, { dur: 0.28, vol: 0.35, from: 400, to: 3200, q: 0.8 }),
+  /** a card leaving the hand — pass true for the quieter one (3 cards passed on) */
+  whoosh: (c: Ctx, quiet = false) => hiss(c, { dur: 0.28, vol: quiet ? 0.18 : 0.35, from: 400, to: 3200, q: 0.8 }),
   /** a card turned over */
   flip: (c: Ctx) => { hiss(c, { dur: 0.06, vol: 0.4, from: 3000, to: 2000 }); hiss(c, { at: 0.07, dur: 0.06, vol: 0.3, from: 2600, to: 1800 }); },
   /** it's your move */
