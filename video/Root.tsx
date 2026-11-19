@@ -1,11 +1,11 @@
 import { Composition } from "remotion";
 import { TeerKamanHit } from "./TeerKamanHit";
-import { YourRole, type YourRoleProps } from "./YourRole";
+import { YourRole } from "./YourRole";
 
 // 720x1440 = a tall phone (owner's phone is 442x884 CSS, the same 1:2), 30 fps
 export const RemotionRoot = () => (
   <>
-    <Composition<YourRoleProps>
+    <Composition
       id="YourRole"
       component={YourRole}
       durationInFrames={105}
