@@ -2,15 +2,10 @@
 //   memory   - dev/tests, one Node process (`npm run dev`), clients poll
 //   supabase - production; service-role key only, RLS on with NO policies (clients never touch tables)
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { GameState } from "@/engine/types";
+import type { State } from "@/rules/game";
 
-/** seconds per decision; `debate` = the open floor before a vote (older rooms may lack it) */
-export interface Timers {
-  turn: number; vote: number; elim: number; debate?: number;
-  /** 2× (designer 2026-10-12, "2x for everyone if the host accepts"): bots, big-moment screens and the debate run twice
-   *  as fast; a turn's own clock stays. `speedAsk`: the seat that asked the host for it. */
-  speed?: 1 | 2; speedAsk?: number | null;
-}
+/** seconds per decision — every decision gets the same clock ([2.8] 20 s). Older rows carry extra fields; ignored. */
+export interface Timers { turn: number }
 
 export interface GameRow {
   code: string;
@@ -25,7 +20,9 @@ export interface GameRow {
     push?: { endpoint: string; keys: { p256dh: string; auth: string } } | null; hidden?: boolean;
     /** (designer 2026-10-14) the host muted this player's voice: mic held shut (messages stay open) */
     muted?: boolean }[];
-  state: GameState | null;
+  state: State | null;
+  /** PLAY AGAIN: the table this group moved on to */
+  next?: string | null;
   deadline: number | null;
   timers: Timers;
   createdAt: string;
@@ -72,12 +69,14 @@ export const memoryStore: Store = {
 function supabaseStore(sb: SupabaseClient): Store {
   const toRow = (d: Record<string, unknown>): GameRow => ({
     code: d.code as string, version: d.version as number, status: d.status as GameRow["status"],
-    hostToken: d.host_token as string, lobby: d.lobby as GameRow["lobby"], state: d.state as GameState | null,
-    deadline: d.deadline as number | null, timers: d.timers as Timers, createdAt: d.created_at as string,
+    hostToken: d.host_token as string, lobby: d.lobby as GameRow["lobby"], state: d.state as State | null,
+    deadline: d.deadline as number | null, timers: { turn: Number((d.timers as Timers | null)?.turn) || 20 },
+    next: (d.timers as { next?: string } | null)?.next ?? null, createdAt: d.created_at as string,
   });
   const fromRow = (r: GameRow) => ({
     code: r.code, version: r.version, status: r.status, host_token: r.hostToken, lobby: r.lobby,
-    state: r.state, deadline: r.deadline, timers: r.timers,
+    // PLAY AGAIN's new code rides in the timers column (no table change needed)
+    state: r.state, deadline: r.deadline, timers: { ...r.timers, ...(r.next ? { next: r.next } : {}) },
   });
   return {
     async get(code) {

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   ACTIONS, type Card, legalMoves, living, move, newGame, nextLiving, RuleError, type State, TABLE, timeoutMove, tkRoles, view, waitingOn,
 } from "./game";
-import { int } from "@/engine/rng";
+import { int } from "./rng";
 
 const names = (n: number) => Array.from({ length: n }, (_, i) => `P${i}`);
 const turnSeat = (s: State) => (s.phase.kind === "turn" ? s.phase.seat : -1);

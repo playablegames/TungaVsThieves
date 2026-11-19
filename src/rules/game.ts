@@ -5,7 +5,7 @@
 //   waitingOn(state)             who must move now
 //   legalMoves(state, seat)      every legal move (bots, tests, timeouts)
 //   view(state, seat)            only what that seat may see
-import { int, shuffle } from "@/engine/rng";
+import { int, shuffle } from "./rng";
 
 export type Action = "FAISLA" | "TALASHI" | "KUNDLI" | "HERA_PHERI" | "BHUKAMP" | "TEER_KAMAN";
 export type Card = Action | "DAL_BADAL" | "TUNGA_STONE" | "BHADRA_STONE";

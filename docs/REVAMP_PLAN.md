@@ -125,3 +125,13 @@ Settings and problems
 - Clock fix (supabase/migrations/0003_sweep_new_address.sql) RUN by the owner in the Supabase SQL Editor 2026-11-18.
 - Screen 3 + GET /api/games/[code]/peek + the role film: committed, NOT deployed (deploy = `npx vercel deploy --prod --yes`).
 - NEXT: Step 1 — connect the new rules engine to the server.
+
+## State at the end of 2026-11-19
+- STEP 1 DONE: the server runs the new rules (src/rules/game.ts) and the new bots (src/rules/brain.ts) through
+  src/server/bots.ts, which rebuilds each bot from the game's log on every call (bots.test.ts: rebuilt = live).
+- Deleted: the old engine (src/engine), the old bots, the old play screen (Game.tsx) and its parts, the routes for
+  dropped features (claim, defend, floor, extend, speed, whisper, last words, tutorial, debug), the old films.
+- /g/[code] shows "The new table is being built" until Step 3. NOT deployed: the live site keeps the old game.
+- Every decision = 20 s; talk is a move ({kind:"say"}) and never moves the clock; typed chat stays plain text.
+- 66/66 tests. House rules for future work: .claude/skills/tunga-table/SKILL.md.
+- NEXT: Step 2 — first sketch = player colours + faces.

@@ -2,7 +2,7 @@
 // Phone-side API + live updates. The phone only ever holds its own token and its own redacted view.
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createClient } from "@supabase/supabase-js";
-import type { Action } from "@/engine/types";
+import type { Move } from "@/rules/game";
 import type { ClientState } from "@/server/game";
 import type { ChatMessage } from "@/server/store";
 
@@ -35,25 +35,14 @@ export const api = {
   join: (code: string, name: string) =>
     call<{ code: string; token: string }>(`/api/games/${code}/join`, { method: "POST", body: JSON.stringify({ name }) }),
   start: (code: string, token: string) => call(`/api/games/${code}/start`, { method: "POST", token }),
-  act: (code: string, token: string, a: Action) => call(`/api/games/${code}/act`, { method: "POST", token, body: JSON.stringify(a) }),
+  act: (code: string, token: string, m: Move) => call(`/api/games/${code}/act`, { method: "POST", token, body: JSON.stringify(m) }),
   addBot: (code: string, token: string, count = 1) => call(`/api/games/${code}/bots`, { method: "POST", token, body: JSON.stringify({ count }) }),
   removeBot: (code: string, token: string, index: number) =>
     call(`/api/games/${code}/bots`, { method: "DELETE", token, body: JSON.stringify({ index }) }),
   rename: (code: string, token: string, index: number, name: string) =>
     call(`/api/games/${code}/name`, { method: "POST", token, body: JSON.stringify({ index, name }) }),
-  claim: (code: string, token: string, body: { kind: "kundli" | "stone"; target: number; role?: string; has?: boolean; stone?: string }) =>
-    call(`/api/games/${code}/claim`, { method: "POST", token, body: JSON.stringify(body) }),
-  whisper: (code: string, token: string, body: { to: number; kind: "v"; audio: string } | { to: number; kind: "t"; text: string } | { to: number; kind: "k"; about: number; role: string }) =>
-    call(`/api/games/${code}/whisper`, { method: "POST", token, body: JSON.stringify(body) }),
-  floor: (code: string, token: string) => call(`/api/games/${code}/floor`, { method: "POST", token }),
-  defend: (code: string, token: string, body: { kind: "floor" | "role" | "nostone" | "liar"; role?: string }) =>
-    call(`/api/games/${code}/defend`, { method: "POST", token, body: JSON.stringify(body) }),
   reclaim: (code: string, token: string) => call(`/api/games/${code}/reclaim`, { method: "POST", token }),
-  tutorial: (name: string) => call<{ code: string; token: string }>("/api/games/tutorial", { method: "POST", body: JSON.stringify({ name }) }),
   rematch: (code: string, token: string) => call<{ code: string }>(`/api/games/${code}/rematch`, { method: "POST", token }),
-  extend: (code: string, token: string) => call(`/api/games/${code}/extend`, { method: "POST", token }),
-  endWords: (code: string, token: string) => call(`/api/games/${code}/words`, { method: "POST", token }),
-  speed: (code: string, token: string, body: { speed?: 1 | 2; answer?: "yes" | "no" }) => call(`/api/games/${code}/speed`, { method: "POST", token, body: JSON.stringify(body) }),
   tick: (code: string) => call<{ applied: boolean }>(`/api/games/${code}/tick`, { method: "POST" }),
   /** host: mute / unmute a player for everyone (2026-10-14) */
   mute: (code: string, token: string, seat: number, muted: boolean) =>
@@ -126,19 +115,14 @@ export function useGame(code: string) {
     return () => clearTimeout(t);
   }, [code, state?.deadline, refresh]);
 
-  const act = useCallback(async (a: Action) => {
+  const act = useCallback(async (m: Move) => {
     if (!token) return;
-    try { await api.act(code, token, a); await refresh(); } catch (e) { setError((e as Error).message); }
+    try { await api.act(code, token, m); await refresh(); } catch (e) { setError((e as Error).message); }
   }, [code, token, refresh]);
 
   const reclaim = useCallback(async () => {
     if (!token) return;
     try { await api.reclaim(code, token); await refresh(); } catch (e) { setError((e as Error).message); }
-  }, [code, token, refresh]);
-
-  const extend = useCallback(async () => {
-    if (!token) return;
-    try { await api.extend(code, token); await refresh(); } catch (e) { setError((e as Error).message); }
   }, [code, token, refresh]);
 
   const say = useCallback(async (text: string) => {
@@ -147,5 +131,5 @@ export function useGame(code: string) {
   }, [code, token, refresh]);
 
   const now = () => Date.now() + skew.current;
-  return { hydrated, token, state, messages, error, setError, act, say, extend, reclaim, refresh, now };
+  return { hydrated, token, state, messages, error, setError, act, say, reclaim, refresh, now };
 }

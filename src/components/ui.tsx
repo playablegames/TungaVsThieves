@@ -1,7 +1,7 @@
 "use client";
 // Shared pieces of the Haveli table: card faces (the printed cards), card backs, buttons, the timer ring, sheets.
 import { useEffect, useState } from "react";
-import type { Card } from "@/engine/types";
+import type { Card } from "@/rules/game";
 import { CARD, VOICE, type Voice } from "@/lib/cards";
 
 type Size = "sm" | "md" | "lg";

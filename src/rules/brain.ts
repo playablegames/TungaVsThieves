@@ -8,7 +8,7 @@
 //     isn't over")
 //   · everything else WEIGHS them (claims, accusations, ballots, Teer Kaman aims, Stone thefts), and that evidence fades
 // A bot reads ONLY what its seat may see: public events, events sent to it, its own hand and role card.
-import { next } from "@/engine/rng";
+import { next } from "./rng";
 import {
   type Action, type Card, canDalBadal, isStone, living, type Move, move, newGame, type Side, type State,
   type Talk, tkRoles, waitingOn,
@@ -76,6 +76,9 @@ export class Brain {
   pointed: Record<number, number> = {};
   private pCache: { at: number; alive: number; p: number[] } | null = null;
   out: Talk[] = [];
+  /** verdicts that needed my hand at the time (a Talashi claim about me), by event number: given (a rebuilt bot) and made */
+  notes = new Map<number, boolean>();
+  noted: [number, boolean][] = [];
   n: number; K: number;
 
   constructor(public seat: number, public skill: Skill, public talky: number, s: State) {
@@ -90,6 +93,8 @@ export class Brain {
   isT(h: number, x: number) { return (h >> x) & 1; }
   me(s: State) { return s.players[this.seat]; }
   side(s: State) { return this.me(s).side; }
+  /** my side as far as the events read so far go — what a weight must use, so reading the log later gives the same */
+  sideThen(s: State): Side { const r = this.known[this.seat]; return r ? sideOf(r) : this.side(s); }
 
   private setFact(x: number, side: Side) {
     this.pCache = null; for (let i = 0; i < this.H.length; i++) if ((this.isT(this.H[i], x) === 1) !== (side === "T")) this.fact[i] = 0; }
@@ -168,7 +173,7 @@ export class Brain {
           if (by !== undefined) {
             this.stone[by] = lost ? 1 : this.stone[by] ?? 0;
             // I'm a villager robbed of a Stone: the robber is more likely a thief (big moment)
-            if (lost && this.side(s) === "V") this.weigh("robbed", (h) => (this.isT(h, by) ? 2 : 1));
+            if (lost && this.sideThen(s) === "V") this.weigh("robbed", (h) => (this.isT(h, by) ? 2 : 1));
             if (lost && next(r) < this.talky) { this.out.push({ t: "react", emoji: "cry" }); if (this.p(s)[by] > 0.2 || this.side(s) === "V") this.out.push({ t: "accuse", target: by }); }
           }
           break;
@@ -197,7 +202,7 @@ export class Brain {
           const comb = new Float64Array(this.H.length);
           for (let i = 0; i < this.H.length; i++) comb[i] = this.fact[i] ? this.small[i] + this.big[i] : -50;
           this.big = spread(comb, true) as Float64Array; this.small.fill(0); this.fact.fill(1);
-          if (this.seat in this.known && !seats.includes(this.seat)) this.setFact(this.seat, this.side(s));
+          if (this.seat in this.known && !seats.includes(this.seat)) this.setFact(this.seat, this.sideThen(s));
           for (const [x, role] of Object.entries(this.known)) this.setFact(Number(x), sideOf(role));
           break;
         }
@@ -245,7 +250,7 @@ export class Brain {
         const says: Side = k.t === "vouch" ? "V" : k.t === "accuse" ? "T" : sideOf(k.role);
         if (target === this.seat) {
           if (says === "T") { this.accusedMe[from] = (this.accusedMe[from] ?? 0) + 1; this.pointed[this.seat] = (this.pointed[this.seat] ?? 0) + 1;
-            if (this.side(s) === "V") this.weigh("small", (h) => (this.isT(h, from) ? 1.6 : 1)); // a wrong guess about me — maybe a lie
+            if (this.sideThen(s) === "V") this.weigh("small", (h) => (this.isT(h, from) ? 1.6 : 1)); // a wrong guess about me — maybe a lie
             if (!this.answered.has(from) && next(r) < this.talky * 0.7) this.answered.add(from), this.out.push(this.side(s) === "V" ? { t: "claim", role: this.me(s).role } : { t: "claim", role: this.fakeRole(s) }, { t: "accuse", target: from });
           }
           break;
@@ -266,14 +271,20 @@ export class Brain {
       }
       case "saw_cards": {
         if (target === undefined) break;
-        if (target === this.seat) { if (this.skill.catchesLies && k.cards.some((c) => !this.me(s).hand.includes(c))) lieCaught(); break; }
+        if (target === this.seat) {
+          if (this.skill.catchesLies) {
+            const lie = this.notes.get(n) ?? k.cards.some((c) => !this.me(s).hand.includes(c));
+            this.noted.push([n, lie]);
+            if (lie) lieCaught();
+          }
+          break;
+        }
         this.stone[target] = k.cards.some(isStone) ? 0.8 : (this.stone[target] ?? 0) * 0.3;
         break;
       }
       case "stone": if (target !== undefined) this.stone[target] = k.has ? Math.max(this.stone[target] ?? 0, 0.5) : (this.stone[target] ?? 0) * 0.5; break;
       case "react": break;
     }
-    void n;
   }
 
   /** BOT_LOGIC §3: a villager says only what it saw; a thief lies that fit the table */

@@ -6,7 +6,7 @@
 import { Children, Fragment, createContext, isValidElement, useContext, useEffect, useRef, useState, type ReactElement } from "react";
 import { spring } from "@/lib/anim";
 import { motionReduced } from "@/lib/motion";
-import type { Card } from "@/engine/types";
+import type { Card } from "@/rules/game";
 import { CARD } from "@/lib/cards";
 import { roleArt } from "./CardIcon";
 
@@ -27,8 +27,8 @@ function Pop({ d = 0, children }: { d?: number; children: React.ReactNode }) {
 
 const ART: Partial<Record<Card, string>> = {
   TALASHI: "/art/v2/talashi-art.webp", HERA_PHERI: "/art/v2/hera_pheri-art.webp", KUNDLI: "/art/v2/kundli-art.webp",
-  FAISLA: "/art/v2/faisla-art.webp", BATWARA: "/art/v2/bhukamp-art.webp", TEER_KAMAN: "/art/v2/teer_kaman-art.webp",
-  DAL_BADAL: "/art/v2/dal_badal-art.webp", STONE_1: "/art/v2/stone_bhadra-art.webp", STONE_2: "/art/v2/stone_tunga-art.webp",
+  FAISLA: "/art/v2/faisla-art.webp", BHUKAMP: "/art/v2/bhukamp-art.webp", TEER_KAMAN: "/art/v2/teer_kaman-art.webp",
+  DAL_BADAL: "/art/v2/dal_badal-art.webp", BHADRA_STONE: "/art/v2/stone_bhadra-art.webp", TUNGA_STONE: "/art/v2/stone_tunga-art.webp",
 };
 
 /** a piece of art on a soft gold halo */
@@ -77,7 +77,7 @@ const PAGES: { title: string; body: React.ReactNode }[] = [
     title: "Goal",
     body: (
       <>
-        <div className="flex items-center justify-center -space-x-6"><Halo src={ART.STONE_2!} size={170} alt="Tunga Stone" /><Halo src={ART.STONE_1!} size={170} alt="Bhadra Stone" /></div>
+        <div className="flex items-center justify-center -space-x-6"><Halo src={ART.TUNGA_STONE!} size={170} alt="Tunga Stone" /><Halo src={ART.BHADRA_STONE!} size={170} alt="Bhadra Stone" /></div>
         <Panel><Label>Team Tunga</Label><p className="mt-1 text-[17px] leading-snug">Villagers win by holding <Gold>both Stones</Gold> at the end of the game.</p></Panel>
         <Panel><Label>Team Thieves</Label><p className="mt-1 text-[17px] leading-snug">Thieves win by holding <Gold>either one of the Stones</Gold> at the end of the game.</p></Panel>
       </>
@@ -147,7 +147,7 @@ const PAGES: { title: string; body: React.ReactNode }[] = [
       <>
         <p className="text-center text-[16px] leading-snug text-moon">There are 6 action cards. Play a <Gold>matching pair</Gold> to use a card&apos;s effect.</p>
         <ActionCard c="TALASHI">Secretly see a player&apos;s 2 action cards.</ActionCard>
-        <ActionCard c="HERA_PHERI">Draw 2 cards, then swap 2 cards with any player.</ActionCard>
+        <ActionCard c="HERA_PHERI">Steal both cards of any player. They draw 2.</ActionCard>
         <ActionCard c="KUNDLI">You and another player secretly see each other&apos;s role.</ActionCard>
       </>
     ),
@@ -157,7 +157,7 @@ const PAGES: { title: string; body: React.ReactNode }[] = [
     body: (
       <>
         <ActionCard c="FAISLA">Call a vote. The player with the most votes is out.</ActionCard>
-        <ActionCard c="BATWARA">Everyone passes one action card to the next player.</ActionCard>
+        <ActionCard c="BHUKAMP">Everyone passes one action card to the next player.</ActionCard>
         <ActionCard c="TEER_KAMAN">Guess a player&apos;s role. Right: they are out. Wrong: you are out.</ActionCard>
       </>
     ),

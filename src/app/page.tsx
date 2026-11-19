@@ -100,7 +100,8 @@ function Entry() {
     try {
       if (ask === "learn") {
         try { localStorage.setItem(LEARNED, "yes"); } catch {}
-        const t = await api.tutorial(name);
+        // (2026-11-19) the guided first game went with the old rules: for now it is a plain game with 5 bots
+        const t = await api.createWithBots(name, 5);
         saveToken(t.code, t.token);
         router.push(`/g/${t.code}`);
         return;
