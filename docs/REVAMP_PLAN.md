@@ -18,7 +18,7 @@ broken. We copy the IDEAS that make those games feel professional, never their l
 STEP 1  FOUNDATION                            STEP 2  LOOK + SOUND KIT
  - clock fix (owner pastes 0003 SQL)           - each player: a colour + a role-card face
  - connect the new rules engine to the server  - one table layout: seats round a dark table,
-   (src/rules/game.ts, docs/RULES_ABSOLUTE.md)   Stones in the middle
+   (src/rules/game.ts, docs/RULES_ABSOLUTE.md)   middle = face-down pile + draw pile + round (Stones stay hidden in hands)
  - delete the old play screen                  - one sound per event (turn, steal, vote, out)
    (Game.tsx, 1,850 lines) + old engine        - Remotion films for the 11 big moments
  - speed limit: every screen smooth on a
