@@ -7,8 +7,12 @@ import { seatSpot } from "./layout";
 
 export interface SeatInfo { seat: number; name: string; alive: boolean; cards?: number }
 
-export function Seats({ players, you, myRole, active, votes = {} }: {
+export function Seats({ players, you, myRole, active, votes = {}, picked = [], hideYou = false }: {
   players: SeatInfo[]; you: number; myRole: string | null; active: number[];
+  /** while you play a card: the players you have picked glow (you pick them by name in the bottom area) */
+  picked?: number[];
+  /** a raised card sits over your seat — your role card hides under it */
+  hideYou?: boolean;
   /** [3.4] open vote: the live count on each player, a red bubble */
   votes?: Record<number, number>;
 }) {
@@ -19,7 +23,9 @@ export function Seats({ players, you, myRole, active, votes = {} }: {
         const turn = active.includes(p.seat) && p.alive;
         const me = p.seat === you;
         const face = me ? roleArt(myRole) : null;
-        const ring = turn ? "0 0 0 2.5px #f7bb1f, 0 0 22px rgba(247,187,31,.8)" : me ? "0 0 0 2px #f7bb1f" : "0 0 0 1.5px rgba(247,187,31,.55)";
+        if (me && hideYou) return null;
+        const pick = picked.includes(p.seat);
+        const ring = pick ? "0 0 0 3px #f7bb1f, 0 0 26px rgba(247,187,31,.95)" : turn ? "0 0 0 2.5px #f7bb1f, 0 0 22px rgba(247,187,31,.8)" : me ? "0 0 0 2px #f7bb1f" : "0 0 0 1.5px rgba(247,187,31,.55)";
         return (
           <div key={p.seat} className="absolute z-[2] flex -translate-x-1/2 -translate-y-1/2 flex-col items-center"
             style={{ left: x, top: y, opacity: p.alive ? 1 : 0.4, filter: p.alive ? undefined : "grayscale(1)" }}>
@@ -31,7 +37,7 @@ export function Seats({ players, you, myRole, active, votes = {} }: {
                   aria-label={`${votes[p.seat]} votes`}>{votes[p.seat]}</span>
               )}
             </div>
-            <div className="relative -mt-1.5 whitespace-nowrap rounded-full bg-[#021230f0] px-3 py-[3px] text-[12.5px] font-semibold"
+            <div className="relative -mt-1.5 max-w-[112px] truncate whitespace-nowrap rounded-full bg-[#021230f0] px-3 py-[3px] text-[12.5px] font-semibold"
               style={{ color: me ? "#f7bb1f" : turn ? "#ffe7a6" : "#fff", boxShadow: `inset 0 0 0 ${me || turn ? 1.5 : 1}px rgba(247,187,31,${me || turn ? 1 : 0.55})` }}>
               {me ? `${p.name} · you` : p.name}
             </div>

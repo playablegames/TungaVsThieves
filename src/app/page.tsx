@@ -11,6 +11,7 @@ import { HowToPlay } from "@/components/HowToPlay";
 import { MotionSettings } from "@/components/MotionSettings";
 import { AgeGate } from "@/components/AgeGate";
 import { NICKNAMES, isMinor, readGate } from "@/lib/gate";
+import { NAME_MAX } from "@/lib/names";
 import { TABLE } from "@/rules/game";
 
 const NAME_KEY = "tunga:name";
@@ -206,7 +207,7 @@ function Entry() {
                 className="min-h-14 rounded-xl border-[1.5px] border-card-ink/30 bg-white/60 px-4 text-[17px] font-medium text-card-ink outline-none focus:border-marigold-deep">
                 {NICKNAMES.map((n) => <option key={n} value={n}>{n}</option>)}
               </select>
-            ) : <input id="name" ref={nameRef} value={name} maxLength={20} onChange={(e) => setName(e.target.value)} placeholder="Your name" autoComplete="nickname"
+            ) : <input id="name" ref={nameRef} value={name} maxLength={NAME_MAX} onChange={(e) => setName(e.target.value)} placeholder="Your name" autoComplete="nickname"
               className="min-h-14 rounded-xl border-[1.5px] border-card-ink/30 bg-white/60 px-4 text-[17px] font-medium text-card-ink caret-marigold-deep outline-none placeholder:font-normal placeholder:text-card-ink/40 focus:border-marigold-deep" />}
             {ask === "bots" && (
               <div className="flex items-center justify-between gap-3 rounded-xl border-[1.5px] border-card-ink/20 px-2 py-2">

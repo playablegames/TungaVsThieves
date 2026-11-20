@@ -8,6 +8,7 @@
 @keyframes tt-fade-in { to { opacity: 1; } }
 @keyframes tt-fade-out { to { opacity: 0; } }
 @keyframes tt-red { 50% { box-shadow: 0 0 0 3px #e8434b, 0 0 34px 8px rgba(232, 67, 75, .85); } }
+@keyframes tt-rise { from { opacity: .4; transform: translateY(110px) scale(.7); } to { opacity: 1; transform: none; } }
 @keyframes tt-target { 50% { box-shadow: 0 0 0 3px #f7bb1f, 0 0 16px rgba(247, 187, 31, .7); } }
 
 .tt-flame { animation: tt-flick 1.1s ease-in-out infinite alternate; transform-box: fill-box; transform-origin: center bottom; }
@@ -15,11 +16,12 @@
 .tt-pulse { animation: tt-pulse 1.4s ease-in-out infinite; }
 .tt-shake { animation: tt-shake .35s ease-in-out; }
 .tt-pop { animation: tt-pop .28s cubic-bezier(.2, .9, .3, 1.2) both; }
+.tt-rise { animation: tt-rise .22s cubic-bezier(.2, .9, .3, 1.1) both; }
 .tt-target { animation: tt-target 1s ease-in-out infinite; }
 .tt-card { transition: transform .18s cubic-bezier(.2, .9, .3, 1.2), box-shadow .18s; touch-action: none; }
 
 @media (prefers-reduced-motion: reduce) {
-  .tt-flame, .tt-sway, .tt-pulse, .tt-shake, .tt-pop, .tt-target { animation: none !important; }
+  .tt-flame, .tt-sway, .tt-pulse, .tt-shake, .tt-pop, .tt-target, .tt-rise { animation: none !important; }
   .tt-card { transition: none; }
   /* the Faisla result still shows, all at once */
   .tt-vote, .tt-vote * { animation-duration: .01ms !important; }

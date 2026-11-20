@@ -1,7 +1,7 @@
 "use client";
 // DEV ONLY: the table on the real rules engine. Not served in production.
 //   ?n=6          players (4–12, default 6)
-//   ?you=turn     you are on your turn holding a Kundli pair (default: you wait with 2 cards)
+//   ?you=turn     you are on your turn holding a Kundli pair (default: you wait with 2 cards); ?pair=FAISLA another pair
 //   ?open=KUNDLI  start with that card's screen open
 //   ?vote=out|tie a Faisla result plays 1 s after opening (a made-up tally, to preview it)
 //   ?vote=open    Faisla is played and the open vote is on, 3 players have voted (the vote screen)
@@ -34,7 +34,7 @@ export default function DevTable() {
   const open = (q.get("open") as Card | null) ?? null;
   const voting = q.get("vote") === "open";
   const start = useMemo(() => {
-    if (!voting) return opening(n, onTurn);
+    if (!voting) return opening(n, onTurn, (q.get("pair") as Card | null) ?? "KUNDLI");
     // the player before you plays Faisla; three others vote, one of them for you
     const o = opening(n, false, "FAISLA");
     const caller = (o.you + 1) % n;
@@ -44,7 +44,7 @@ export default function DevTable() {
     s = move(s, b, { kind: "vote", for: o.you });
     s = move(s, c, { kind: "vote", for: b });
     return { s, you: o.you };
-  }, [n, onTurn, voting]);
+  }, [n, onTurn, voting, q]);
   const [s, setS] = useState(start.s);
   const [deadline] = useState(() => Date.now() + 14000);
   const now = useCallback(() => Date.now(), []);

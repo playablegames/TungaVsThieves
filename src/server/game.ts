@@ -9,6 +9,7 @@ import { livekitConfigured, voicePasses } from "./livekit";
 import { sendPush, type Alert } from "./push";
 import { BotTable, type BotSeat } from "./bots";
 import { ping, store, type ChatMessage, type GameRow, type Timers } from "./store";
+import { NAME_MAX } from "@/lib/names";
 import { ACTIONS, closeVoteNow, move, newGame, RuleError, TABLE, timeoutMove, view, waitingOn, type Move, type State } from "@/rules/game";
 
 export class HttpError extends Error {
@@ -35,7 +36,8 @@ const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const newCode = () => Array.from({ length: 5 }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join("");
 const newToken = () => randomBytes(24).toString("base64url");
 const cleanName = (n: unknown) => {
-  const s = String(n ?? "").replace(/\s+/g, " ").trim().slice(0, 20);
+  // counted by character ([...s]), so an emoji is never cut in half
+  const s = [...String(n ?? "").replace(/\s+/g, " ").trim()].slice(0, NAME_MAX).join("").trim();
   if (!s) throw new HttpError(400, "Enter a name");
   return s;
 };

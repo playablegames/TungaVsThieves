@@ -1,14 +1,15 @@
 "use client";
 // THE TABLE (owner + team 2026-11-19, approved sketch "village-classy" with the dusk plum circle): the night
 // village, players as the card back round the courtyard (your seat shows your role card), the centre panel with
-// whose turn it is and what just happened, the countdown top right, your real cards on the mat. Tap a card → its
-// screen opens (CardSheet). Pass is the small button. One fixed design size (layout.ts) scaled to the phone.
+// whose turn it is and what just happened, the countdown top right, your real cards on the mat. Tap a card → it
+// rises and the bottom area asks who it is played on (CardPanel). Pass is the small button. One fixed design size (layout.ts) scaled to the phone.
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { play } from "@/lib/sfx";
 import type { Card, Move } from "@/rules/game";
 import type { TableView } from "@/server/game";
 import { Centre } from "./Centre";
-import { CardFace, CardSheet } from "./CardSheet";
+import { CardFace, LINE } from "./CardSheet";
+import { CardPanel, isQuietCard } from "./CardPanel";
 import { H, HAND_TOP, W } from "./layout";
 import { Seats } from "./Seats";
 import { useTableSounds } from "./useTableSounds";
@@ -49,11 +50,24 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
 }) {
   const scale = useScale();
   const t = useClock(now);
-  const [open, setOpen] = useState<Card | null>(initialOpen);
   const you = view.you;
   const me = view.players[you];
   const hand = me?.hand ?? [];
   const myTurn = view.phase.kind === "turn" && view.phase.seat === you;
+  // a raised card belongs to the moment it was tapped in: when the game moves on, it drops back by itself
+  const moment = `${view.phase.kind}:${"seat" in view.phase ? view.phase.seat : ""}:${view.events.length}`;
+  const [raised, setRaised] = useState<{ card: Card; at: string } | null>(initialOpen ? { card: initialOpen, at: "" } : null);
+  const [picked, setPicked] = useState<number[]>([]);
+  const [note, setNote] = useState<{ text: string; until: number } | null>(null);
+  const shooting = view.phase.kind === "aim" && view.phase.shooter === you; // [3.7] Teer Kaman step 2
+  const voting = view.phase.kind === "vote" && Boolean(me?.alive);
+  const open: Card | null = voting ? null : shooting ? "TEER_KAMAN" : raised && (raised.at === "" || raised.at === moment) ? raised.card : null;
+  const raise = (c: Card | null) => { setPicked([]); setRaised(c ? { card: c, at: moment } : null); };
+  const tapCard = (c: Card) => {
+    play("tap");
+    if (isQuietCard(c)) { setNote({ text: LINE[c], until: now() + 2500 }); return; }
+    raise(c);
+  };
   const left = deadline && t !== null ? Math.max(0, (deadline - t) / 1000) : null;
   useTableSounds(view, left);
 
@@ -88,18 +102,18 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
         </div>
 
         <Centre view={view} />
-        <Seats players={view.players} you={you} myRole={me?.role ?? null} active={activeSeats(view)}
+        <Seats players={view.players} you={you} myRole={me?.role ?? null} active={activeSeats(view)} picked={open ? picked : []} hideYou={Boolean(open)}
           votes={view.phase.kind === "vote" ? liveCount(view.phase, view.extraVote) : undefined} />
         <VoteResult view={view} />
 
         <div className="absolute inset-x-0 bottom-0 z-[1]" style={{ top: HAND_TOP }}>
           <div className="absolute inset-0 shadow-[0_-10px_24px_rgba(0,0,0,.5)]" style={{ background: "linear-gradient(rgba(2,10,30,.35), rgba(2,8,24,.9)), repeating-linear-gradient(90deg, rgba(255,231,166,.035) 0 1px, transparent 1px 12px), repeating-linear-gradient(0deg, #0e1a3c 0 6px, #0a1532 6px 12px)" }} />
-          {!(view.phase.kind === "vote" && me?.alive) && <p className="absolute inset-x-0 top-10 text-center text-[12px] text-[#ffe7a6d9]">{myTurn ? "Your turn — tap a card" : "Your cards"}</p>}
-          <div className="absolute inset-x-0 top-[74px]" style={{ height: cw, visibility: view.phase.kind === "vote" && me?.alive ? "hidden" : undefined }}>
+          {!voting && !open && <p className="absolute inset-x-0 top-10 text-center text-[12px] text-[#ffe7a6d9]">{note && t !== null && t < note.until ? note.text : myTurn ? "Your turn — tap a card" : "Your cards"}</p>}
+          <div className="absolute inset-x-0 top-[74px]" style={{ height: cw, visibility: voting || open ? "hidden" : undefined }}>
             {hand.map((c, i) => {
               const off = i - (n - 1) / 2;
               return (
-                <button key={i} onClick={() => { play("tap"); setOpen(c); }} aria-label={c}
+                <button key={i} onClick={() => tapCard(c)} aria-label={c}
                   className="tt-card absolute top-0 rounded-[8px] shadow-[0_10px_18px_rgba(0,0,0,.6)] active:scale-95"
                   style={{ left: x0 + i * step, transform: `rotate(${off * (n <= 2 ? 6 : 4)}deg) translateY(${Math.abs(off) * 4}px)`, transformOrigin: "50% 120%" }}>
                   <CardFace c={c} width={cw} />
@@ -107,21 +121,22 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
               );
             })}
           </div>
-          {myTurn && (
+          {myTurn && !open && (
             <button onClick={() => onMove({ kind: "pass" })} className="absolute bottom-[22px] left-1/2 -translate-x-1/2 rounded-full bg-[#021230e6] px-6 py-[7px] text-[13px] font-semibold text-[#ffe7a6] shadow-[inset_0_0_0_1.5px_rgba(247,187,31,.6)]">
               Pass
             </button>
           )}
         </div>
         <MatEdge />
+        {open && (
+          <CardPanel key={open} card={open} view={view} myTurn={myTurn} thief={me?.side === "T"} shooting={shooting}
+            picked={picked} setPicked={setPicked} onClose={() => raise(null)}
+            onMove={(m) => { play("tap"); if (m.kind !== "teer_kaman") raise(null); onMove(m); }} />
+        )}
 
         {/* the Faisla vote opens on every living player's phone (owner 2026-11-20) */}
         {view.phase.kind === "vote" && me?.alive && <VoteSheet view={view} onMove={onMove} />}
 
-        {open && view.phase.kind !== "vote" && (
-          <CardSheet card={open} hand={hand} myTurn={myTurn} players={view.players} you={you}
-            onClose={() => setOpen(null)} onPlay={(m) => { setOpen(null); onMove(m); }} />
-        )}
       </div>
     </div>
   );
