@@ -117,7 +117,7 @@ export const DalBadal = ({ role }: DalBadalProps) => {
 
       {/* DAL BADAL */}
       <div style={{
-        position: "absolute", top: 120, width: "100%", textAlign: "center", fontFamily, fontWeight: 700, fontSize: 78, letterSpacing: 8,
+        position: "absolute", top: 860, width: "100%", textAlign: "center", fontFamily, fontWeight: 700, fontSize: 78, letterSpacing: 8,
         color: GOLD, opacity: Math.min(1, title * 1.4), transform: `scale(${interpolate(title, [0, 1], [1.25, 1])})`,
         textShadow: "0 0 34px rgba(232,67,75,.6), 0 5px 0 #5a1e04, 0 10px 28px rgba(0,0,0,.8)",
       }}>DAL BADAL</div>

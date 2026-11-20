@@ -8,6 +8,7 @@ import { play } from "@/lib/sfx";
 import type { Card, Move } from "@/rules/game";
 import type { TableView } from "@/server/game";
 import { Centre } from "./Centre";
+import { FilmLayer } from "./FilmLayer";
 import { CardFace, LINE } from "./CardSheet";
 import { CardPanel, isQuietCard } from "./CardPanel";
 import { H, HAND_TOP, W } from "./layout";
@@ -136,6 +137,9 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
 
         {/* the Faisla vote opens on every living player's phone (owner 2026-11-20) */}
         {view.phase.kind === "vote" && me?.alive && <VoteSheet view={view} onMove={onMove} />}
+
+        {/* the big moments' films, over everything (owner 2026-11-20) */}
+        <FilmLayer view={view} />
 
       </div>
     </div>

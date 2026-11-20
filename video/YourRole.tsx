@@ -68,7 +68,7 @@ export const YourRole = ({ role, thief }: YourRoleProps) => {
 
       {/* YOU ARE */}
       <div style={{
-        position: "absolute", top: 150, width: "100%", textAlign: "center", fontFamily, fontWeight: 700, fontSize: 58,
+        position: "absolute", top: 1068, width: "100%", textAlign: "center", fontFamily, fontWeight: 700, fontSize: 52,
         letterSpacing: interpolate(words, [0, 1], [30, 10]), color: GOLD_SOFT, opacity: words,
         transform: `translateY(${interpolate(words, [0, 1], [-24, 0])}px)`, textShadow: "0 4px 18px rgba(0,8,30,.9)",
       }}>YOU ARE</div>
@@ -89,7 +89,7 @@ export const YourRole = ({ role, thief }: YourRoleProps) => {
 
       {/* TEAM TUNGA / TEAM THIEVES */}
       <div style={{
-        position: "absolute", bottom: 210, width: "100%", textAlign: "center", fontFamily, fontWeight: 700, fontSize: 50,
+        position: "absolute", bottom: 190, width: "100%", textAlign: "center", fontFamily, fontWeight: 700, fontSize: 50,
         letterSpacing: 6, color: team.color, opacity: words,
         transform: `scale(${interpolate(words, [0, 1], [1.4, 1])})`, textShadow: `0 0 28px rgba(${team.glow},.8), 0 4px 14px rgba(0,8,30,.9)`,
       }}>{team.word}</div>

@@ -16,51 +16,51 @@ describe("table sounds", () => {
   it.each([
     ["TALASHI", "flip"], ["KUNDLI", "mystic"], ["HERA_PHERI", "steal"], ["BHUKAMP", "quake"],
   ])("playing a %s pair whooshes, then %s", (card, sound) => {
-    soundFor(ev("play", { card }), 0);
+    soundFor(ev("play", { card }), 0, false);
     expect(names()).toEqual(["whoosh", sound]);
   });
 
   it("Faisla's dhol plays when the vote opens, not twice", () => {
-    soundFor(ev("play", { card: "FAISLA" }), 0);
-    soundFor(ev("vote", { final: false }), 0);
+    soundFor(ev("play", { card: "FAISLA" }), 0, false);
+    soundFor(ev("vote", { final: false }), 0, false);
     expect(names()).toEqual(["whoosh", "faisla"]);
   });
 
   it("passing 3 cards is the quieter whoosh", () => {
-    soundFor(ev("pass"), 0);
+    soundFor(ev("pass"), 0, false);
     expect(played).toEqual([["whoosh", true]]);
   });
 
   it("Teer Kaman: arrow with a thud on a hit, a clatter on a miss", () => {
-    soundFor(ev("teer_kaman", { hit: true }), 0);
-    soundFor(ev("teer_kaman", { hit: false }), 0);
+    soundFor(ev("teer_kaman", { hit: true }), 0, false);
+    soundFor(ev("teer_kaman", { hit: false }), 0, false);
     expect(played).toEqual([["arrow", true], ["arrow", false]]);
   });
 
   it("open vote: each ballot is a note that climbs with the votes cast; the count is a drumroll", () => {
-    soundFor(ev("ballot", { cast: 1 }), 0);
-    soundFor(ev("ballot", { cast: 3 }), 0);
-    soundFor(ev("tally", {}), 0);
+    soundFor(ev("ballot", { cast: 1 }), 0, false);
+    soundFor(ev("ballot", { cast: 3 }), 0, false);
+    soundFor(ev("tally", {}), 0, false);
     expect(played).toEqual([["vote", 0], ["vote", 2], ["drumroll", undefined]]);
   });
 
   it("out = gong, Dal Badal = swirl", () => {
-    soundFor(ev("out"), 0);
-    soundFor(ev("dal_badal"), 0);
+    soundFor(ev("out"), 0, false);
+    soundFor(ev("dal_badal"), 0, false);
     expect(names()).toEqual(["gong", "swirl"]);
   });
 
   it("the end: fanfare if your side won, wah wah if not — your side as it was at the end", () => {
     const players = [{ seat: 0, side: "V" }, { seat: 1, side: "T" }];
-    soundFor(ev("over", { winner: "V", players }), 0);
-    soundFor(ev("over", { winner: "V", players }), 1);
+    soundFor(ev("over", { winner: "V", players }), 0, false);
+    soundFor(ev("over", { winner: "V", players }), 1, false);
     expect(names()).toEqual(["fanfare", "sting"]);
   });
 
   it("talk and turn hand-offs stay quiet", () => {
-    soundFor(ev("say"), 0);
-    soundFor(ev("turn"), 0);
-    soundFor(ev("round"), 0);
+    soundFor(ev("say"), 0, false);
+    soundFor(ev("turn"), 0, false);
+    soundFor(ev("round"), 0, false);
     expect(played).toEqual([]);
   });
 });

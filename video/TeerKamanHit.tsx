@@ -1,4 +1,4 @@
-// "Teer Kaman — HIT" — 3 s (owner approved the film plan 2026-11-19). The night village dims; the target's card back
+// "Teer Kaman — HIT" — 2 s (was 3 s) (owner approved the film plan 2026-11-19). The night village dims; the target's card back
 // waits in the courtyard; an arrow streaks in and strikes it; the card cracks and goes dark. The ROLE IS NEVER SHOWN
 // (rule 6.5: roles only at the end). No sound of its own — the table plays the arrow + thud. The bottom third is left
 // empty: the game writes "Riya is out" there as plain text, so one film works for everyone.
@@ -37,7 +37,8 @@ const CRACKS = [
 ];
 
 export const TeerKamanHit = () => {
-  const f = useCurrentFrame();
+  // owner 2026-11-20: "too slow" — the same film played 1.5x as fast (2 s)
+  const f = useCurrentFrame() * 1.5;
   const { fps } = useVideoConfig();
 
   const dim = interpolate(f, [0, 12], [0, 0.55], clamp);
@@ -138,7 +139,7 @@ export const TeerKamanHit = () => {
 
       {/* HIT */}
       <div style={{
-        position: "absolute", top: 190, width: "100%", textAlign: "center", fontFamily, fontWeight: 700, fontSize: 132, letterSpacing: 14,
+        position: "absolute", top: 800, width: "100%", textAlign: "center", fontFamily, fontWeight: 700, fontSize: 132, letterSpacing: 14,
         color: GOLD, opacity: Math.min(1, word * 1.4), transform: `scale(${interpolate(word, [0, 1], [1.8, 1])})`,
         textShadow: "0 0 40px rgba(232,67,75,.8), 0 6px 0 #5a1e04, 0 10px 30px rgba(0,0,0,.8)",
       }}>HIT</div>

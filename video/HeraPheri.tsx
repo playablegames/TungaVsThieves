@@ -5,6 +5,7 @@
 // own (the table plays it). The bottom third stays empty: the game writes "Raju robbed Pappu".
 import { AbsoluteFill, Easing, Img, interpolate, random, spring, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 import { VillageScene } from "../src/components/table/VillageScene";
+import { Word } from "./common";
 
 const GOLD = "#f7bb1f", GOLD_SOFT = "#ffe7a6";
 const S = 720 / 442;
@@ -89,6 +90,7 @@ export const HeraPheri = () => {
           filter: "drop-shadow(0 12px 22px rgba(0,0,0,.7))",
         }} />
 
+        <Word f={f} fps={fps} at={8} text="HERA PHERI" y={CY + 240} size={100} spring={spring} />
       </AbsoluteFill>
     </AbsoluteFill>
   );

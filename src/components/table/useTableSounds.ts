@@ -6,12 +6,18 @@ import { useEffect, useRef } from "react";
 import { playSting, setMood, startMusicOnFirstTap, stopMusic } from "@/lib/music";
 import { play, unlockOnFirstTap } from "@/lib/sfx";
 import type { TableView } from "@/server/game";
+import { filmPlaysSound } from "./films";
 
 type Ev = TableView["events"][number];
 
 /** the sound for one event, if it has one */
-export function soundFor(e: Ev, you: number) {
+export function soundFor(e: Ev, you: number, films = true) {
   const d = e.data ?? {};
+  // a moment with a film: the film plays its sounds on cue (src/lib/filmCues.ts) — only the end's music changes here
+  if (films && filmPlaysSound(e)) {
+    if (e.type === "over") { setMood("silent"); const me = (d.players as { seat: number; side: string }[] | undefined)?.find((p) => p.seat === you); void playSting(!!me && me.side === d.winner); }
+    return;
+  }
   switch (e.type) {
     case "play":
       play("whoosh");

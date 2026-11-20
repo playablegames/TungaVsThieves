@@ -102,7 +102,7 @@ export const TeerKamanMiss = () => {
 
       {/* MISS */}
       <div style={{
-        position: "absolute", top: 190, width: "100%", textAlign: "center", fontFamily, fontWeight: 700, fontSize: 124, letterSpacing: 14,
+        position: "absolute", top: 800, width: "100%", textAlign: "center", fontFamily, fontWeight: 700, fontSize: 124, letterSpacing: 14,
         color: ASH, opacity: Math.min(1, word * 1.4),
         transform: `translateY(${interpolate(word, [0, 1], [-40, 0])}px) rotate(${wobble}deg)`,
         textShadow: "0 6px 0 #3a3426, 0 10px 30px rgba(0,0,0,.8)",
