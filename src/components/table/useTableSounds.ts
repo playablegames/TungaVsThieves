@@ -24,12 +24,9 @@ export function soundFor(e: Ev, you: number) {
       return; // Faisla's dhol plays on its "vote" event; Teer Kaman's arrow on the shot
     case "pass": return play("whoosh", true);
     case "vote": return play("faisla");
-    case "tally": {
-      play("drumroll");
-      const votes = Object.values((d.ballots ?? {}) as Record<string, { for: number | null }>).filter((b) => b.for !== null).length;
-      for (let i = 0; i < votes; i++) setTimeout(() => play("vote", i), 1300 + i * 300);
-      return;
-    }
+    // [3.4] open vote: each ballot lands with a note that climbs as more votes come in; the count itself is a drumroll
+    case "ballot": return play("vote", Math.max(0, Number(d.cast ?? 1) - 1));
+    case "tally": return play("drumroll");
     case "teer_kaman": return play("arrow", d.hit === true);
     case "dal_badal": return play("swirl");
     case "out": return play("gong");

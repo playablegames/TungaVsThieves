@@ -1,7 +1,7 @@
 // One test per rule in docs/RULES_ABSOLUTE.md — the test name starts with the rule number.
 import { describe, expect, it } from "vitest";
 import {
-  ACTIONS, type Card, legalMoves, living, move, newGame, nextLiving, RuleError, type State, TABLE, timeoutMove, tkRoles, view, waitingOn,
+  ACTIONS, type Card, closeVoteNow, legalMoves, living, move, newGame, nextLiving, RuleError, type State, TABLE, timeoutMove, tkRoles, view, waitingOn,
 } from "./game";
 import { int } from "./rng";
 
@@ -155,15 +155,39 @@ describe("3 · action cards", () => {
     const [a, b, x, y] = others(t, me);
     // x and y vote a, a votes b, everyone else (the caller too) abstains: a has 2 of 6 votes — no majority, still out
     const plan: Record<number, number | null> = { [x]: a, [y]: a, [a]: b };
-    for (const v of living(t).map((p) => p.seat)) t = move(t, v, { kind: "vote", for: plan[v] ?? null });
+    for (const v of living(t).map((p) => p.seat)) t = move(t, v, { kind: "vote", for: plan[v] ?? null }); t = closeVoteNow(t); // [3.4] the clock closes the open vote
     expect(t.players[a].alive).toBe(false);
     expect(t.phase.kind).toBe("gift");
+  });
+  it("3.4 OPEN VOTE: every vote shows to all at once, anyone may change it, and it only closes on the clock", () => {
+    const { s, me } = at(6, ["FAISLA", "FAISLA", "KUNDLI", "TALASHI", "TUNGA_STONE"]);
+    let t = move(s, me, { kind: "play", card: "FAISLA" });
+    const [a, b, c] = others(t, me);
+    t = move(t, a, { kind: "vote", for: b });
+    const seen = view(t, c); // someone else's phone
+    expect(seen.phase.kind === "vote" && seen.phase.ballots[a]).toEqual({ for: b, extra: false });
+    expect(seen.events.at(-1)).toMatchObject({ type: "ballot", to: "all", data: { seat: a, for: b, changed: false } });
+    t = move(t, a, { kind: "vote", for: c }); // a changes their mind
+    expect(t.events.at(-1)).toMatchObject({ type: "ballot", data: { seat: a, for: c, changed: true } });
+    for (const v of living(t).map((p) => p.seat)) if (v !== a) t = move(t, v, { kind: "vote", for: v === c ? b : c });
+    expect(t.phase.kind).toBe("vote"); // everyone has voted, yet it stays open until the server closes it
+    t = move(t, b, { kind: "vote", for: a }); // and a vote may still change
+    t = closeVoteNow(t);
+    expect(t.players[c].alive).toBe(false);
+  });
+  it("3.4 no vote in time = no vote", () => {
+    const { s, me } = at(6, ["FAISLA", "FAISLA", "KUNDLI", "TALASHI", "TUNGA_STONE"]);
+    let t = move(s, me, { kind: "play", card: "FAISLA" });
+    const [a] = others(t, me);
+    t = move(t, me, { kind: "vote", for: a });
+    t = closeVoteNow(t); // nobody else voted: 1 vote is still the most
+    expect(t.players[a].alive).toBe(false);
   });
   it("3.5 Faisla tie: nobody is out", () => {
     const { s, me } = at(4, ["FAISLA", "FAISLA", "KUNDLI", "TALASHI", "TUNGA_STONE"]);
     let t = move(s, me, { kind: "play", card: "FAISLA" });
     const [a, b] = others(t, me);
-    for (const v of living(t).map((p) => p.seat)) t = move(t, v, { kind: "vote", for: v === a ? b : v === b ? a : null });
+    for (const v of living(t).map((p) => p.seat)) t = move(t, v, { kind: "vote", for: v === a ? b : v === b ? a : null }); t = closeVoteNow(t); // [3.4] the clock closes the open vote
     expect(living(t).length).toBe(4);
     expect(t.events.some((e) => e.type === "tie")).toBe(true);
   });
@@ -262,7 +286,7 @@ describe("5 · elimination", () => {
     let t = move(s, me, { kind: "play", card: "FAISLA" });
     const tg = others(t, me)[0];
     const theirs = [...t.players[tg].hand];
-    for (const v of living(t).map((p) => p.seat)) t = move(t, v, { kind: "vote", for: v === tg ? me : tg });
+    for (const v of living(t).map((p) => p.seat)) t = move(t, v, { kind: "vote", for: v === tg ? me : tg }); t = closeVoteNow(t); // [3.4] the clock closes the open vote
     expect(t.players[tg].alive).toBe(false);
     expect(t.players[me].hand).toEqual(expect.arrayContaining(theirs));
     t = move(t, tg, { kind: "gift", to: me });
@@ -276,7 +300,7 @@ describe("5 · elimination", () => {
     const { s, me } = at(6, ["FAISLA", "FAISLA", "KUNDLI", "TALASHI", "TUNGA_STONE"]);
     let t = move(s, me, { kind: "play", card: "FAISLA" });
     const tg = others(t, me)[0];
-    for (const v of living(t).map((p) => p.seat)) t = move(t, v, { kind: "vote", for: v === me ? tg : me });
+    for (const v of living(t).map((p) => p.seat)) t = move(t, v, { kind: "vote", for: v === me ? tg : me }); t = closeVoteNow(t); // [3.4] the clock closes the open vote
     expect(t.players[me].alive).toBe(false);
     t = move(t, me, { kind: "gift", to: tg });
     const next = turnSeat(t);
@@ -297,7 +321,7 @@ describe("5 · elimination", () => {
     const { s, me } = at(6, ["FAISLA", "FAISLA", "KUNDLI", "TALASHI", "TUNGA_STONE"]);
     let t = move(s, me, { kind: "play", card: "FAISLA" });
     const [a, b, c] = others(t, me);
-    for (const v of living(t).map((p) => p.seat)) t = move(t, v, { kind: "vote", for: v === a ? me : a });
+    for (const v of living(t).map((p) => p.seat)) t = move(t, v, { kind: "vote", for: v === a ? me : a }); t = closeVoteNow(t); // [3.4] the clock closes the open vote
     expect(waitingOn(t)).toEqual([a]);
     expect(() => move(t, a, { kind: "gift", to: a })).toThrow();
     t = move(t, a, { kind: "gift", to: b });
@@ -337,7 +361,7 @@ describe("6 · the end", () => {
   it("6.1 final vote tie: nobody out, Stones counted as they are", () => {
     let s = toFinal(21);
     const l = living(s).map((p) => p.seat);
-    for (const v of l) s = move(s, v, { kind: "vote", for: null });
+    for (const v of l) s = move(s, v, { kind: "vote", for: null }); s = closeVoteNow(s); // [3.4] the clock closes the open vote
     expect(s.phase.kind).toBe("over");
     expect(living(s).length).toBe(4);
   });
@@ -350,7 +374,7 @@ describe("6 · the end", () => {
       for (const p of s.players) p.hand = p.hand.filter((c) => c !== "TUNGA_STONE" && c !== "BHADRA_STONE");
       s.pile = s.pile.filter((c) => c !== "TUNGA_STONE" && c !== "BHADRA_STONE");
       thief.hand.push("TUNGA_STONE"); v[0].hand.push("BHADRA_STONE");
-      for (const p of living(s)) s = move(s, p.seat, { kind: "vote", for: p.seat === thief.seat ? v[0].seat : thief.seat });
+      for (const p of living(s)) s = move(s, p.seat, { kind: "vote", for: p.seat === thief.seat ? v[0].seat : thief.seat }); s = closeVoteNow(s); // [3.4] the clock closes the open vote
       expect(s.phase.kind === "over" && s.phase.winner === "V").toBe(true);
       return;
     }
@@ -361,7 +385,7 @@ describe("6 · the end", () => {
     for (const p of s.players) p.hand = p.hand.filter((c) => c !== "TUNGA_STONE" && c !== "BHADRA_STONE");
     s.pile = s.pile.filter((c) => c !== "TUNGA_STONE" && c !== "BHADRA_STONE");
     thief.hand.push("TUNGA_STONE"); s.pile.push("BHADRA_STONE");
-    for (const p of living(s)) s = move(s, p.seat, { kind: "vote", for: null });
+    for (const p of living(s)) s = move(s, p.seat, { kind: "vote", for: null }); s = closeVoteNow(s); // [3.4] the clock closes the open vote
     expect(s.phase.kind === "over" && s.phase.winner === "T").toBe(true);
   });
   it("6.4 a Stone left in the pile counts for the village", () => {
@@ -370,7 +394,7 @@ describe("6 · the end", () => {
     for (const p of s.players) p.hand = p.hand.filter((c) => c !== "TUNGA_STONE" && c !== "BHADRA_STONE");
     s.pile = s.pile.filter((c) => c !== "TUNGA_STONE" && c !== "BHADRA_STONE");
     vill.hand.push("TUNGA_STONE"); s.pile.push("BHADRA_STONE");
-    for (const p of living(s)) s = move(s, p.seat, { kind: "vote", for: null });
+    for (const p of living(s)) s = move(s, p.seat, { kind: "vote", for: null }); s = closeVoteNow(s); // [3.4] the clock closes the open vote
     expect(s.phase.kind === "over" && s.phase.winner === "V").toBe(true);
   });
   it("6.5 roles stay hidden until the game is over", () => {
@@ -405,6 +429,7 @@ describe("every game, random moves", () => {
       while (s.phase.kind !== "over") {
         expect(total(s)).toBe(63);
         if (s.phase.kind === "turn") for (const p of living(s)) if (p.seat !== s.phase.seat) expect(p.hand.length).toBeLessThanOrEqual(2);
+        if (s.phase.kind === "vote" && !waitingOn(s).length) { s = closeVoteNow(s); continue; }
         const who = [...waitingOn(s), ...living(s).map((p) => p.seat)];
         const seat = who[int(s, Math.min(who.length, waitingOn(s).length + 1))];
         const ms = legalMoves(s, seat);

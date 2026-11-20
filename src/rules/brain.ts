@@ -10,7 +10,7 @@
 // A bot reads ONLY what its seat may see: public events, events sent to it, its own hand and role card.
 import { next } from "./rng";
 import {
-  type Action, type Card, canDalBadal, isStone, living, type Move, move, newGame, type Side, type State,
+  type Action, type Card, canDalBadal, closeVoteNow, isStone, living, type Move, move, newGame, type Side, type State,
   type Talk, tkRoles, waitingOn,
 } from "./game";
 
@@ -439,6 +439,7 @@ export function playGame(n: number, seed: number, skill: Skill, probe?: (s: Stat
       if (next(r) < 0.7 && !s.events.slice(-4).some((e) => e.type === "say" && (e.data as { seat: number }).seat === tb.seat))
         s = move(s, tb.seat, { kind: "say", talk: { t: "claim", role: tb.side(s) === "V" ? tb.me(s).role : tb.fakeRole(s) } });
     }
+    if (s.phase.kind === "vote" && !waitingOn(s).length) { s = closeVoteNow(s); continue; } // everyone has voted: the clock would close it
     const who = waitingOn(s)[0];
     if (s.phase.kind === "turn") turns++;
     if (probe) probe(s, bots);

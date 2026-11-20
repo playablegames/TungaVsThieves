@@ -1,5 +1,5 @@
 // THE PLAYERS round the courtyard (owner + team 2026-11-19, "classy"): every player is the CARD BACK with a gold
-// name plate and how many cards they hold; whoever is up glows gold. YOUR seat shows your own role card face-up.
+// name plate (no card count — owner 2026-11-20); whoever is up glows gold. YOUR seat shows your own role card face-up.
 // No piles or Stones are ever shown — the pile passes player to player clockwise and the Stones pass secretly.
 /* eslint-disable @next/next/no-img-element */
 import { CARD_BACK, roleArt } from "@/components/CardIcon";
@@ -7,8 +7,10 @@ import { seatSpot } from "./layout";
 
 export interface SeatInfo { seat: number; name: string; alive: boolean; cards?: number }
 
-export function Seats({ players, you, myRole, active }: {
+export function Seats({ players, you, myRole, active, votes = {} }: {
   players: SeatInfo[]; you: number; myRole: string | null; active: number[];
+  /** [3.4] open vote: the live count on each player, a red bubble */
+  votes?: Record<number, number>;
 }) {
   return (
     <>
@@ -24,9 +26,9 @@ export function Seats({ players, you, myRole, active }: {
             <div className="relative">
               <img src={face ?? CARD_BACK} alt={me && myRole ? `You are ${myRole}` : ""} draggable={false}
                 className="h-[86px] w-[60px] rounded-[6px] object-cover" style={{ boxShadow: `${ring}, 0 8px 16px rgba(0,0,0,.6)` }} />
-              {p.cards !== undefined && p.alive && (
-                <span className="absolute -right-[9px] -top-2 grid size-[22px] place-items-center rounded-full bg-[#021230] text-[11px] font-bold text-[#ffe7a6] shadow-[inset_0_0_0_1.5px_rgba(247,187,31,.7)]"
-                  aria-label={`${p.cards} cards`}>{p.cards}</span>
+              {(votes[p.seat] ?? 0) > 0 && (
+                <span key={votes[p.seat]} className="tt-pop absolute -right-[9px] -top-2 grid h-[22px] min-w-[22px] place-items-center rounded-full bg-[#e8434b] px-1 text-[12px] font-bold text-white shadow-[0_0_0_2px_#021230]"
+                  aria-label={`${votes[p.seat]} votes`}>{votes[p.seat]}</span>
               )}
             </div>
             <div className="relative -mt-1.5 whitespace-nowrap rounded-full bg-[#021230f0] px-3 py-[3px] text-[12.5px] font-semibold"

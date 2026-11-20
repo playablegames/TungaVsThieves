@@ -3,7 +3,7 @@
 // tapping anywhere outside the card closes too. Players to pick are shown as the card back, like at the table.
 /* eslint-disable @next/next/no-img-element */
 import { useState } from "react";
-import { CARD_BACK, CARD_FACE } from "@/components/CardIcon";
+import { CARD_FACE } from "@/components/CardIcon";
 import { CARD, isStoneCard } from "@/lib/cards";
 import type { Card, Move } from "@/rules/game";
 import type { SeatInfo } from "./Seats";
@@ -69,15 +69,17 @@ export function CardSheet({ card, hand, myTurn, players, you, onPlay, onClose }:
         <div className="rounded-[9px] shadow-[0_0_0_3px_#f7bb1f,0_18px_40px_rgba(0,0,0,.6)]"><CardFace c={card} width={260} /></div>
         <p className="mt-4 text-center text-[16px] font-semibold text-[#ffe7a6]">{LINE[card]}</p>
         {aim && (
-          <div className="mt-4 flex flex-wrap justify-center gap-2.5">
+          // the players to pick: NAME BUTTONS only (owner 2026-11-20 — on every picker screen)
+          <div className="mt-4 grid w-full grid-cols-2 gap-2.5">
             {others.map((p) => {
               const on = target === p.seat;
               return (
-                <button key={p.seat} onClick={() => setTarget(p.seat)} aria-pressed={on} className="flex w-[66px] flex-col items-center transition-transform active:scale-95">
-                  <img src={CARD_BACK} alt="" className="h-[60px] w-[42px] rounded-[4px] object-cover"
-                    style={{ boxShadow: on ? "0 0 0 2.5px #f7bb1f, 0 0 14px rgba(247,187,31,.7)" : "0 0 0 1px rgba(247,187,31,.5)" }} />
-                  <span className="relative -mt-1.5 max-w-full truncate rounded-full bg-[#021230f0] px-2 py-px text-[11px] font-semibold"
-                    style={{ color: on ? "#ffe7a6" : "#fff", boxShadow: `inset 0 0 0 ${on ? 1.5 : 1}px rgba(247,187,31,${on ? 1 : 0.55})` }}>{p.name}</span>
+                <button key={p.seat} onClick={() => setTarget(p.seat)} aria-pressed={on}
+                  className="h-12 truncate rounded-xl px-3 text-[16px] font-semibold transition-transform active:scale-95"
+                  style={on
+                    ? { background: "linear-gradient(#3a2a08, #241804)", color: "#ffe7a6", boxShadow: "inset 0 0 0 2px #f7bb1f, 0 0 16px rgba(247,187,31,.45)" }
+                    : { background: "linear-gradient(#0d1f4a, #061538)", color: "#fff", boxShadow: "inset 0 0 0 1px rgba(247,187,31,.5)" }}>
+                  {p.name}
                 </button>
               );
             })}

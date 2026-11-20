@@ -7,7 +7,7 @@ type View = TableView;
 type Ev = View["events"][number];
 
 /** the events worth announcing in the middle of the table */
-export const ANNOUNCE = new Set(["play", "pass", "out", "teer_kaman", "dal_badal", "round", "over", "gift"]);
+export const ANNOUNCE = new Set(["play", "pass", "out", "teer_kaman", "dal_badal", "round", "over", "gift", "ballot", "tie"]);
 
 /** the short line for the big text — "Shyam passed", "Asha played Kundli on Om" */
 function said(e: Ev, names: string[]): string {
@@ -16,6 +16,8 @@ function said(e: Ev, names: string[]): string {
   if (e.type === "pass") return e.msg.replace(/ passes \d cards face down\.?$/, " passed");
   if (e.type === "play") return e.msg.replace(" plays ", " played ").replace(/\.$/, "");
   if (e.type === "teer_kaman" && n(d.target)) return e.msg.replace(/\.$/, "");
+  // [3.4] open vote: the latest vote, live — "Moon → Munna"
+  if (e.type === "ballot" && typeof d.seat === "number") return `${names[d.seat]} → ${typeof d.for === "number" ? names[d.for] : "no vote"}`;
   return e.msg.replace(/\.$/, "");
 }
 

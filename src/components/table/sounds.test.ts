@@ -37,10 +37,11 @@ describe("table sounds", () => {
     expect(played).toEqual([["arrow", true], ["arrow", false]]);
   });
 
-  it("the count: a drumroll, then one rising note per vote cast", () => {
-    soundFor(ev("tally", { ballots: { 0: { for: 1 }, 1: { for: 2 }, 2: { for: null } } }), 0);
-    vi.runAllTimers();
-    expect(played).toEqual([["drumroll", undefined], ["vote", 0], ["vote", 1]]);
+  it("open vote: each ballot is a note that climbs with the votes cast; the count is a drumroll", () => {
+    soundFor(ev("ballot", { cast: 1 }), 0);
+    soundFor(ev("ballot", { cast: 3 }), 0);
+    soundFor(ev("tally", {}), 0);
+    expect(played).toEqual([["vote", 0], ["vote", 2], ["drumroll", undefined]]);
   });
 
   it("out = gong, Dal Badal = swirl", () => {

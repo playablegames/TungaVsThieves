@@ -31,7 +31,7 @@ interface After { seat: number; draw: number }
 export type Phase =
   | { kind: "turn"; seat: number }                                  // [2.4] PLAY or PASS, holding 5
   | { kind: "pass"; seat: number; keep: number; draw: number }      // choose the 3 to pass, keep `keep`, then draw `draw`
-  | { kind: "vote"; final: boolean; caller: number | null; ballots: Record<number, Ballot>; after: After | null } // [3.4] [6.1]
+  | { kind: "vote"; final: boolean; caller: number | null; ballots: Record<number, Ballot>; after: After | null; opened: number } // [3.4] [6.1] opened = its event n
   | { kind: "bhukamp"; actor: number; picks: Record<number, Card> } // [3.6]
   | { kind: "gift"; seat: number; next: Next }                      // [5.5] the out player gives the extra vote
   | { kind: "aim"; shooter: number; target: number }                // [3.7] Teer Kaman step 1: aimed — the talk window, then the shot
@@ -222,7 +222,7 @@ function runNext(s: State, next: Next) {
 }
 
 function startVote(s: State, final: boolean, caller: number | null, after: After | null) {
-  s.phase = { kind: "vote", final, caller, ballots: {}, after };
+  s.phase = { kind: "vote", final, caller, ballots: {}, after, opened: s.events.length };
   emit(s, "all", "vote", final ? "The final vote: vote one player out." : `${P(s, caller!).name} plays Faisla — everyone votes.`, { final, caller });
 }
 
@@ -301,7 +301,8 @@ export function apply(state: State, seat: number, m: Move): State {
     if (!canDalBadal(s, seat)) throw new RuleError("You can't play Dal Badal now");
     return dalBadal(s, seat, m.targets);
   }
-  if (!waitingOn(s).includes(seat)) throw new RuleError("Not your move");
+  // [3.4] OPEN VOTE (owner 2026-11-20): any living player may vote or CHANGE their vote until the vote closes
+  if (!waitingOn(s).includes(seat) && ph.kind !== "vote") throw new RuleError("Not your move");
 
   switch (ph.kind) {
     case "turn": {
@@ -367,9 +368,12 @@ export function apply(state: State, seat: number, m: Move): State {
       if (m.for === seat) throw new RuleError("You can't vote for yourself"); // [3.4]
       if (m.for !== null && !P(s, m.for).alive) throw new RuleError("Vote for a living player");
       if (m.extra && s.extraVote !== seat) throw new RuleError("You don't hold the extra vote");
+      const changed = seat in ph.ballots;
       ph.ballots[seat] = { for: m.for, extra: Boolean(m.extra) };
-      if (waitingOn(s).length === 0) closeVote(s);
-      return s;
+      // everyone sees every vote as it lands (owner 2026-11-20: the table must be able to swing behind one player)
+      const to = m.for === null ? "no vote" : P(s, m.for).name;
+      emit(s, "all", "ballot", `${me.name} ${changed ? "changes to" : "votes"} ${to}.`, { seat, for: m.for, extra: Boolean(m.extra), changed, cast: Object.keys(ph.ballots).length });
+      return s; // the vote closes on the clock (closeVoteNow), not when the last ballot lands
     }
     case "bhukamp": {
       if (m.kind !== "bhukamp") throw new RuleError("Choose a card to pass");
@@ -479,6 +483,15 @@ export function timeoutMove(s: State, seat: number): Move {
   }
 }
 
+/** [3.4] the vote's clock ran out (or everyone voted and the table went quiet): count it. The server decides WHEN. */
+export function closeVoteNow(state: State): State {
+  if (state.phase.kind !== "vote") throw new RuleError("No vote is open");
+  const s = clone(state);
+  for (const p of living(s)) if (!((s.phase as { ballots: Record<number, Ballot> }).ballots[p.seat])) (s.phase as { ballots: Record<number, Ballot> }).ballots[p.seat] = { for: null, extra: false }; // no vote in time = no vote
+  closeVote(s);
+  return s;
+}
+
 /** one entry point for every move, gifts included */
 export function move(s: State, seat: number, m: Move): State {
   if (m.kind === "say") return say(s, seat, m.talk);
@@ -514,8 +527,8 @@ export function view(s: State, seat: number) {
     you: seat,
     round: s.round, rounds: s.rounds, extraVote: s.extraVote,
     // who has voted / picked shows, never what
-    phase: s.phase.kind === "vote" ? { ...s.phase, ballots: over ? s.phase.ballots : Object.fromEntries(Object.keys(s.phase.ballots).map((k) => [k, true])) }
-      : s.phase.kind === "bhukamp" ? { ...s.phase, picks: Object.fromEntries(Object.keys(s.phase.picks).map((k) => [k, true])) } : s.phase,
+    // votes are OPEN (owner 2026-11-20): every ballot shows. Bhukamp picks stay secret — who has picked shows, never what
+    phase: s.phase.kind === "bhukamp" ? { ...s.phase, picks: Object.fromEntries(Object.keys(s.phase.picks).map((k) => [k, true])) } : s.phase,
     pileSize: s.pile.length, deckSize: s.deck.length, rolesInPlay: s.rolesInPlay,
     players: s.players.map((p) => ({
       seat: p.seat, name: p.name, alive: p.alive, cards: p.hand.length,

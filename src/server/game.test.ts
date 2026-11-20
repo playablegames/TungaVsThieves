@@ -31,7 +31,8 @@ async function checkNoLeak(code: string) {
     const over = v.phase.kind === "over";
     for (const q of v.players) if (q.seat !== seat && !over) { expect(q.hand).toBeNull(); expect(q.role).toBeNull(); expect(q.side).toBeNull(); }
     for (const e of v.events) expect(e.to === "all" || e.to.includes(seat)).toBe(true);
-    if (v.phase.kind === "vote" && !over) for (const b of Object.values(v.phase.ballots)) expect(b).toBe(true);
+    // [3.4] votes are OPEN (owner 2026-11-20): every ballot shows, with who it is for
+    if (v.phase.kind === "vote" && !over) for (const b of Object.values(v.phase.ballots)) expect(b).toHaveProperty("for");
   }
 }
 

@@ -12,6 +12,8 @@ import { CardFace, CardSheet } from "./CardSheet";
 import { H, HAND_TOP, W } from "./layout";
 import { Seats } from "./Seats";
 import { useTableSounds } from "./useTableSounds";
+import { VoteResult } from "./VoteResult";
+import { liveCount, VoteSheet } from "./VoteSheet";
 import { MatEdge, VillageScene } from "./VillageScene";
 import "./table.css";
 
@@ -86,12 +88,14 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
         </div>
 
         <Centre view={view} />
-        <Seats players={view.players} you={you} myRole={me?.role ?? null} active={activeSeats(view)} />
+        <Seats players={view.players} you={you} myRole={me?.role ?? null} active={activeSeats(view)}
+          votes={view.phase.kind === "vote" ? liveCount(view.phase, view.extraVote) : undefined} />
+        <VoteResult view={view} />
 
         <div className="absolute inset-x-0 bottom-0 z-[1]" style={{ top: HAND_TOP }}>
           <div className="absolute inset-0 shadow-[0_-10px_24px_rgba(0,0,0,.5)]" style={{ background: "linear-gradient(rgba(2,10,30,.35), rgba(2,8,24,.9)), repeating-linear-gradient(90deg, rgba(255,231,166,.035) 0 1px, transparent 1px 12px), repeating-linear-gradient(0deg, #0e1a3c 0 6px, #0a1532 6px 12px)" }} />
-          <p className="absolute inset-x-0 top-10 text-center text-[12px] text-[#ffe7a6d9]">{myTurn ? "Your turn — tap a card" : "Your cards"}</p>
-          <div className="absolute inset-x-0 top-[74px]" style={{ height: cw }}>
+          {!(view.phase.kind === "vote" && me?.alive) && <p className="absolute inset-x-0 top-10 text-center text-[12px] text-[#ffe7a6d9]">{myTurn ? "Your turn — tap a card" : "Your cards"}</p>}
+          <div className="absolute inset-x-0 top-[74px]" style={{ height: cw, visibility: view.phase.kind === "vote" && me?.alive ? "hidden" : undefined }}>
             {hand.map((c, i) => {
               const off = i - (n - 1) / 2;
               return (
@@ -111,7 +115,10 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
         </div>
         <MatEdge />
 
-        {open && (
+        {/* the Faisla vote opens on every living player's phone (owner 2026-11-20) */}
+        {view.phase.kind === "vote" && me?.alive && <VoteSheet view={view} onMove={onMove} />}
+
+        {open && view.phase.kind !== "vote" && (
           <CardSheet card={open} hand={hand} myTurn={myTurn} players={view.players} you={you}
             onClose={() => setOpen(null)} onPlay={(m) => { setOpen(null); onMove(m); }} />
         )}

@@ -3,9 +3,11 @@
 //   ?n=6          players (4–12, default 6)
 //   ?you=turn     you are on your turn holding a Kundli pair (default: you wait with 2 cards)
 //   ?open=KUNDLI  start with that card's screen open
+//   ?vote=out|tie a Faisla result plays 1 s after opening (a made-up tally, to preview it)
+//   ?vote=open    Faisla is played and the open vote is on, 3 players have voted (the vote screen)
 //   ?phone=1      show it inside a true 442×884 phone frame (headless Chrome can't make a window that narrow)
 import { notFound, useSearchParams } from "next/navigation";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Table } from "@/components/table/Table";
 import { move, newGame, view, type Card, type State } from "@/rules/game";
 import type { TableView } from "@/server/game";
@@ -13,13 +15,13 @@ import type { TableView } from "@/server/game";
 const NAMES = ["Moon", "Pappu", "Babu Rao", "Shyam", "Raju", "Munna", "Neha", "Kabir", "Meera", "Arjun", "Zoya", "Dev"];
 
 /** the first seed where the player on turn holds a Kundli pair; you are that player, or the one before them */
-function opening(n: number, onTurn: boolean): { s: State; you: number } {
+function opening(n: number, onTurn: boolean, card: Card = "KUNDLI"): { s: State; you: number } {
   const names = NAMES.slice(0, n);
   for (let seed = 1; seed < 2000; seed++) {
     const s = newGame(names, seed);
     if (s.phase.kind !== "turn") continue;
     const seat = s.phase.seat;
-    if (s.players[seat].hand.filter((c) => c === "KUNDLI").length >= 2) return { s, you: onTurn ? seat : (seat + n - 1) % n };
+    if (s.players[seat].hand.filter((c) => c === card).length >= 2) return { s, you: onTurn ? seat : (seat + n - 1) % n };
   }
   return { s: newGame(names, 1), you: 0 };
 }
@@ -30,16 +32,45 @@ export default function DevTable() {
   const n = Math.min(12, Math.max(4, Number(q.get("n")) || 6));
   const onTurn = q.get("you") === "turn";
   const open = (q.get("open") as Card | null) ?? null;
-  const start = useMemo(() => opening(n, onTurn), [n, onTurn]);
+  const voting = q.get("vote") === "open";
+  const start = useMemo(() => {
+    if (!voting) return opening(n, onTurn);
+    // the player before you plays Faisla; three others vote, one of them for you
+    const o = opening(n, false, "FAISLA");
+    const caller = (o.you + 1) % n;
+    let s = move(o.s, caller, { kind: "play", card: "FAISLA" });
+    const [a, b, c] = [caller, (o.you + 2) % n, (o.you + 3) % n];
+    s = move(s, a, { kind: "vote", for: b });
+    s = move(s, b, { kind: "vote", for: o.you });
+    s = move(s, c, { kind: "vote", for: b });
+    return { s, you: o.you };
+  }, [n, onTurn, voting]);
   const [s, setS] = useState(start.s);
   const [deadline] = useState(() => Date.now() + 14000);
   const now = useCallback(() => Date.now(), []);
+  const demo = q.get("vote");
+  const [tally, setTally] = useState<TableView["events"][number] | null>(null);
+  useEffect(() => {
+    if (demo !== "out" && demo !== "tie") return;
+    const id = setTimeout(() => {
+      // everyone votes; "out": most go to the seat after you; "tie": split two ways
+      const ballots: Record<number, { for: number }> = {}, count: Record<number, number> = {};
+      const A = (start.you + 1) % n, B = (start.you + 3) % n;
+      let k = 0;
+      for (let v = 0; v < n; v++) {
+        const to = v === A ? (demo === "out" ? (A + 1) % n : B) : v === B ? A : demo === "out" ? A : k++ % 2 === 0 ? A : B;
+        ballots[v] = { for: to }; count[to] = (count[to] ?? 0) + 1;
+      }
+      setTally({ n: 100000, to: "all", type: "tally", msg: "The votes are in.", data: { tally: count, ballots } });
+    }, 1000);
+    return () => clearTimeout(id);
+  }, [demo, n, start.you]);
   if (q.get("phone")) {
     const inner = new URLSearchParams(q); inner.delete("phone");
     return <iframe src={`/dev/table?${inner}`} width={442} height={884} className="fixed left-0 top-0 border-0" title="table" />;
   }
   return (
-    <Table view={view(s, start.you) as TableView} deadline={deadline} now={now} initialOpen={open}
+    <Table view={tally ? { ...(view(s, start.you) as TableView), events: [...(view(s, start.you) as TableView).events, tally] } : view(s, start.you) as TableView} deadline={deadline} now={now} initialOpen={open}
       onMove={(m) => { try { setS(move(s, start.you, m)); } catch (e) { alert((e as Error).message); } }} />
   );
 }

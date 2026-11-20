@@ -9,7 +9,7 @@ import { livekitConfigured, voicePasses } from "./livekit";
 import { sendPush, type Alert } from "./push";
 import { BotTable, type BotSeat } from "./bots";
 import { ping, store, type ChatMessage, type GameRow, type Timers } from "./store";
-import { ACTIONS, move, newGame, RuleError, TABLE, timeoutMove, view, waitingOn, type Move, type State } from "@/rules/game";
+import { ACTIONS, closeVoteNow, move, newGame, RuleError, TABLE, timeoutMove, view, waitingOn, type Move, type State } from "@/rules/game";
 
 export class HttpError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -20,6 +20,8 @@ export const DECISION_SECONDS = 20;
 const DEFAULT_TIMERS: Timers = { turn: DECISION_SECONDS };
 /** a bot's turn waits this long, so the table can follow it */
 export const BOT_DELAY_MS = 1500;
+/** [3.4] open vote: once everyone has voted, it closes this long after the last change (owner 2026-11-20: "you tell") */
+export const VOTE_QUIET_MS = 5000;
 /** [1.1] online tables seat 4-12 */
 export const MIN_PLAYERS = 4;
 export const MAX_PLAYERS = 12;
@@ -106,12 +108,24 @@ function settle(row: GameRow, s: State, from: number, bots = new BotTable(botSea
     if (!auto.length) break;
     for (const seat of auto) if (waitingOn(s).includes(seat)) s = move(s, seat, autoMove(row, bots, s, seat));
   }
+  const waiting = waitingOn(s);
+  const prev = row.state?.phase;
   row.state = bots.flush(s);
   row.status = s.phase.kind === "over" ? "over" : "playing";
-  const waiting = waitingOn(s);
+  const full = Date.now() + (row.timers.turn || DECISION_SECONDS) * 1000;
+  if (s.phase.kind === "vote") {
+    // [3.4] OPEN VOTE (owner 2026-11-20): the clock does NOT restart on each ballot — it runs from when the vote opened.
+    // Once everyone has voted, it closes VOTE_QUIET_MS after the last change (any change restarts that), never later.
+    const same = prev?.kind === "vote" && prev.opened === s.phase.opened && row.deadline !== null;
+    let at = same ? row.deadline! : full;
+    if (!waiting.length) at = Math.min(at, Date.now() + VOTE_QUIET_MS);
+    else if (waiting.every((x) => isAuto(row, x))) at = Math.min(at, Date.now() + BOT_DELAY_MS);
+    row.deadline = at;
+    return row;
+  }
   row.deadline = s.phase.kind === "over" ? null
     : waiting.length && waiting.every((x) => isAuto(row, x)) ? Date.now() + BOT_DELAY_MS
-    : Date.now() + (row.timers.turn || DECISION_SECONDS) * 1000;
+    : full;
   return row;
 }
 
@@ -330,7 +344,9 @@ export async function tick(code: string) {
       s = move(s, x, timeoutMove(s, x));
       if (wasTurn && s.phase.kind === "pass" && s.phase.seat === x) s = move(s, x, timeoutMove(s, x));
     }
-    if (humans.length) push(s, "timeout", "Time ran out.", { seats: humans });
+    // [3.4] the vote's clock ran out, or everyone voted and the table went quiet: count it
+    if (s.phase.kind === "vote" && !waitingOn(s).length) s = closeVoteNow(s);
+    if (humans.length && s.phase.kind !== "vote") push(s, "timeout", "Time ran out.", { seats: humans });
     // a human who keeps timing out gets a stand-in: the game never stalls on one phone
     for (const x of humans) {
       const p = r.lobby[x];
