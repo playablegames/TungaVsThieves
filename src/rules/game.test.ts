@@ -58,6 +58,15 @@ describe("1 · setup", () => {
 });
 
 describe("2 · a turn", () => {
+  it("2.5 PASS in one move: the 3 you raise go to the next player, you keep the other 2 (owner 2026-11-21)", () => {
+    const { s, me } = at(6, ["FAISLA", "TALASHI", "KUNDLI", "TUNGA_STONE", "KUNDLI"]);
+    const t = move(s, me, { kind: "give", cards: ["FAISLA", "TALASHI", "TUNGA_STONE"] });
+    expect([...t.players[me].hand].sort()).toEqual(["KUNDLI", "KUNDLI"]); // the pair kept for later
+    expect(turnSeat(t)).toBe((me + 1) % 6);
+    expect(t.players[(me + 1) % 6].hand).toEqual(expect.arrayContaining(["FAISLA", "TALASHI", "TUNGA_STONE"])); // they picked it up
+    expect(() => move(s, me, { kind: "give", cards: ["BHADRA_STONE", "KUNDLI", "FAISLA"] })).toThrow(/hold/);
+    expect(() => move(s, me, { kind: "give", cards: ["KUNDLI", "FAISLA"] })).toThrow(/exactly 3/);
+  });
   it("2.1 you pick up the pile and hold 5", () => {
     const s = newGame(names(5), 3);
     expect(s.players[turnSeat(s)].hand.length).toBe(5);

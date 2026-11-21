@@ -68,7 +68,7 @@ export type Move =
   | { kind: "say"; talk: Talk }                   // TALK — anyone, any time, never checked for truth (SITUATIONS.md §0)
   | { kind: "dal_badal"; targets: number[] }
   | { kind: "pass" }                              // [2.5] play nothing
-  | { kind: "give"; cards: Card[] }               // the 3 cards to pass
+  | { kind: "give"; cards: Card[] }               // the 3 cards to pass — on your turn it is also PASS in one move (owner 2026-11-21)
   | { kind: "vote"; for: number | null; extra?: boolean }
   | { kind: "bhukamp"; card: Card }
   | { kind: "gift"; to: number };
@@ -307,6 +307,7 @@ export function apply(state: State, seat: number, m: Move): State {
   switch (ph.kind) {
     case "turn": {
       if (m.kind === "pass") { s.phase = { kind: "pass", seat, keep: 2, draw: 0 }; return s; } // [2.5]
+      if (m.kind === "give") { give(s, seat, m.cards, 2, 0); return s; } // [2.5] the phone raised the 3 it passes
       if (m.kind !== "play" && m.kind !== "teer_kaman") throw new RuleError("PLAY or PASS");
       const card: Action = m.kind === "play" ? m.card : "TEER_KAMAN";
       if (count(me.hand, card) < 2) throw new RuleError(`You need a pair of ${NAME[card]}`); // [2.2] [2.3]

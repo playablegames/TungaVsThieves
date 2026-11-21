@@ -1,6 +1,6 @@
 "use client";
-// PLAYING A CARD (owner 2026-11-20). Tap a card: it rises above your area, big and gold (your own role card hides
-// under it). The WHOLE bottom area then asks one thing — name buttons for who it is played on — and ONE gold button
+// PLAYING A CARD (owner 2026-11-20, 2026-11-21). Tap the pair: both cards rise into your profile space (Table draws
+// them, RaisedCards). The WHOLE bottom area then asks one thing — name buttons for who it is played on — and ONE gold button
 // spells out exactly what will happen ("Play Kundli on Ravi"). Nothing plays until that button: two taps, every time,
 // so a stray tap never plays. No "are you sure?" popup — the button itself is the confirmation.
 // Teer Kaman is two of these steps in the same place: pick the player → "Aim at Ravi"; then name the role(s) →
@@ -9,14 +9,10 @@ import { useState } from "react";
 import { CARD, isStoneCard } from "@/lib/cards";
 import type { Card, Move } from "@/rules/game";
 import type { TableView } from "@/server/game";
-import { CardFace, LINE } from "./CardSheet";
-import { HAND_TOP, W } from "./layout";
+import { LINE } from "./CardSheet";
+import { HAND_TOP } from "./layout";
 
 const NEEDS_TARGET = new Set<Card>(["TALASHI", "KUNDLI", "HERA_PHERI", "TEER_KAMAN"]);
-/** the raised card: printed faces are 600×513 */
-export const RAISED_W = 140;
-const RAISED_H = Math.round(RAISED_W * (513 / 600));
-export const RAISED_TOP = HAND_TOP - RAISED_H - 6;
 
 type Step =
   | { kind: "players"; count: number }     // pick `count` players
@@ -47,9 +43,9 @@ const btn = (on: boolean) => on
   : { background: "linear-gradient(#0d1f4a, #061538)", color: "#fff", boxShadow: "inset 0 0 0 1px rgba(247,187,31,.5)" };
 
 /** the players you have picked so far (the table makes them glow too) — kept by Table so seats can show it */
-export function CardPanel({ card, view, myTurn, thief, shooting, picked, setPicked, onClose, onMove }: {
+export function CardPanel({ card, view, myTurn, thief, shooting, picked, setPicked, onMove }: {
   card: Card; view: TableView; myTurn: boolean; thief: boolean; shooting: boolean;
-  picked: number[]; setPicked: (p: number[]) => void; onClose: () => void; onMove: (m: Move) => void;
+  picked: number[]; setPicked: (p: number[]) => void; onMove: (m: Move) => void;
 }) {
   const [roles, setRoles] = useState<string[]>([]);
   const step = stepFor(card, view, myTurn, thief, shooting);
@@ -96,19 +92,6 @@ export function CardPanel({ card, view, myTurn, thief, shooting, picked, setPick
   const cols = options.length > 9 ? 4 : 3;
   return (
     <>
-      {/* the raised card, over your seat (your role card hides while it is up) */}
-      <div className="tt-rise absolute z-[6] rounded-[8px] shadow-[0_0_0_3px_#f7bb1f,0_0_26px_rgba(247,187,31,.55),0_14px_30px_rgba(0,0,0,.6)]"
-        style={{ left: (W - RAISED_W) / 2, top: RAISED_TOP }}>
-        <CardFace c={card} width={RAISED_W} />
-      </div>
-      {step.kind !== "roles" && (
-        <button onClick={onClose} aria-label="Back to your cards"
-          className="absolute z-[6] grid size-11 place-items-center rounded-xl bg-[#021230e6] text-[#f7bb1f] shadow-[inset_0_0_0_1.5px_rgba(247,187,31,.6)] active:scale-95"
-          style={{ left: (W + RAISED_W) / 2 + 10, top: RAISED_TOP }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M5 5l14 14M19 5L5 19" /></svg>
-        </button>
-      )}
-
       {/* the whole bottom area asks ONE thing */}
       <div className="absolute inset-x-0 bottom-0 z-[3]" style={{ top: HAND_TOP }} role="group" aria-label={question}>
         <p className="absolute inset-x-[76px] top-[18px] truncate text-center text-[15px] font-semibold text-[#ffe7a6]">{question}</p>
