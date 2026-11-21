@@ -12,28 +12,39 @@ function line(won: boolean, role: string, thief: boolean, caught: number): strin
   return thief ? `I was ${role} — caught red-handed 🤦` : `I was ${role} — the thieves fooled us all 🤦`;
 }
 
-async function draw(title: string, sub: string, village: boolean): Promise<Blob | null> {
+// (owner 2026-11-21, end screen redesign) the picture people post: YOUR role card, WON / LOST, the line that decided
+// the game, and where to play — in the box's night navy + gold.
+async function draw(won: boolean, village: boolean, role: string, sub: string, reason: string): Promise<Blob | null> {
   const c = document.createElement("canvas");
   c.width = W; c.height = H;
   const g = c.getContext("2d");
   if (!g) return null;
-  const bg = g.createRadialGradient(W / 2, H * 0.35, 50, W / 2, H * 0.4, H);
-  bg.addColorStop(0, "#3a1d0a"); bg.addColorStop(0.6, "#1f1007"); bg.addColorStop(1, "#120903");
+  const bg = g.createRadialGradient(W / 2, H * 0.32, 60, W / 2, H * 0.4, H);
+  bg.addColorStop(0, village ? "#2c3f7a" : "#4a1c2a"); bg.addColorStop(0.55, "#0c1638"); bg.addColorStop(1, "#050b22");
   g.fillStyle = bg; g.fillRect(0, 0, W, H);
-  const img = new Image();
-  img.src = "/emblem.webp";
-  await new Promise((r) => { img.onload = r; img.onerror = r; });
-  if (img.width) { const h = 720, w = (img.width / img.height) * h; g.drawImage(img, (W - w) / 2, 60, w, h); }
+  const load = (src: string) => new Promise<HTMLImageElement>((r) => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(i); i.src = src; });
+  const [logo, card] = await Promise.all([load("/art/logo-gold.webp"), load(`/art/roles/${role.toLowerCase()}.webp`)]);
+  const gold = "#f7bb1f", col = won ? gold : "#ff8a7a";
+  if (logo.width) { const h = 170, w = (logo.width / logo.height) * h; g.drawImage(logo, (W - w) / 2, 50, w, h); }
   g.textAlign = "center";
-  g.fillStyle = village ? "#f3c66b" : "#ffb4a9";
-  g.font = "bold 110px 'Playfair Display', Georgia, serif";
-  g.fillText(title, W / 2, 930);
-  g.fillStyle = "#f5e6ca";
-  g.font = "48px 'Playfair Display', Georgia, serif";
-  wrap(g, sub, W / 2, 1030, W - 140, 62);
-  g.fillStyle = "#e0a24a";
-  g.font = "bold 34px 'Cinzel', Georgia, serif";
-  g.fillText("PLAY FREE ON YOUR PHONES", W / 2, 1260);
+  g.font = "bold 150px 'Cinzel', Georgia, serif";
+  g.fillStyle = col; g.shadowColor = col; g.shadowBlur = 40;
+  g.fillText(won ? "WON" : "LOST", W / 2, 390);
+  g.shadowBlur = 0;
+  if (card.width) {
+    const h = 520, w = (card.width / card.height) * h, x = (W - w) / 2, y = 440;
+    g.shadowColor = "rgba(0,0,0,.7)"; g.shadowBlur = 40; g.fillStyle = col; g.fillRect(x - 8, y - 8, w + 16, h + 16); g.shadowBlur = 0;
+    g.drawImage(card, x, y, w, h);
+  }
+  g.fillStyle = "#ffffff";
+  g.font = "bold 50px 'Poppins', Arial, sans-serif";
+  wrap(g, sub, W / 2, 1040, W - 140, 62);
+  g.fillStyle = "#ffe7a6cc";
+  g.font = "34px 'Poppins', Arial, sans-serif";
+  wrap(g, reason, W / 2, 1150, W - 160, 46);
+  g.fillStyle = gold;
+  g.font = "bold 36px 'Cinzel', Georgia, serif";
+  g.fillText((village ? "THE VILLAGE WINS" : "THE THIEVES WIN") + "  ·  tunga.playablegames.in", W / 2, 1300);
   return new Promise((r) => c.toBlob((b) => r(b), "image/png"));
 }
 
@@ -47,7 +58,7 @@ function wrap(g: CanvasRenderingContext2D, text: string, x: number, y: number, m
   g.fillText(row, x, yy);
 }
 
-export function ShareResult({ won, village, role, thief, caught }: { won: boolean; village: boolean; role: string; thief: boolean; caught: number }) {
+export function ShareResult({ won, village, role, thief, caught, reason = "" }: { won: boolean; village: boolean; role: string; thief: boolean; caught: number; reason?: string }) {
   const [busy, setBusy] = useState(false);
   const title = village ? "VILLAGE WINS" : "THIEVES WIN";
   const sub = line(won, role, thief, caught);
@@ -56,7 +67,7 @@ export function ShareResult({ won, village, role, thief, caught }: { won: boolea
     const url = location.origin;
     const text = `${title}! ${sub}\nTunga vs Thieves — play on your phones: ${url}`;
     try {
-      const blob = await draw(title, sub, village);
+      const blob = await draw(won, village, role, sub, reason);
       const file = blob ? new File([blob], "tunga-vs-thieves.png", { type: "image/png" }) : null;
       if (file && navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], text });
       else window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener");
@@ -67,7 +78,7 @@ export function ShareResult({ won, village, role, thief, caught }: { won: boolea
     <button type="button" onClick={share} disabled={busy}
       className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-[#1aa34a] font-[family-name:var(--font-engraved)] text-[14px] font-bold uppercase tracking-[0.1em] text-white active:translate-y-px disabled:opacity-60">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7M16 6l-4-4-4 4M12 2v14" /></svg>
-      Share your result
+      Share my result
     </button>
   );
 }

@@ -8,10 +8,12 @@
 //   ?phase=bhukamp  the player after you played Bhukamp: you pick 1 card to pass on
 //   ?phase=gift     you were just put out: give your extra vote
 //   ?phase=out      you are out, watching
+//   ?phase=over     the end screen (a thief holds a Stone, one player is out); ?win=V for a village win
 //   ?phone=1      show it inside a true 442×884 phone frame (headless Chrome can't make a window that narrow)
 import { notFound, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Table } from "@/components/table/Table";
+import { EndSheet } from "@/components/table/EndSheet";
 import { move, newGame, view, type Card, type State } from "@/rules/game";
 import type { TableView } from "@/server/game";
 
@@ -49,6 +51,18 @@ export default function DevTable() {
       if (phase === "gift") s.phase = { kind: "gift", seat: o.you, next: { kind: "count" } };
       return { s, you: o.you };
     }
+    if (phase === "over") {
+      const o = opening(n, false);
+      const s = structuredClone(o.s);
+      const village = q.get("win") === "V";
+      const thief = s.players.find((p) => p.side === "T")!;
+      const keeper = village ? s.players.find((p) => p.side === "V")! : thief;
+      for (const p of s.players) p.hand = p.hand.filter((c) => c !== "TUNGA_STONE" && c !== "BHADRA_STONE");
+      keeper.hand = village ? ["TUNGA_STONE", "BHADRA_STONE"] : ["BHADRA_STONE", "FAISLA"];
+      s.players[(o.you + 2) % n].alive = false; s.players[(o.you + 2) % n].hand = [];
+      s.phase = { kind: "over", winner: village ? "V" : "T", reason: village ? `${keeper.name} holds both Stones.` : `${thief.name}, a thief, holds the Bhadra Stone.` };
+      return { s, you: o.you };
+    }
     if (!voting) return opening(n, onTurn, (q.get("pair") as Card | null) ?? "KUNDLI");
     // the player before you plays Faisla; three others vote, one of them for you
     const o = opening(n, false, "FAISLA");
@@ -84,6 +98,7 @@ export default function DevTable() {
     const inner = new URLSearchParams(q); inner.delete("phone");
     return <iframe src={`/dev/table?${inner}`} width={442} height={884} className="fixed left-0 top-0 border-0" title="table" />;
   }
+  if (s.phase.kind === "over") return <EndSheet view={view(s, start.you) as TableView} host hostName="" next={null} busy={false} error={null} onAgain={() => {}} onFollow={() => {}} />;
   return (
     <Table view={tally ? { ...(view(s, start.you) as TableView), events: [...(view(s, start.you) as TableView).events, tally] } : view(s, start.you) as TableView} deadline={deadline} now={now} initialOpen={open}
       onMove={(m) => { try { setS(move(s, start.you, m)); } catch (e) { alert((e as Error).message); } }} />
