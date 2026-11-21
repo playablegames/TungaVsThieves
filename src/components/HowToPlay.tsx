@@ -93,7 +93,7 @@ export function HowToPlay({ onClose, onLearn }: { onClose: () => void; onLearn: 
             ))}
             <li className="flex items-start gap-3 py-3">
               <img src={ART.DAL_BADAL} alt="" className="size-12 shrink-0 object-contain" />
-              <p className="text-[16px] leading-[1.55]"><B>Dal Badal</B> <Thief>(thieves only, one card)</Thief><br />On their turn, a thief shows their role and picks 3 other players. Their 3 roles and the thief's own are shuffled and dealt back, so anyone may end up on the other team.</p>
+              <p className="text-[16px] leading-[1.55]"><B>Dal Badal</B> <Thief>(thieves only, one card)</Thief><br />On their turn, a thief shows their role and picks 3 other players. Their 3 roles and the thief&apos;s own are shuffled and dealt back, so anyone may end up on the other team.</p>
             </li>
           </ul>
         </section>
