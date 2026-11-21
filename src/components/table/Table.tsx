@@ -10,6 +10,7 @@ import { play } from "@/lib/sfx";
 import type { Card, Move } from "@/rules/game";
 import type { TableView } from "@/server/game";
 import { Centre } from "./Centre";
+import { RolesSheet } from "./RolesSheet";
 import { FilmLayer } from "./FilmLayer";
 import { CardFace, LINE } from "./CardSheet";
 import { CARD, isStoneCard } from "@/lib/cards";
@@ -49,6 +50,8 @@ function activeSeats(v: TableView): number[] {
 }
 
 const RING = 2 * Math.PI * 19;
+/** when this phone first saw each talk line (by event n + text): its bubble shows for 7 s from then */
+const HEARD = new Map<string, number>();
 
 export function Table({ view, deadline, now, total = 20, onMove, initialOpen = null, voice = null }: {
   view: TableView; deadline: number | null; now: () => number; total?: number; onMove: (m: Move) => void;
@@ -74,7 +77,14 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
   });
   const [picked, setPicked] = useState<number[]>([]);
   const [note, setNote] = useState<{ text: string; until: number } | null>(null);
-  const [who, setWho] = useState<number | null>(null); // the player whose sheet is open (mute / report)
+  // [1.4c] roles in play: shown once when a game opens (before anyone has passed), and on tapping the round chip
+  const [rolesOpen, setRolesOpen] = useState(() => {
+    // once per game per phone (a game = its players + roles); round 1 only
+    const k = `tunga:roles-seen:${view.players.map((p) => p.name).join("|")}:${view.rolesInPlay.join("|")}`;
+    try { if (view.round !== 1 || sessionStorage.getItem(k)) return false; sessionStorage.setItem(k, "1"); } catch { return view.round === 1; }
+    return true;
+  });
+  const [who, setWho] = useState<number | null>(null);
   const [armed, setArmed] = useState<string | null>(null); // "Play Kundli" pressed: the names fill the bottom area
   const [passMode, setPassMode] = useState<string | null>(null); // "Pass 3 cards" pressed: every tap raises ONE card
   const shooting = view.phase.kind === "aim" && view.phase.shooter === you; // [3.7] Teer Kaman step 2
@@ -136,6 +146,29 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
   }
   const drop = (i: number) => { play("tap"); setUp(selIdx.filter((x) => x !== i)); };
   const left = deadline && t !== null ? Math.max(0, (deadline - t) / 1000) : null;
+
+  // WHAT EVERYONE DID THIS ROUND (a tag on their seat), WHAT THEY SAID (a bubble for 7 s) — owner 2026-11-21
+  const doing: Record<number, string> = {};
+  const roundStart = view.events.findLastIndex((e) => e.type === "round");
+  for (const e of view.events.slice(roundStart + 1)) {
+    const d = (e.data ?? {}) as { seat?: number; card?: string; target?: number; hit?: boolean };
+    if (typeof d.seat !== "number") continue;
+    const who = (x?: number) => (x === undefined ? "" : x === you ? "you" : view.players[x]?.name ?? "");
+    if (e.type === "pass") doing[d.seat] = "Passed";
+    else if (e.type === "play" && d.card) doing[d.seat] = `${CARD[d.card as Card].name}${d.target !== undefined ? ` on ${who(d.target)}` : ""}`;
+    else if (e.type === "teer_kaman") doing[d.seat] = `Teer Kaman ${d.hit ? "HIT" : "missed"} ${who(d.target)}`;
+    else if (e.type === "dal_badal") doing[d.seat] = "Dal Badal";
+  }
+  const saying: Record<number, { text: string; key: number }> = {};
+  for (const e of view.events) {
+    if (e.type !== "say") continue;
+    const seat = (e.data as { seat?: number } | undefined)?.seat;
+    if (typeof seat !== "number") continue;
+    const k = `${e.n}:${e.msg}`;
+    if (!HEARD.has(k) && t !== null) HEARD.set(k, t);
+    const at = HEARD.get(k) ?? 0;
+    if (t !== null && t - at < 7000) saying[seat] = { text: e.msg.slice(e.msg.indexOf(":") + 1).trim(), key: e.n };
+  }
   useTableSounds(view, left);
 
   // your cards in their printed near-square shape: big when you hold 2, smaller and overlapping when you hold 5
@@ -152,9 +185,10 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
 
         <div className="absolute inset-x-3.5 top-3 z-10 flex h-[46px] items-center justify-between">
           {voice ? <MicButton voice={voice} /> : <span className="size-10" aria-hidden />}
-          <div className="rounded-xl bg-[#021230d1] px-3.5 py-[7px] font-[family-name:var(--font-cinzel)] text-[12.5px] font-bold tracking-[2px] text-[#f7bb1f] shadow-[inset_0_0_0_1.5px_rgba(247,187,31,.6)]">
-            ROUND {view.round} OF {view.rounds}
-          </div>
+          <button onClick={() => { play("tap"); setRolesOpen(true); }} aria-label="Roles in play"
+            className="rounded-xl bg-[#021230d1] px-3.5 py-[7px] font-[family-name:var(--font-cinzel)] text-[12.5px] font-bold tracking-[2px] text-[#f7bb1f] shadow-[inset_0_0_0_1.5px_rgba(247,187,31,.6)] active:scale-95">
+            ROUND {view.round} OF {view.rounds} <span className="ml-1 font-[family-name:var(--font-poppins)] text-[11px] font-semibold tracking-normal text-[#ffe7a6]">· roles</span>
+          </button>
           <div className="relative grid size-11 place-items-center font-[family-name:var(--font-cinzel)] text-[19px] font-bold text-[#f7bb1f]" aria-label={left !== null ? `${Math.ceil(left)} seconds left` : undefined}>
             {left !== null && (
               <>
@@ -170,7 +204,7 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
         </div>
 
         <Centre view={view} />
-        <Seats players={view.players} you={you} myRole={me?.role ?? null} active={activeSeats(view)} picked={open || giving ? picked : []} talking={voice?.talking} muted={voice?.muted}
+        <Seats players={view.players} you={you} myRole={me?.role ?? null} active={activeSeats(view)} picked={open || giving ? picked : []} talking={voice?.talking} muted={voice?.muted} doing={doing} saying={saying}
           onSeat={voice && !open && !voting && !giving && up.length === 0 ? (s) => { if (!voice.bots.includes(s)) { play("tap"); setWho(s); } } : undefined} hideYou={(!voting && up.length > 0) || shooting}
           votes={view.phase.kind === "vote" ? liveCount(view.phase, view.extraVote) : undefined} />
         <VoteResult view={view} />
@@ -253,6 +287,7 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
           onMute={(on) => voice.mute(who, on)} onReport={(reason) => voice.report(who, reason)} onClose={() => setWho(null)} />}
         {giving && <GiftPanel view={view} picked={picked} setPicked={setPicked} onMove={(m) => { play("tap"); onMove(m); }} />}
 
+        {rolesOpen && <RolesSheet roles={view.rolesInPlay} onClose={() => setRolesOpen(false)} />}
         {/* the big moments' films, over everything (owner 2026-11-20) */}
         <FilmLayer view={view} />
 

@@ -7,9 +7,27 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { playCues } from "@/lib/filmCues";
 import { play } from "@/lib/sfx";
 import type { TableView } from "@/server/game";
-import { filmFor, type Film } from "./films";
+import { filmFor, PRELOAD, type Film } from "./films";
 
 const MAX_WAITING = 3;
+
+// PRELOAD: each film is fetched once, one at a time, in the background, and kept in memory (≈7 MB) — the video then
+// starts at once from the phone instead of waiting on the network
+const ready = new Map<string, string>();
+let loading = false;
+async function preload() {
+  if (loading) return;
+  loading = true;
+  for (const f of PRELOAD) {
+    if (ready.has(f)) continue;
+    try {
+      const r = await fetch(`/video/${f}.mp4`, { priority: "low" } as RequestInit);
+      if (r.ok) ready.set(f, URL.createObjectURL(await r.blob()));
+    } catch { /* offline for a moment: that film streams when it plays */ }
+  }
+  loading = false;
+}
+const srcOf = (f: string) => ready.get(f) ?? `/video/${f}.mp4`;
 
 // is a film on screen? (the end sheet waits for the winner film — owner 2026-11-21)
 let playing = false;
@@ -35,6 +53,7 @@ export function FilmLayer({ view }: { view: TableView }) {
 
   // the film on screen stops its sounds if it is skipped or the table closes
   useEffect(() => () => { stop.current(); setPlaying(false); }, []);
+  useEffect(() => { void preload(); }, []);
   useEffect(() => setPlaying(queue.length > 0), [queue.length]);
 
   const now = queue[0];
@@ -43,7 +62,7 @@ export function FilmLayer({ view }: { view: TableView }) {
 
   return (
     <div className="absolute inset-0 z-30 cursor-pointer bg-[#15142c]" onClick={next} role="dialog" aria-label={now.line}>
-      <video key={now.key} src={`/video/${now.file}.mp4`} muted playsInline autoPlay preload="auto"
+      <video key={now.key} src={srcOf(now.file)} muted playsInline autoPlay preload="auto"
         className="absolute inset-0 size-full object-cover"
         onPlaying={() => { stop.current(); stop.current = playCues(now.cues, play); }}
         onEnded={next} onError={next} />

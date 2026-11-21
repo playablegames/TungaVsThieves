@@ -150,6 +150,11 @@ function Entry() {
           className={`${minor ? "btn-gold min-h-14 text-[18px]" : "btn-line"} flex min-h-[52px] w-full items-center justify-center whitespace-nowrap rounded-full px-6 text-[16px] font-semibold`}>
           {invited && !minor ? "Start my own table" : "Play with bots"}
         </button>
+        {/* (owner 2026-11-21) How to play is a main button, not a small link */}
+        <button type="button" onClick={() => setRules(true)}
+          className="btn-line flex min-h-[52px] w-full items-center justify-center whitespace-nowrap rounded-full px-6 text-[16px] font-semibold">
+          How to play
+        </button>
 
         {!invited && !minor && (
           <div className="mt-2 flex items-center gap-2">
@@ -167,7 +172,6 @@ function Entry() {
 
         {error && !ask && <p role="alert" className="rounded-xl bg-crimson-deep p-3 text-center text-[14px] text-white">{error}</p>}
         <nav className="mt-1 flex items-center justify-between text-[14px] text-moon/75">
-          <button type="button" onClick={() => setRules(true)} className="box-focus min-h-11 whitespace-nowrap rounded-lg px-2 font-medium text-boxgold-soft">How to play</button>
           <button type="button" onClick={() => setComfort(true)} className="box-focus min-h-11 whitespace-nowrap rounded-lg px-2">Settings</button>
           <a href="/legal" className="box-focus flex min-h-11 items-center whitespace-nowrap rounded-lg px-2">Legal</a>
         </nav>

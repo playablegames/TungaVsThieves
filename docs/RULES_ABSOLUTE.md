@@ -34,7 +34,7 @@ Sources: **[P]** = the owner's 10 How-to-play pages (approved 2026-11-17) · **[
 | 2.5 | **Playing nothing**: keep any 2, pass the other 3 face down to the next player. | [P] |
 | 2.6 | You pass **any 3 cards, face down** — Stones and Dal Badal included. Nobody sees the pile until the next player picks it up. | owner Q7 |
 | 2.7 | **Draw pile runs out**: shuffle all the discards into a new draw pile. If even that is not enough, the player draws what is left and holds fewer than 2 until cards come back. | owner Q8 |
-| 2.8 | **Turn timer: 20 seconds.** If time runs out the app PASSES for you: keeps 2 at random, passes the other 3, never plays a pair. | owner Q9 (20 s); timeout = pass as proposed |
+| 2.8 | **Turn timer: 45 seconds** (owner 2026-11-21; was 20). If time runs out the app PASSES for you: keeps 2 at random, passes the other 3, never plays a pair. | owner Q9 (20 s); timeout = pass as proposed |
 | 2.9 | A round ends when **every living player has had one turn**, counting from the first player. Out players are skipped, so rounds get shorter. | owner Q10 |
 
 ## 3. Action cards (each needs a matching pair)
@@ -44,9 +44,9 @@ Sources: **[P]** = the owner's 10 How-to-play pages (approved 2026-11-17) · **[
 | 3.1 | Talashi | Pick any living player; only you see their 2 action cards. | [P] |
 | 3.2 | Hera Pheri | **STEAL, not swap** (owner 2026-11-17: the printed "draw 2 & swap" text is wrong). You take both cards of any living player. Flow: pair → you hold 3 → steal their 2 → you hold 5 → pass 3 → hold 2, no draw. The robbed player **draws 2 straight away**. ⚠ How to play page 6 still says "Draw 2 cards, then swap 2" — fix. | owner Q11 + Q11b |
 | 3.3 | Kundli | Pick any living player; you and they see each other's role, in secret. | [P] |
-| 3.4 | Faisla | **Every living player votes, the caller too. No voting for yourself.** The player with the **most votes is out — plain most votes, no majority needed.** **You may choose not to vote (a "No vote" button).** 20 s to vote; no vote in time = no vote. **OPEN VOTE (owner 2026-11-20): every vote shows to everyone the moment it is cast, and any player may CHANGE their vote until the vote closes — so the table can agree on one target. The vote closes when the 20 s run out, or earlier: once everyone has voted, 5 s after the last change.** | owner Q12 + 2026-11-20 |
+| 3.4 | Faisla | **Every living player votes, the caller too. No voting for yourself.** The player with the **most votes is out — plain most votes, no majority needed.** **You may choose not to vote (a "No vote" button).** 45 s to vote (owner 2026-11-21; was 20); no vote in time = no vote. **OPEN VOTE (owner 2026-11-20): every vote shows to everyone the moment it is cast, and any player may CHANGE their vote until the vote closes — so the table can agree on one target. The vote closes when the 45 s run out, or earlier: once everyone has voted, 5 s after the last change.** | owner Q12 + 2026-11-20 |
 | 3.5 | Faisla tie | **A tie for most votes = no result, nobody is out.** | owner Q12 |
-| 3.6 | Bhukamp | Every living player passes **1 card — any card, Stones and Dal Badal included —** to the next player, all at once, in secret. The player who played it joins in with the 3 they hold, then passes 3 and draws 2 as normal. 20 s; time out = a random card is passed. | owner Q13 (timer as proposed) |
+| 3.6 | Bhukamp | Every living player passes **1 card — any card, Stones and Dal Badal included —** to the next player, all at once, in secret. The player who played it joins in with the 3 they hold, then passes 3 and draws 2 as normal. 45 s (owner 2026-11-21); time out = a random card is passed. | owner Q13 (timer as proposed) |
 | 3.7 | Teer Kaman | Pick a living player and name a role — **the exact role** (Chor ≠ Daku). **Name 1 role at 4–6 players, 2 roles at 7–12** (a hit if either is right). The app checks and announces **HIT** or **MISS** to everyone; the role itself stays secret. Hit: they are out. Miss: you are out. | owner Q14 |
 
 ## 4. Dal Badal

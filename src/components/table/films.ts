@@ -74,3 +74,12 @@ export function filmPlaysSound(e: Ev): boolean {
   // every "out" comes with a film (Teer Kaman hit/miss or the count), which has its own strike or gong
   return ["teer_kaman", "dal_badal", "gift", "tally", "over", "out"].includes(e.type);
 }
+
+/** every film the table can play, in the order the game usually needs them — the table downloads them in the
+ *  background as soon as it opens, so a moment never waits on the network (owner 2026-11-21: "films are lagging") */
+export const PRELOAD = [
+  "faisla", "faisla-out", "faisla-nobody", "kundli", "talashi", "hera-pheri", "bhukamp", "teer-kaman-aim", "teer-kaman-hit",
+  "teer-kaman-miss", "vote-gift", "round-2", "dal-badal-chor", "dal-badal-lootera", "dal-badal-daku", "dal-badal-gunda",
+  "round-3", "round-4", "final-vote-tunga-village", "final-vote-tunga-thieves", "final-vote-bhadra-village",
+  "final-vote-bhadra-thieves", "final-vote-both-village", "final-vote-both-thieves", "winner-village", "winner-thieves",
+];

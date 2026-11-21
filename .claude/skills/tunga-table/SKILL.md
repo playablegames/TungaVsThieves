@@ -20,9 +20,9 @@ description: How Tunga vs Thieves Online is built. Read before ANY work in tunga
   The leak check in src/server/game.test.ts must stay green.
 
 ## 3. The clock
-- Every decision gets 20 s [2.8]. Time out = the app passes for you (keeps 2 at random).
+- Every decision gets 45 s [2.8] (owner 2026-11-21). The clock and bots also wait for the films of new moments. Time out = the app passes for you (keeps 2 at random).
 - Talk never moves the clock. Two time-outs in a row = a stand-in that only plays safe.
-- Bots' turns wait 1.5 s; bots vote and do Bhukamp at once.
+- Bots' turns wait 4 s (owner: pace down); bots vote and do Bhukamp at once.
 
 ## 4. Bots
 - Each server call rebuilds every bot from the game's log. A bot's belief update must

@@ -10,17 +10,18 @@ import { sendPush, type Alert } from "./push";
 import { BotTable, type BotSeat } from "./bots";
 import { ping, store, type ChatMessage, type GameRow, type Timers } from "./store";
 import { NAME_MAX } from "@/lib/names";
+import { filmFor } from "@/components/table/films";
 import { ACTIONS, closeVoteNow, move, newGame, RuleError, TABLE, timeoutMove, view, waitingOn, type Move, type State } from "@/rules/game";
 
 export class HttpError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
 
-/** [2.8] [3.4] [3.6] every decision gets 20 seconds */
-export const DECISION_SECONDS = 20;
+/** [2.8] [3.4] [3.6] every decision gets 45 seconds (owner 2026-11-21; was 20) */
+export const DECISION_SECONDS = 45; // owner 2026-11-21: 20 s was "unplayable", make it 45
 const DEFAULT_TIMERS: Timers = { turn: DECISION_SECONDS };
 /** a bot's turn waits this long, so the table can follow it */
-export const BOT_DELAY_MS = 1500;
+export const BOT_DELAY_MS = 4000; // owner 2026-11-21: "pace down the game" (was 1.5 s)
 /** [3.4] open vote: once everyone has voted, it closes this long after the last change (owner 2026-11-20: "you tell") */
 export const VOTE_QUIET_MS = 5000;
 /** [1.1] online tables seat 4-12 */
@@ -42,8 +43,9 @@ const cleanName = (n: unknown) => {
   return s;
 };
 const botName = (lobby: GameRow["lobby"]) => {
-  const taken = new Set(lobby.map((p) => p.name.toLowerCase()));
-  return BOT_NAMES.map((n) => `${n} 🤖`).find((n) => !taken.has(n.toLowerCase())) ?? `Bot ${lobby.length + 1} 🤖`;
+  // never a bot with a person's name ("Munna 🤖" beside "Munna · you" — owner's table 2026-11-21)
+  const taken = new Set(lobby.map((p) => p.name.replace(/\s*🤖$/u, "").toLowerCase()));
+  return BOT_NAMES.map((n) => `${n} 🤖`).find((n) => !taken.has(n.replace(/\s*🤖$/u, "").toLowerCase())) ?? `Bot ${lobby.length + 1} 🤖`;
 };
 
 async function load(code: string): Promise<GameRow> {
@@ -94,6 +96,19 @@ function autoMove(row: GameRow, bots: BotTable, s: State, seat: number): Move {
   return isBot(row, seat) ? bots.decide(seat, s) : timeoutMove(s, seat);
 }
 
+/** FILMS HOLD THE GAME (owner 2026-11-21: "game is too fast, films are too slow"): every phone plays a film for these
+ *  new public moments, so the clock and the bots wait that long first. Seconds per film (public/video), +0.5 s to land. */
+function filmSeconds(file: string) {
+  return file.startsWith("dal-badal") ? 3.5 : file.startsWith("final-vote") || file.startsWith("winner") || file === "teer-kaman-miss" ? 2.5 : 2;
+}
+function filmHoldMs(s: State, from: number): number {
+  const events = s.events.filter((e) => e.to === "all");
+  const name = (seat: number) => s.players[seat]?.name ?? "";
+  let sec = 0;
+  for (const e of events) if (e.n >= from) { const f = filmFor(e as never, events as never, name); if (f) sec += filmSeconds(f.file) + 0.5; }
+  return Math.min(12, sec) * 1000; // the phone queues at most 4 films
+}
+
 /** decisions that wait on nobody's turn (votes, Bhukamp): the server's seats answer at once */
 const INSTANT = new Set(["vote", "bhukamp"]);
 
@@ -114,19 +129,20 @@ function settle(row: GameRow, s: State, from: number, bots = new BotTable(botSea
   const prev = row.state?.phase;
   row.state = bots.flush(s);
   row.status = s.phase.kind === "over" ? "over" : "playing";
-  const full = Date.now() + (row.timers.turn || DECISION_SECONDS) * 1000;
+  const hold = filmHoldMs(s, from);
+  const full = Date.now() + hold + (row.timers.turn || DECISION_SECONDS) * 1000;
   if (s.phase.kind === "vote") {
     // [3.4] OPEN VOTE (owner 2026-11-20): the clock does NOT restart on each ballot — it runs from when the vote opened.
     // Once everyone has voted, it closes VOTE_QUIET_MS after the last change (any change restarts that), never later.
     const same = prev?.kind === "vote" && prev.opened === s.phase.opened && row.deadline !== null;
     let at = same ? row.deadline! : full;
     if (!waiting.length) at = Math.min(at, Date.now() + VOTE_QUIET_MS);
-    else if (waiting.every((x) => isAuto(row, x))) at = Math.min(at, Date.now() + BOT_DELAY_MS);
+    else if (waiting.every((x) => isAuto(row, x))) at = Math.min(at, Date.now() + hold + BOT_DELAY_MS);
     row.deadline = at;
     return row;
   }
   row.deadline = s.phase.kind === "over" ? null
-    : waiting.length && waiting.every((x) => isAuto(row, x)) ? Date.now() + BOT_DELAY_MS
+    : waiting.length && waiting.every((x) => isAuto(row, x)) ? Date.now() + hold + BOT_DELAY_MS
     : full;
   return row;
 }

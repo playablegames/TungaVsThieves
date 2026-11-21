@@ -157,8 +157,8 @@ const PAGES: { title: string; body: React.ReactNode }[] = [
     body: (
       <>
         <ActionCard c="FAISLA">Call a vote. The player with the most votes is out.</ActionCard>
-        <ActionCard c="BHUKAMP">Everyone passes one action card to the next player.</ActionCard>
-        <ActionCard c="TEER_KAMAN">Guess a player&apos;s role. Right: they are out. Wrong: you are out.</ActionCard>
+        <ActionCard c="BHUKAMP">Everyone passes one card, any card, even a Stone, to the next player.</ActionCard>
+        <ActionCard c="TEER_KAMAN">Name a player&apos;s exact role (2 guesses at 7+ players). Right: they are out. Wrong: you are out.</ActionCard>
       </>
     ),
   },
@@ -171,7 +171,7 @@ const PAGES: { title: string; body: React.ReactNode }[] = [
         <Panel>
           <Label>When you are eliminated</Label>
           <ul className="mt-2 flex flex-col gap-2 text-[16px] leading-snug">
-            <li className="flex gap-2"><span className="text-[var(--t-label)]">✦</span>Pass your cards to the player who eliminated you.</li>
+            <li className="flex gap-2"><span className="text-[var(--t-label)]">✦</span>Your cards go to whoever put you out (after a missed Teer Kaman, to the next player).</li>
             <li className="flex gap-2"><span className="text-[var(--t-label)]">✦</span>Give an extra vote to any living player you choose.</li>
           </ul>
         </Panel>
@@ -195,6 +195,8 @@ const PAGES: { title: string; body: React.ReactNode }[] = [
       <div className="flex flex-col gap-3">
         {[
           <>Never show your role to everyone.</>,
+          <>Every game starts by showing the <Gold>roles in play</Gold>. Tap <Gold>ROUND</Gold> at the top to see them again.</>,
+          <>You get <Gold>45 seconds</Gold> for every move.</>,
           <>You must hold <Gold>2 action cards</Gold> after your turn.</>,
           <>You cannot draw action cards while you hold the <Gold>3-card Procession Pile</Gold>.</>,
         ].map((t, i) => (
