@@ -77,6 +77,11 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
   const shooting = view.phase.kind === "aim" && view.phase.shooter === you; // [3.7] Teer Kaman step 2
   const voting = view.phase.kind === "vote" && Boolean(me?.alive);
   const passing = view.phase.kind === "pass" && view.phase.seat === you; // after Faisla / a hit / Dal Badal: choose what you pass
+  // [3.6] Bhukamp: every living player raises ONE card for the next player; picks are secret until all have picked
+  const quaking = view.phase.kind === "bhukamp" && Boolean(me?.alive) && !(String(you) in view.phase.picks);
+  const quakeDone = view.phase.kind === "bhukamp" && Boolean(me?.alive) && !quaking;
+  const giving = view.phase.kind === "gift" && view.phase.seat === you; // [5.5] you are out: give the extra vote
+  const out = Boolean(me) && !me!.alive;
   const selIdx = (sel.at === "" || sel.at === moment ? sel.idx : []).filter((i) => i < hand.length);
   const up = selIdx.map((i) => hand[i]);
   const setUp = (idx: number[], arm = false) => { setPicked([]); setArmed(arm ? moment : null); setSel({ idx, at: moment }); };
@@ -91,7 +96,7 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
   // the card whose screen fills the bottom area (CardPanel), if any
   const open: Card | null = voting ? null : shooting ? "TEER_KAMAN"
     : playReady && armed === moment && !NO_NAMES.has(up[0]) ? up[0]
-    : !myTurn && !passing && up.length === 1 ? up[0] : null;
+    : !myTurn && !passing && !quaking && up.length === 1 ? up[0] : null;
   const passReady = !open && (myTurn || passing) && passN > 0 && up.length === passN;
   const nextName = (() => {
     const n = view.players.length;
@@ -101,6 +106,7 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
 
   const tapCard = (i: number) => {
     play("tap");
+    if (quaking) { setUp([i]); return; } // one card, any card, Stones too [3.6]
     if (myTurn || passing) { // your turn: any card rises, Stones too (owner 2026-11-21)
       if (myTurn && selIdx.length === 0 && passMode !== moment && playable(hand[i])) {
         const twin = hand.findIndex((c, j) => j !== i && c === hand[i]);
@@ -161,15 +167,19 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
         </div>
 
         <Centre view={view} />
-        <Seats players={view.players} you={you} myRole={me?.role ?? null} active={activeSeats(view)} picked={open ? picked : []} hideYou={(!voting && up.length > 0) || shooting}
+        <Seats players={view.players} you={you} myRole={me?.role ?? null} active={activeSeats(view)} picked={open || giving ? picked : []} hideYou={(!voting && up.length > 0) || shooting}
           votes={view.phase.kind === "vote" ? liveCount(view.phase, view.extraVote) : undefined} />
         <VoteResult view={view} />
 
         <div className="absolute inset-x-0 bottom-0 z-[1]" style={{ top: HAND_TOP }}>
           <div className="absolute inset-0 shadow-[0_-10px_24px_rgba(0,0,0,.5)]" style={{ background: "linear-gradient(rgba(2,10,30,.35), rgba(2,8,24,.9)), repeating-linear-gradient(90deg, rgba(255,231,166,.035) 0 1px, transparent 1px 12px), repeating-linear-gradient(0deg, #0e1a3c 0 6px, #0a1532 6px 12px)" }} />
-          {!voting && !open && (
+          {!voting && !open && !giving && (
             <p className="absolute inset-x-0 top-10 text-center text-[12px] text-[#ffe7a6d9]">
-              {note && t !== null && t < note.until ? note.text : myTurn || passing ? "Your turn" : "Your cards"}
+              {note && t !== null && t < note.until ? note.text
+                : quaking ? `Bhukamp · 1 card goes to ${nextName}`
+                : quakeDone ? "Waiting for the others"
+                : out ? "You're out · you can still talk"
+                : myTurn || passing ? "Your turn" : "Your cards"}
             </p>
           )}
           <div className="absolute inset-x-0 top-[74px]" style={{ height: cw, visibility: voting || open ? "hidden" : undefined }}>
@@ -195,6 +205,15 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
                   {o.label}
                 </button>
               ))}
+            </div>
+          )}
+          {quaking && up.length === 1 && (
+            <div className="absolute inset-x-4 bottom-[18px] h-[52px]">
+              <button key="quake"
+                className="tt-pop size-full truncate rounded-2xl bg-gradient-to-b from-[#f7c94a] to-[#e0a020] px-4 text-[16px] font-bold text-[#2a1404] shadow-[inset_0_1px_0_#ffe7a6,0_4px_0_#8a5a08] active:translate-y-0.5"
+                onClick={() => { play("tap"); const card = up[0]; setUp([]); onMove({ kind: "bhukamp", card }); }}>
+                {`Pass ${CARD[up[0]].name} to ${nextName}`}
+              </button>
             </div>
           )}
           {!open && (passReady || playReady) && (
@@ -226,6 +245,7 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
 
         {/* the Faisla vote opens on every living player's phone (owner 2026-11-20) */}
         {view.phase.kind === "vote" && me?.alive && <VoteSheet view={view} onMove={onMove} />}
+        {giving && <GiftPanel view={view} picked={picked} setPicked={setPicked} onMove={(m) => { play("tap"); onMove(m); }} />}
 
         {/* the big moments' films, over everything (owner 2026-11-20) */}
         <FilmLayer view={view} />
@@ -258,5 +278,42 @@ function RaisedCards({ cards, onDrop, onClose }: { cards: Card[]; onDrop: ((k: n
         </button>
       )}
     </>
+  );
+}
+
+/** [5.5] you are out: give your extra vote to a living player — name buttons + one gold button, like playing a card */
+function GiftPanel({ view, picked, setPicked, onMove }: {
+  view: TableView; picked: number[]; setPicked: (p: number[]) => void; onMove: (m: Move) => void;
+}) {
+  const living = view.players.filter((p) => p.alive);
+  const to = picked[0];
+  const cols = living.length > 9 ? 4 : 3;
+  return (
+    <div className="absolute inset-x-0 bottom-0 z-[3]" style={{ top: HAND_TOP }} role="group" aria-label="Give your extra vote">
+      <div className="absolute inset-0" style={{ background: "linear-gradient(rgba(2,10,30,.6), rgba(2,8,24,.95))" }} />
+      <p className="absolute inset-x-4 top-[18px] text-center text-[15px] font-semibold text-[#ffe7a6]">You&apos;re out · give your extra vote</p>
+      <div className="absolute inset-x-4 top-[62px] grid gap-2" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+        {living.map((p) => {
+          const on = to === p.seat;
+          return (
+            <button key={p.seat} onClick={() => setPicked([p.seat])} aria-pressed={on}
+              className={`h-11 truncate rounded-xl px-2 font-semibold transition-transform active:scale-95 ${cols === 4 ? "text-[13.5px]" : "text-[15px]"}`}
+              style={on
+                ? { background: "linear-gradient(#3a2a08, #241804)", color: "#ffe7a6", boxShadow: "inset 0 0 0 2px #f7bb1f, 0 0 14px rgba(247,187,31,.45)" }
+                : { background: "linear-gradient(#0d1f4a, #061538)", color: "#fff", boxShadow: "inset 0 0 0 1px rgba(247,187,31,.5)" }}>
+              {p.name}
+            </button>
+          );
+        })}
+      </div>
+      <div className="absolute inset-x-4 bottom-[18px] grid h-[52px] place-items-center">
+        {to !== undefined ? (
+          <button key={to} onClick={() => onMove({ kind: "gift", to })}
+            className="tt-pop size-full truncate rounded-2xl bg-gradient-to-b from-[#f7c94a] to-[#e0a020] px-4 text-[16px] font-bold text-[#2a1404] shadow-[inset_0_1px_0_#ffe7a6,0_4px_0_#8a5a08] active:translate-y-0.5">
+            {`Give my vote to ${view.players[to]?.name}`}
+          </button>
+        ) : <p className="text-[13px] text-[#ffe7a6b3]">Tap a name</p>}
+      </div>
+    </div>
   );
 }

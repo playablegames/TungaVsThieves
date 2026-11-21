@@ -17,11 +17,13 @@
 .tt-shake { animation: tt-shake .35s ease-in-out; }
 .tt-pop { animation: tt-pop .28s cubic-bezier(.2, .9, .3, 1.2) both; }
 .tt-rise { animation: tt-rise .22s cubic-bezier(.2, .9, .3, 1.1) both; }
+.tt-fade { opacity: 0; animation: tt-fade-in .4s ease both; }
 .tt-target { animation: tt-target 1s ease-in-out infinite; }
 .tt-card { transition: transform .18s cubic-bezier(.2, .9, .3, 1.2), box-shadow .18s; touch-action: none; }
 
 @media (prefers-reduced-motion: reduce) {
   .tt-flame, .tt-sway, .tt-pulse, .tt-shake, .tt-pop, .tt-target, .tt-rise { animation: none !important; }
+  .tt-fade { animation: none !important; opacity: 1; }
   .tt-card { transition: none; }
   /* the Faisla result still shows, all at once */
   .tt-vote, .tt-vote * { animation-duration: .01ms !important; }

@@ -267,7 +267,13 @@ function count_(s: State, votedOut: number | null = null) {
   };
   const tunga = owner("TUNGA_STONE"), bhadra = owner("BHADRA_STONE");
   if (tunga === "V" && bhadra === "V") finish(s, "V", "Both Stones are with the village.");
-  else finish(s, "T", "A thief holds a Stone.");
+  else {
+    // say WHICH Stone decided it and why (owner 2026-11-21: the end screen read "a thief holds a Stone" when a
+    // villager had been voted out with it)
+    const c: Card = tunga === "T" ? "TUNGA_STONE" : "BHADRA_STONE";
+    const p = s.players.find((x) => x.hand.includes(c))!;
+    finish(s, "T", p.seat === votedOut ? `${p.name} was voted out with the ${NAME[c]}, so it goes to the thieves.` : `${p.name}, a thief, holds the ${NAME[c]}.`);
+  }
 }
 
 // ---------------------------------------------------------------- who moves

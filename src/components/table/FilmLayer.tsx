@@ -3,13 +3,21 @@
 // table/films.ts picks it); the phone plays the film's sounds on cue (src/lib/filmCues.ts); the line ("Raju robs Pappu")
 // is written under it as plain text. A tap skips. Moments that come quickly queue up (at most 3 waiting). Events that
 // were already there when the table opened stay quiet. The game clock keeps running — a film never blocks a move.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { playCues } from "@/lib/filmCues";
 import { play } from "@/lib/sfx";
 import type { TableView } from "@/server/game";
 import { filmFor, type Film } from "./films";
 
 const MAX_WAITING = 3;
+
+// is a film on screen? (the end sheet waits for the winner film — owner 2026-11-21)
+let playing = false;
+const subs = new Set<() => void>();
+const setPlaying = (v: boolean) => { if (playing !== v) { playing = v; subs.forEach((f) => f()); } };
+export function useFilmPlaying() {
+  return useSyncExternalStore((f) => { subs.add(f); return () => subs.delete(f); }, () => playing, () => false);
+}
 
 export function FilmLayer({ view }: { view: TableView }) {
   const seen = useRef<number | null>(null);
@@ -26,7 +34,8 @@ export function FilmLayer({ view }: { view: TableView }) {
   }, [lastN, view.events, view.players]);
 
   // the film on screen stops its sounds if it is skipped or the table closes
-  useEffect(() => () => stop.current(), []);
+  useEffect(() => () => { stop.current(); setPlaying(false); }, []);
+  useEffect(() => setPlaying(queue.length > 0), [queue.length]);
 
   const now = queue[0];
   if (!now) return null;

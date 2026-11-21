@@ -5,6 +5,9 @@
 //   ?open=KUNDLI  start with that card's screen open
 //   ?vote=out|tie a Faisla result plays 1 s after opening (a made-up tally, to preview it)
 //   ?vote=open    Faisla is played and the open vote is on, 3 players have voted (the vote screen)
+//   ?phase=bhukamp  the player after you played Bhukamp: you pick 1 card to pass on
+//   ?phase=gift     you were just put out: give your extra vote
+//   ?phase=out      you are out, watching
 //   ?phone=1      show it inside a true 442×884 phone frame (headless Chrome can't make a window that narrow)
 import { notFound, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -33,7 +36,19 @@ export default function DevTable() {
   const onTurn = q.get("you") === "turn";
   const open = (q.get("open") as Card | null) ?? null;
   const voting = q.get("vote") === "open";
+  const phase = q.get("phase");
   const start = useMemo(() => {
+    if (phase === "bhukamp") {
+      const o = opening(n, false, "BHUKAMP");
+      return { s: move(o.s, (o.you + 1) % n, { kind: "play", card: "BHUKAMP" }), you: o.you };
+    }
+    if (phase === "gift" || phase === "out") {
+      const o = opening(n, false);
+      const s = structuredClone(o.s);
+      s.players[o.you].alive = false; s.players[o.you].hand = [];
+      if (phase === "gift") s.phase = { kind: "gift", seat: o.you, next: { kind: "count" } };
+      return { s, you: o.you };
+    }
     if (!voting) return opening(n, onTurn, (q.get("pair") as Card | null) ?? "KUNDLI");
     // the player before you plays Faisla; three others vote, one of them for you
     const o = opening(n, false, "FAISLA");
@@ -44,7 +59,7 @@ export default function DevTable() {
     s = move(s, b, { kind: "vote", for: o.you });
     s = move(s, c, { kind: "vote", for: b });
     return { s, you: o.you };
-  }, [n, onTurn, voting, q]);
+  }, [n, onTurn, voting, q, phase]);
   const [s, setS] = useState(start.s);
   const [deadline] = useState(() => Date.now() + 14000);
   const now = useCallback(() => Date.now(), []);

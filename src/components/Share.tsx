@@ -49,7 +49,7 @@ function wrap(g: CanvasRenderingContext2D, text: string, x: number, y: number, m
 
 export function ShareResult({ won, village, role, thief, caught }: { won: boolean; village: boolean; role: string; thief: boolean; caught: number }) {
   const [busy, setBusy] = useState(false);
-  const title = village ? "TUNGA WINS" : "THIEVES WIN";
+  const title = village ? "VILLAGE WINS" : "THIEVES WIN";
   const sub = line(won, role, thief, caught);
   async function share() {
     setBusy(true);

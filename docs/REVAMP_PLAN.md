@@ -135,3 +135,9 @@ Settings and problems
 - Every decision = 20 s; talk is a move ({kind:"say"}) and never moves the clock; typed chat stays plain text.
 - 66/66 tests. House rules for future work: .claude/skills/tunga-table/SKILL.md.
 - NEXT: Step 2 — first sketch = player colours + faces.
+
+## Tasks added 2026-11-21
+- [ ] Bring back built-in VOICE on the new table (src/lib/voice.ts exists, not wired): small mic button + glowing ring on whoever talks.
+- [ ] Waiting room: "Copy link for your video call" — video = players' own WhatsApp/Meet call (built-in video rejected: screen space, cheap phones, cost).
+- [x] Turn screen (4f26673): Play X / Pass 3 cards choices, or tap; raised cards leave your hand.
+- [ ] card-game skill checks for src/rules: card-count invariant fuzz + shuffle fairness test.
