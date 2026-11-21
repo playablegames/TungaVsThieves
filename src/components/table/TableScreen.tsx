@@ -6,7 +6,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, saveToken, useGame } from "@/lib/client";
-import { Table } from "./Table";
+import { useVoice } from "@/lib/voice";
+import { Table, type VoiceControls } from "./Table";
 import { WaitingRoom } from "./WaitingRoom";
 import { EndSheet } from "./EndSheet";
 import { useFilmPlaying } from "./FilmLayer";
@@ -17,6 +18,16 @@ export function TableScreen({ code }: { code: string }) {
   const C = code.toUpperCase();
   // a shared link opened on a phone with no seat here: take the seat at home (age check + name live there)
   const noSeat = hydrated && (!token || error === "You are not in this game");
+  // VOICE (task 2026-11-21): on by default once seated; out players talk too [5.8], so everyone hears everyone
+  // a table of you + bots has nobody to talk to: no call (LiveKit minutes, battery)
+  const people = state ? (state.lobby?.names.length ?? state.view?.players.length ?? 0) - state.bots.length : 0;
+  const me = state && !noSeat && people > 1 ? { seat: state.you.seat, name: state.you.name } : null;
+  const v = useVoice(C, me, true, [], state?.voice ?? "mesh");
+  const voice: VoiceControls = {
+    status: v.status, micOn: v.micOn, micBlocked: v.micBlocked,
+    talking: Object.values(v.peers).filter((p) => p.speaking && !p.hushed).map((p) => p.seat).concat(v.speaking && me ? [me.seat] : []),
+    onTap: () => (v.status === "on" ? v.toggleMic() : v.status === "needs-tap" ? v.unlock() : v.join()),
+  };
   useEffect(() => { if (noSeat) router.replace(`/?code=${C}`); }, [noSeat, router, C]);
 
   if (!state) {
@@ -41,12 +52,12 @@ export function TableScreen({ code }: { code: string }) {
   }
 
   if (state.status === "lobby" || !state.view) {
-    return <WaitingRoom state={state} token={token!} onStarted={refresh} />;
+    return <WaitingRoom state={state} token={token!} onStarted={refresh} voice={me ? voice : null} />;
   }
 
   return (
     <>
-      <Table view={state.view} deadline={state.deadline} now={now} total={state.timers.turn} onMove={act} />
+      <Table view={state.view} deadline={state.deadline} now={now} total={state.timers.turn} onMove={act} voice={me ? voice : null} />
       {state.you.away && state.status === "playing" && (
         <button onClick={() => reclaim()}
           className="fixed inset-x-3 top-[max(10px,env(safe-area-inset-top))] z-50 rounded-2xl bg-[#3a2a08f2] px-4 py-3 text-center text-[14px] font-semibold text-[#ffe7a6] shadow-[inset_0_0_0_2px_#f7bb1f,0_8px_24px_rgba(0,0,0,.5)]">

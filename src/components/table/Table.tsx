@@ -50,8 +50,10 @@ function activeSeats(v: TableView): number[] {
 
 const RING = 2 * Math.PI * 19;
 
-export function Table({ view, deadline, now, total = 20, onMove, initialOpen = null }: {
+export function Table({ view, deadline, now, total = 20, onMove, initialOpen = null, voice = null }: {
   view: TableView; deadline: number | null; now: () => number; total?: number; onMove: (m: Move) => void;
+  /** table voice (TableScreen owns the call): the mic button + who is talking */
+  voice?: VoiceControls | null;
   /** dev preview only: start with this card's screen open */
   initialOpen?: Card | null;
 }) {
@@ -148,7 +150,7 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
         <VillageScene />
 
         <div className="absolute inset-x-3.5 top-3 z-10 flex h-[46px] items-center justify-between">
-          <span className="size-10" aria-hidden />
+          {voice ? <MicButton voice={voice} /> : <span className="size-10" aria-hidden />}
           <div className="rounded-xl bg-[#021230d1] px-3.5 py-[7px] font-[family-name:var(--font-cinzel)] text-[12.5px] font-bold tracking-[2px] text-[#f7bb1f] shadow-[inset_0_0_0_1.5px_rgba(247,187,31,.6)]">
             ROUND {view.round} OF {view.rounds}
           </div>
@@ -167,7 +169,7 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
         </div>
 
         <Centre view={view} />
-        <Seats players={view.players} you={you} myRole={me?.role ?? null} active={activeSeats(view)} picked={open || giving ? picked : []} hideYou={(!voting && up.length > 0) || shooting}
+        <Seats players={view.players} you={you} myRole={me?.role ?? null} active={activeSeats(view)} picked={open || giving ? picked : []} talking={voice?.talking} hideYou={(!voting && up.length > 0) || shooting}
           votes={view.phase.kind === "vote" ? liveCount(view.phase, view.extraVote) : undefined} />
         <VoteResult view={view} />
 
@@ -315,5 +317,31 @@ function GiftPanel({ view, picked, setPicked, onMove }: {
         ) : <p className="text-[13px] text-[#ffe7a6b3]">Tap a name</p>}
       </div>
     </div>
+  );
+}
+
+export interface VoiceControls {
+  status: "unavailable" | "off" | "connecting" | "on" | "needs-tap";
+  micOn: boolean; micBlocked: boolean; talking: number[];
+  /** tap: join (off / needs a tap) or mute / unmute my mic */
+  onTap: () => void;
+}
+
+/** top left of the table: voice. Gold mic = you can be heard; slashed = muted; pulsing = tap to join the voice */
+export function MicButton({ voice }: { voice: VoiceControls }) {
+  const live = voice.status === "on";
+  const heard = live && voice.micOn && !voice.micBlocked;
+  const label = voice.status === "needs-tap" || voice.status === "off" ? "Tap to join the voice"
+    : voice.status === "connecting" ? "Joining the voice" : voice.status === "unavailable" ? "Voice is not available"
+    : voice.micBlocked ? "No microphone permission: you can listen" : heard ? "Mute my mic" : "Unmute my mic";
+  return (
+    <button onClick={() => { play("tap"); voice.onTap(); }} aria-label={label} title={label} disabled={voice.status === "unavailable"}
+      className={`relative grid size-11 place-items-center rounded-xl active:scale-95 disabled:opacity-40 ${voice.status === "needs-tap" || voice.status === "off" ? "tt-pulse" : ""}`}
+      style={{ background: heard ? "linear-gradient(#3a2a08, #241804)" : "#021230d1", color: heard ? "#f7bb1f" : "#ffe7a6b3", boxShadow: `inset 0 0 0 1.5px ${heard ? "#f7bb1f" : "rgba(247,187,31,.6)"}` }}>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
+        {!heard && <path d="M4 4l16 16" />}
+      </svg>
+    </button>
   );
 }

@@ -7,10 +7,11 @@ import { useState } from "react";
 import { api } from "@/lib/client";
 import { play } from "@/lib/sfx";
 import type { ClientState } from "@/server/game";
+import { MicButton, type VoiceControls } from "./Table";
 
 const gold = "inset 0 0 0 1.5px rgba(247,187,31,.6)";
 
-export function WaitingRoom({ state, token, onStarted }: { state: ClientState; token: string; onStarted: () => void }) {
+export function WaitingRoom({ state, token, onStarted, voice }: { state: ClientState; token: string; onStarted: () => void; voice: VoiceControls | null }) {
   const lobby = state.lobby;
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -46,7 +47,7 @@ export function WaitingRoom({ state, token, onStarted }: { state: ClientState; t
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M15 5l-7 7 7 7" /></svg>
           </Link>
           <p className="font-[family-name:var(--font-cinzel)] text-[12.5px] font-bold tracking-[2px] text-[#f7bb1f]">WAITING FOR PLAYERS</p>
-          <span className="size-11" />
+          {voice ? <MicButton voice={voice} /> : <span className="size-11" />}
         </div>
 
         <div className="rounded-2xl px-4 py-4 text-center" style={{ background: "#021230d1", boxShadow: gold }}>
@@ -70,11 +71,11 @@ export function WaitingRoom({ state, token, onStarted }: { state: ClientState; t
         </div>
         <ul className="flex flex-col gap-1.5">
           {lobby.names.map((name, i) => {
-            const me = i === state.you.seat, isHost = i === state.host, bot = lobby.bots[i];
+            const me = i === state.you.seat, isHost = i === state.host, bot = lobby.bots[i], talk = Boolean(voice?.talking.includes(i));
             return (
               <li key={`${i}:${name}`} className="flex h-12 items-center gap-3 rounded-xl px-3" style={{ background: me ? "#3a2a0899" : "#0212309e", boxShadow: me ? "inset 0 0 0 1.5px #f7bb1f" : "inset 0 0 0 1px rgba(247,187,31,.3)" }}>
                 {/* eslint-disable-next-line @next/next/no-img-element -- static art */}
-                <img src="/art/cards/back.webp" alt="" className="h-8 w-[34px] rounded-[4px] object-cover" />
+                <img src="/art/cards/back.webp" alt="" className="h-8 w-[34px] rounded-[4px] object-cover" style={talk ? { boxShadow: "0 0 0 3px #7ee0a1, 0 0 12px rgba(126,224,161,.7)" } : undefined} />
                 <span className="min-w-0 flex-1 truncate text-[15px] font-semibold">{name}{me && <span className="font-normal opacity-70"> · you</span>}</span>
                 {isHost && <span className="text-[11px] tracking-[1px] text-[#f7bb1f]">HOST</span>}
                 {host && !isHost && (

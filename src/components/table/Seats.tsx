@@ -7,12 +7,14 @@ import { seatSpot } from "./layout";
 
 export interface SeatInfo { seat: number; name: string; alive: boolean; cards?: number }
 
-export function Seats({ players, you, myRole, active, votes = {}, picked = [], hideYou = false }: {
+export function Seats({ players, you, myRole, active, votes = {}, picked = [], hideYou = false, talking = [] }: {
   players: SeatInfo[]; you: number; myRole: string | null; active: number[];
   /** while you play a card: the players you have picked glow (you pick them by name in the bottom area) */
   picked?: number[];
   /** a raised card sits over your seat — your role card hides under it */
   hideYou?: boolean;
+  /** voice: who is talking right now (a green ring, owner 2026-11-21 task "bring back voice") */
+  talking?: number[];
   /** [3.4] open vote: the live count on each player, a red bubble */
   votes?: Record<number, number>;
 }) {
@@ -25,13 +27,19 @@ export function Seats({ players, you, myRole, active, votes = {}, picked = [], h
         const face = me ? roleArt(myRole) : null;
         if (me && hideYou) return null;
         const pick = picked.includes(p.seat);
-        const ring = pick ? "0 0 0 3px #f7bb1f, 0 0 26px rgba(247,187,31,.95)" : turn ? "0 0 0 2.5px #f7bb1f, 0 0 22px rgba(247,187,31,.8)" : me ? "0 0 0 2px #f7bb1f" : "0 0 0 1.5px rgba(247,187,31,.55)";
+        const talk = talking.includes(p.seat);
+        const ring = (talk ? "0 0 0 5px rgba(126,224,161,.95), 0 0 18px rgba(126,224,161,.7), " : "") + (pick ? "0 0 0 3px #f7bb1f, 0 0 26px rgba(247,187,31,.95)" : turn ? "0 0 0 2.5px #f7bb1f, 0 0 22px rgba(247,187,31,.8)" : me ? "0 0 0 2px #f7bb1f" : "0 0 0 1.5px rgba(247,187,31,.55)");
         return (
           <div key={p.seat} className="absolute z-[2] flex -translate-x-1/2 -translate-y-1/2 flex-col items-center"
             style={{ left: x, top: y, opacity: p.alive ? 1 : 0.4, filter: p.alive ? undefined : "grayscale(1)" }}>
             <div className="relative">
               <img src={face ?? CARD_BACK} alt={me && myRole ? `You are ${myRole}` : ""} draggable={false}
                 className="h-[86px] w-[60px] rounded-[6px] object-cover" style={{ boxShadow: `${ring}, 0 8px 16px rgba(0,0,0,.6)` }} />
+              {talk && (
+                <span className="absolute -left-[9px] -top-2 grid size-[22px] place-items-center rounded-full bg-[#7ee0a1] text-[#06321a] shadow-[0_0_0_2px_#021230]" aria-label={`${p.name} is talking`}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M4 10v4M9 6v12M14 3v18M19 8v8" /></svg>
+                </span>
+              )}
               {(votes[p.seat] ?? 0) > 0 && (
                 <span key={votes[p.seat]} className="tt-pop absolute -right-[9px] -top-2 grid h-[22px] min-w-[22px] place-items-center rounded-full bg-[#e8434b] px-1 text-[12px] font-bold text-white shadow-[0_0_0_2px_#021230]"
                   aria-label={`${votes[p.seat]} votes`}>{votes[p.seat]}</span>
