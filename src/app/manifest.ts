@@ -10,6 +10,11 @@ export default function manifest(): MetadataRoute.Manifest {
     display: "standalone",
     background_color: "#021230", // (2026-11-16) the box's night: the installed app's bottom bar and splash
     theme_color: "#021230",
-    icons: [{ src: "/icon.png", sizes: "192x192", type: "image/png" }, { src: "/icon-512.webp", sizes: "512x512", type: "image/webp" }],
+    // (owner 2026-11-21) the box cover's two Stones on the shrine
+    icons: [
+      { src: "/icon.png", sizes: "192x192", type: "image/png" },
+      { src: "/icon-512.png", sizes: "512x512", type: "image/png" },
+      { src: "/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+    ],
   };
 }
