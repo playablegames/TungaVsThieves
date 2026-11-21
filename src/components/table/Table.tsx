@@ -74,6 +74,7 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
   });
   const [picked, setPicked] = useState<number[]>([]);
   const [note, setNote] = useState<{ text: string; until: number } | null>(null);
+  const [who, setWho] = useState<number | null>(null); // the player whose sheet is open (mute / report)
   const [armed, setArmed] = useState<string | null>(null); // "Play Kundli" pressed: the names fill the bottom area
   const [passMode, setPassMode] = useState<string | null>(null); // "Pass 3 cards" pressed: every tap raises ONE card
   const shooting = view.phase.kind === "aim" && view.phase.shooter === you; // [3.7] Teer Kaman step 2
@@ -169,7 +170,8 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
         </div>
 
         <Centre view={view} />
-        <Seats players={view.players} you={you} myRole={me?.role ?? null} active={activeSeats(view)} picked={open || giving ? picked : []} talking={voice?.talking} hideYou={(!voting && up.length > 0) || shooting}
+        <Seats players={view.players} you={you} myRole={me?.role ?? null} active={activeSeats(view)} picked={open || giving ? picked : []} talking={voice?.talking} muted={voice?.muted}
+          onSeat={voice && !open && !voting && !giving && up.length === 0 ? (s) => { if (!voice.bots.includes(s)) { play("tap"); setWho(s); } } : undefined} hideYou={(!voting && up.length > 0) || shooting}
           votes={view.phase.kind === "vote" ? liveCount(view.phase, view.extraVote) : undefined} />
         <VoteResult view={view} />
 
@@ -247,6 +249,8 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
 
         {/* the Faisla vote opens on every living player's phone (owner 2026-11-20) */}
         {view.phase.kind === "vote" && me?.alive && <VoteSheet view={view} onMove={onMove} />}
+        {who !== null && voice && <PlayerSheet key={who} name={view.players[who]?.name ?? ""} muted={voice.muted.includes(who)}
+          onMute={(on) => voice.mute(who, on)} onReport={(reason) => voice.report(who, reason)} onClose={() => setWho(null)} />}
         {giving && <GiftPanel view={view} picked={picked} setPicked={setPicked} onMove={(m) => { play("tap"); onMove(m); }} />}
 
         {/* the big moments' films, over everything (owner 2026-11-20) */}
@@ -325,6 +329,10 @@ export interface VoiceControls {
   micOn: boolean; micBlocked: boolean; talking: number[];
   /** tap: join (off / needs a tap) or mute / unmute my mic */
   onTap: () => void;
+  /** players I muted for myself; bots (no sheet for them) */
+  muted: number[]; bots: number[];
+  mute: (seat: number, on: boolean) => void;
+  report: (seat: number, reason: string) => Promise<void>;
 }
 
 /** top left of the table: voice. Gold mic = you can be heard; slashed = muted; pulsing = tap to join the voice */
@@ -343,5 +351,66 @@ export function MicButton({ voice }: { voice: VoiceControls }) {
         {!heard && <path d="M4 4l16 16" />}
       </svg>
     </button>
+  );
+}
+
+const REPORT_REASONS = ["Rude or abusive", "Asked for personal details", "Sexual or adult talk", "Seems under 18", "Cheating or spamming", "Something else"];
+
+/** TAP A PLAYER (Play Store user-content rules, 2026-11-17 → new table 2026-11-21): mute them for yourself, or report
+ *  them. A report is emailed to the owner (IT Rules 2021: acknowledge in 24 h). The game goes on as normal. */
+function PlayerSheet({ name, muted, onMute, onReport, onClose }: {
+  name: string; muted: boolean; onMute: (on: boolean) => void; onReport: (reason: string) => Promise<void>; onClose: () => void;
+}) {
+  const [step, setStep] = useState<"menu" | "report" | "sent">("menu");
+  const [reason, setReason] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const pill = (on: boolean) => on
+    ? { background: "linear-gradient(#3a2a08, #241804)", color: "#ffe7a6", boxShadow: "inset 0 0 0 2px #f7bb1f" }
+    : { background: "linear-gradient(#0d1f4a, #061538)", color: "#fff", boxShadow: "inset 0 0 0 1px rgba(247,187,31,.5)" };
+  return (
+    <div className="absolute inset-x-0 bottom-0 z-[7]" style={{ top: HAND_TOP }} role="dialog" aria-label={name}>
+      <div className="absolute inset-0" style={{ background: "linear-gradient(#020a1e, #020818)" }} />
+      <p className="absolute inset-x-[64px] top-[18px] truncate text-center text-[16px] font-semibold text-[#ffe7a6]">
+        {step === "report" ? `Report ${name}` : step === "sent" ? "Thanks for telling us" : name}
+      </p>
+      <button onClick={onClose} aria-label="Close"
+        className="absolute right-4 top-[8px] grid size-11 place-items-center rounded-xl bg-[#021230e6] text-[#f7bb1f] shadow-[inset_0_0_0_1.5px_rgba(247,187,31,.6)] active:scale-95">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M5 5l14 14M19 5L5 19" /></svg>
+      </button>
+      {step === "menu" && (
+        <div className="absolute inset-x-4 top-[70px] flex flex-col gap-2">
+          <button onClick={() => { play("tap"); onMute(!muted); onClose(); }} className="h-12 rounded-xl text-[15px] font-semibold active:scale-95" style={pill(false)}>
+            {muted ? `Unmute ${name}` : `Mute ${name} for me`}
+          </button>
+          <button onClick={() => { play("tap"); setStep("report"); }} className="h-12 rounded-xl text-[15px] font-semibold active:scale-95" style={pill(false)}>
+            Report {name}
+          </button>
+          <p className="px-2 text-center text-[12px] text-[#ffe7a6a6]">Only you stop hearing them. The game goes on.</p>
+        </div>
+      )}
+      {step === "report" && (
+        <>
+          <div className="absolute inset-x-4 top-[62px] grid grid-cols-2 gap-2">
+            {REPORT_REASONS.map((r) => (
+              <button key={r} onClick={() => setReason(r)} aria-pressed={reason === r}
+                className="h-11 truncate rounded-xl px-2 text-[13px] font-semibold active:scale-95" style={pill(reason === r)}>{r}</button>
+            ))}
+          </div>
+          <div className="absolute inset-x-4 bottom-[18px] grid h-[52px] place-items-center">
+            {reason ? (
+              <button disabled={busy} onClick={async () => { play("tap"); setBusy(true); await onReport(reason); onMute(true); setStep("sent"); }}
+                className="tt-pop size-full truncate rounded-2xl bg-gradient-to-b from-[#f7c94a] to-[#e0a020] px-4 text-[16px] font-bold text-[#2a1404] shadow-[inset_0_1px_0_#ffe7a6,0_4px_0_#8a5a08] active:translate-y-0.5 disabled:opacity-60">
+                {busy ? "Sending…" : `Report ${name}`}
+              </button>
+            ) : <p className="text-[13px] text-[#ffe7a6b3]">What happened?</p>}
+          </div>
+        </>
+      )}
+      {step === "sent" && (
+        <p className="absolute inset-x-6 top-[80px] text-center text-[14px] leading-relaxed text-[#ffe7a6d9]">
+          We got your report and will look at it within 24 hours. {name} is muted for you.
+        </p>
+      )}
+    </div>
   );
 }

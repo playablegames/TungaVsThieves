@@ -7,6 +7,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, saveToken, useGame } from "@/lib/client";
 import { useVoice } from "@/lib/voice";
+import { setBlocked, useBlocked } from "@/lib/blocks";
+import { report } from "@/lib/report";
 import { Table, type VoiceControls } from "./Table";
 import { WaitingRoom } from "./WaitingRoom";
 import { EndSheet } from "./EndSheet";
@@ -23,7 +25,16 @@ export function TableScreen({ code }: { code: string }) {
   const people = state ? (state.lobby?.names.length ?? state.view?.players.length ?? 0) - state.bots.length : 0;
   const me = state && !noSeat && people > 1 ? { seat: state.you.seat, name: state.you.name } : null;
   const v = useVoice(C, me, true, [], state?.voice ?? "mesh");
+  // muted-for-me players stay muted after a reload or a voice reconnect
+  const blocked = useBlocked(C);
+  useEffect(() => { for (const s of blocked) if (v.peers[s] && !v.peers[s].hushed) v.hush(s); }, [blocked, v]);
   const voice: VoiceControls = {
+    muted: blocked, bots: state?.bots ?? [],
+    mute: (seat, on) => { setBlocked(C, seat, on); if (Boolean(v.peers[seat]?.hushed) !== on) v.hush(seat); },
+    report: (seat, reason) => {
+      const who = state?.view?.players[seat]?.name ?? state?.lobby?.names[seat] ?? "?";
+      return report("player", `PLAYER REPORT: ${who} (seat ${seat}), reported by ${state?.you.name ?? "?"}\nReason: ${reason}`);
+    },
     status: v.status, micOn: v.micOn, micBlocked: v.micBlocked,
     talking: Object.values(v.peers).filter((p) => p.speaking && !p.hushed).map((p) => p.seat).concat(v.speaking && me ? [me.seat] : []),
     onTap: () => (v.status === "on" ? v.toggleMic() : v.status === "needs-tap" ? v.unlock() : v.join()),
