@@ -79,7 +79,7 @@ Each turn
 - [ ] 21 Mute a player for me
 - [ ] 22 Reactions
 - [ ] 23 Report / block a player
-- [ ] 24 Game log (what happened)
+- [-] 24 Game log (what happened) — CUT by owner 2026-11-21 (admin log export stays)
 
 The cards
 - [ ] 25 Talashi — you see 2 cards
