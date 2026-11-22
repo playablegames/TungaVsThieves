@@ -28,9 +28,11 @@ export function secrets(events: Ev[], you: number, names: string[]): Secret[] {
     if (e.type === "play") lastPlay = { seat: d.seat as number, card: d.card as string, target: d.target as number | undefined };
     if (e.to === "all") continue;
     switch (e.type) {
-      case "talashi":
-        out.push({ n: e.n, title: "Talashi", line: `${name(d.target)} holds`, cards: d.cards as Card[] });
+      case "talashi": { // (owner 2026-11-22) Talashi talks only about the Stone
+        const st = (d.cards as Card[]).filter((c) => STONES.has(c));
+        out.push(st.length ? { n: e.n, title: "Talashi", line: `${name(d.target)} has`, cards: st } : { n: e.n, title: "Talashi", line: `${name(d.target)} has no Stone` });
         break;
+      }
       case "kundli": {
         const mine = lastPlay?.card === "KUNDLI" && lastPlay.seat === you;
         out.push({ n: e.n, title: "Kundli", role: d.role as string,
@@ -61,9 +63,11 @@ export function notes(events: Ev[], you: number): Record<number, Note> {
       case "dal_badal": // [4.2] the roles were shuffled: what you knew about these players is gone
         for (const s of [d.seat, ...((d.targets as number[]) ?? [])]) if (typeof s === "number" && n[s]) delete n[s].role;
         break;
-      case "talashi":
-        if (typeof d.target === "number") at(d.target).cards = `held ${(d.cards as Card[]).map(cn).join(", ") || "nothing"}`;
+      case "talashi": { // (owner 2026-11-22) only the Stone matters — never list their other cards
+        const st = (d.cards as Card[]).filter((c) => STONES.has(c));
+        if (typeof d.target === "number") at(d.target).cards = st.length ? `has ${st.map(cn).join(", ")}` : "no Stone";
         break;
+      }
       case "robbed": { // they took your cards: if a Stone went, you know where it is
         const st = (d.cards as Card[]).filter((c) => STONES.has(c));
         if (st.length && typeof d.from === "number") at(d.from).cards = `took your ${st.map(cn).join(", ")}`;

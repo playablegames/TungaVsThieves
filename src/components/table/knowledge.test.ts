@@ -27,13 +27,14 @@ describe("what you know (owner 2026-11-22: 'I can't see the effects of the card 
     expect(notes(view(s, (me + 1) % 6).events, (me + 1) % 6)[them]).toBeUndefined();
   });
 
-  it("Talashi shows the cards they held", () => {
+  it("Talashi shows only the Stone (owner 2026-11-22)", () => {
     const s0 = withPair("TALASHI");
     const me = (s0.phase as { seat: number }).seat, them = (me + 1) % 6;
     const held = [...s0.players[them].hand];
     const s = move(s0, me, { kind: "play", card: "TALASHI", target: them });
-    expect(secrets(view(s, me).events, me, NAMES).at(-1)?.cards).toEqual(held);
-    expect(notes(view(s, me).events, me)[them]?.cards).toMatch(/^held /);
+    const st = held.filter((c) => c === "TUNGA_STONE" || c === "BHADRA_STONE");
+    expect(secrets(view(s, me).events, me, NAMES).at(-1)?.cards).toEqual(st.length ? st : undefined);
+    expect(notes(view(s, me).events, me)[them]?.cards).toBe(st.length ? `has ${st.map((c) => (c === "TUNGA_STONE" ? "Tunga Stone" : "Bhadra Stone")).join(", ")}` : "no Stone");
   });
 
   it("passing a Stone: only the passer knows who got it", () => {
