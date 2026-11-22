@@ -18,7 +18,7 @@ const NAME_KEY = "tunga:name";
 const LEARNED = "tunga:learned";
 /** Play with bots (designer 2026-10-12: "must open a screen to add however many bots we want"): 3 to 11 bots —
  *  4 to 12 players, the box's own range (rules 1.1; 2026-11-18 it stopped at 5 players) — 5 to start with */
-const BOTS_MIN = 3, BOTS_MAX = 11, BOTS_START = 5;
+const BOTS_MIN = 3, BOTS_MAX = 11, BOTS_START = 4; // owner 2026-11-22: start at 4 bots + you = 5 players, 2 rounds
 /** the sheet's heading and one line under it, per way in (2026-11-18 Make / join sheet) */
 const SHEET: Record<"create" | "join" | "bots" | "learn", { title: string; line: string; button: string }> = {
   create: { title: "Open a table", line: "Friends join with a code you’ll share next", button: "Open the table" },
@@ -101,8 +101,8 @@ function Entry() {
     try {
       if (ask === "learn") {
         try { localStorage.setItem(LEARNED, "yes"); } catch {}
-        // (2026-11-19) the guided first game went with the old rules: for now it is a plain game with 5 bots
-        const t = await api.createWithBots(name, 5);
+        // (2026-11-19) the guided first game went with the old rules: for now it is a plain game with 4 bots (5 players, owner 2026-11-22)
+        const t = await api.createWithBots(name, 4);
         saveToken(t.code, t.token);
         router.push(`/g/${t.code}`);
         return;

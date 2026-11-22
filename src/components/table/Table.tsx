@@ -12,6 +12,8 @@ import type { TableView } from "@/server/game";
 import { Centre } from "./Centre";
 import { RolesSheet } from "./RolesSheet";
 import { FilmLayer } from "./FilmLayer";
+import { notes as knownNotes } from "./knowledge";
+import { SecretLayer } from "./SecretLayer";
 import { CardFace, LINE } from "./CardSheet";
 import { CARD, isStoneCard } from "@/lib/cards";
 
@@ -204,7 +206,7 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
         </div>
 
         <Centre view={view} />
-        <Seats players={view.players} you={you} myRole={me?.role ?? null} active={activeSeats(view)} picked={open || giving ? picked : []} talking={voice?.talking} muted={voice?.muted} doing={doing} saying={saying}
+        <Seats players={view.players} you={you} myRole={me?.role ?? null} active={activeSeats(view)} picked={open || giving ? picked : []} talking={voice?.talking} muted={voice?.muted} doing={doing} saying={saying} notes={knownNotes(view.events, you)}
           onSeat={voice && !open && !voting && !giving && up.length === 0 ? (s) => { if (!voice.bots.includes(s)) { play("tap"); setWho(s); } } : undefined} hideYou={(!voting && up.length > 0) || shooting}
           votes={view.phase.kind === "vote" ? liveCount(view.phase, view.extraVote) : undefined} />
         <VoteResult view={view} />
@@ -290,6 +292,8 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
         {rolesOpen && <RolesSheet roles={view.rolesInPlay} onClose={() => setRolesOpen(false)} />}
         {/* the big moments' films, over everything (owner 2026-11-20) */}
         <FilmLayer view={view} />
+        {/* your private result (Kundli, Talashi, Hera Pheri, Teer Kaman, Bhukamp), after its film — owner 2026-11-22 */}
+        <SecretLayer view={view} />
 
       </div>
     </div>

@@ -3,11 +3,12 @@
 // No piles or Stones are ever shown — the pile passes player to player clockwise and the Stones pass secretly.
 /* eslint-disable @next/next/no-img-element */
 import { CARD_BACK, roleArt } from "@/components/CardIcon";
+import { isThiefRole, type Note } from "./knowledge";
 import { W, seatSpot } from "./layout";
 
 export interface SeatInfo { seat: number; name: string; alive: boolean; cards?: number }
 
-export function Seats({ players, you, myRole, active, votes = {}, picked = [], hideYou = false, talking = [], muted = [], onSeat, doing = {}, saying = {} }: {
+export function Seats({ players, you, myRole, active, votes = {}, picked = [], hideYou = false, talking = [], muted = [], onSeat, doing = {}, saying = {}, notes = {} }: {
   players: SeatInfo[]; you: number; myRole: string | null; active: number[];
   /** while you play a card: the players you have picked glow (you pick them by name in the bottom area) */
   picked?: number[];
@@ -23,6 +24,8 @@ export function Seats({ players, you, myRole, active, votes = {}, picked = [], h
   muted?: number[];
   /** tap another person's seat: mute or report them (Play Store user-content rules) */
   onSeat?: (seat: number) => void;
+  /** what only YOU know about them, kept all game (knowledge.ts): role from Kundli / Teer Kaman, cards seen or passed */
+  notes?: Record<number, Note>;
   /** [3.4] open vote: the live count on each player, a red bubble */
   votes?: Record<number, number>;
 }) {
@@ -54,6 +57,12 @@ export function Seats({ players, you, myRole, active, votes = {}, picked = [], h
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M4 10v4M9 6v12M14 3v18M19 8v8" /></svg>
                 </span>
               )}
+              {notes[p.seat]?.role && !me && (
+                // their role, pinned on their card for the rest of the game (only on your phone)
+                <span className="absolute inset-x-[-10px] bottom-[18px] truncate rounded-md px-1 py-[1px] text-center text-[11px] font-bold"
+                  style={isThiefRole(notes[p.seat].role!) ? { background: "#3a0d10f0", color: "#ff8a7a", boxShadow: "inset 0 0 0 1px #ff8a7a" } : { background: "#2a1d04f0", color: "#f7bb1f", boxShadow: "inset 0 0 0 1px #f7bb1f" }}
+                  aria-label={`You know ${p.name} is ${notes[p.seat].role}`}>{notes[p.seat].role}</span>
+              )}
               {(votes[p.seat] ?? 0) > 0 && (
                 <span key={votes[p.seat]} className="tt-pop absolute -right-[9px] -top-2 grid h-[22px] min-w-[22px] place-items-center rounded-full bg-[#e8434b] px-1 text-[12px] font-bold text-white shadow-[0_0_0_2px_#021230]"
                   aria-label={`${votes[p.seat]} votes`}>{votes[p.seat]}</span>
@@ -72,6 +81,9 @@ export function Seats({ players, you, myRole, active, votes = {}, picked = [], h
               style={{ color: me ? "#f7bb1f" : turn ? "#ffe7a6" : "#fff", boxShadow: `inset 0 0 0 ${me || turn ? 1.5 : 1}px rgba(247,187,31,${me || turn ? 1 : 0.55})` }}>
               {me ? `${p.name} · you` : p.name}
             </div>
+            {notes[p.seat]?.cards && !me && (
+              <div className="mt-0.5 max-w-[124px] truncate rounded-md bg-[#2a1d04e6] px-2 py-[1px] text-[10.5px] font-semibold text-[#f7bb1f] shadow-[inset_0_0_0_1px_rgba(247,187,31,.5)]">{notes[p.seat].cards}</div>
+            )}
             {doing[p.seat] && !me && (
               <div className="mt-0.5 max-w-[120px] truncate rounded-md bg-[#0c2c6be6] px-2 py-[1px] text-[11px] font-semibold text-[#ffe7a6]">{doing[p.seat]}</div>
             )}

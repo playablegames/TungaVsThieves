@@ -16,7 +16,7 @@ const isAction = (c: Card): c is Action => (ACTIONS as Card[]).includes(c);
 
 /** [1.2] [1.3] players -> villagers, thieves, rounds */
 export const TABLE: Record<number, [number, number, number]> = {
-  4: [3, 1, 2], 5: [4, 1, 2], 6: [4, 2, 3], 7: [5, 2, 3], 8: [6, 2, 3], 9: [6, 3, 3], 10: [6, 4, 4], 11: [7, 4, 4], 12: [8, 4, 4],
+  4: [3, 1, 2], 5: [4, 1, 2], 6: [4, 2, 3], 7: [5, 2, 3], 8: [5, 3, 3], 9: [6, 3, 3], 10: [6, 4, 4], 11: [7, 4, 4], 12: [8, 4, 4],
 };
 /** [1.4] */
 export const VILLAGERS = ["Kisaan", "Sarpanch", "Baba", "Teacher", "Police", "Doctor", "NRI", "Deewani"];
@@ -201,6 +201,8 @@ function give(s: State, seat: number, cards: Card[], keep: number, drawN: number
   take(p.hand, cards);
   s.pile = cards; // [2.6] face down
   emit(s, "all", "pass", `${p.name} passes ${n} cards face down.`, { seat });
+  // only the passer knows what went (owner 2026-11-22: "whoever loses the Stone knows where it is — leverage")
+  emit(s, [seat], "gave", `You passed ${cards.map((c) => NAME[c]).join(", ")} to ${P(s, nextLiving(s, seat)).name}.`, { to: nextLiving(s, seat), cards: [...cards] });
   if (drawN) draw(s, seat, drawN);
   endTurn(s, seat);
 }
@@ -336,8 +338,8 @@ export function apply(state: State, seat: number, m: Move): State {
         case "HERA_PHERI": { // [3.2] steal both; the robbed player draws 2 at once; you hold 5, pass 3, no draw
           const stolen = t!.hand.splice(0);
           me.hand.push(...stolen);
-          emit(s, [seat], "stole", `You take ${stolen.map((c) => NAME[c]).join(" and ")} from ${t!.name}.`, { cards: stolen });
-          emit(s, [t!.seat], "robbed", `${me.name} takes your ${stolen.map((c) => NAME[c]).join(" and ")}.`, { cards: stolen });
+          emit(s, [seat], "stole", `You take ${stolen.map((c) => NAME[c]).join(" and ")} from ${t!.name}.`, { cards: stolen, target: t!.seat });
+          emit(s, [t!.seat], "robbed", `${me.name} takes your ${stolen.map((c) => NAME[c]).join(" and ")}.`, { cards: stolen, from: seat });
           draw(s, t!.seat, 2);
           s.phase = { kind: "pass", seat, keep: 2, draw: 0 };
           return s;
@@ -391,7 +393,8 @@ export function apply(state: State, seat: number, m: Move): State {
         const live = living(s);
         for (const p of live) take(p.hand, [ph.picks[p.seat]]);
         for (const p of live) P(s, nextLiving(s, p.seat)).hand.push(ph.picks[p.seat]);
-        for (const p of live) emit(s, [nextLiving(s, p.seat)], "bhukamp_got", `${p.name} passes you ${NAME[ph.picks[p.seat]]}.`, { card: ph.picks[p.seat] });
+        for (const p of live) emit(s, [nextLiving(s, p.seat)], "bhukamp_got", `${p.name} passes you ${NAME[ph.picks[p.seat]]}.`, { card: ph.picks[p.seat], from: p.seat });
+        for (const p of live) emit(s, [p.seat], "gave", `You passed ${NAME[ph.picks[p.seat]]} to ${P(s, nextLiving(s, p.seat)).name}.`, { to: nextLiving(s, p.seat), cards: [ph.picks[p.seat]] });
         emit(s, "all", "bhukamp_done", "Everyone passes one card on.");
         toPass(s, ph.actor, 0, 2);
       }
