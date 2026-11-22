@@ -47,6 +47,8 @@ export const api = {
   /** host: mute / unmute a player for everyone (2026-10-14) */
   mute: (code: string, token: string, seat: number, muted: boolean) =>
     call(`/api/games/${code}/mute`, { method: "POST", token, body: JSON.stringify({ seat, muted }) }),
+  whisper: (code: string, token: string, to: number, text: string) =>
+    call(`/api/games/${code}/whisper`, { method: "POST", token, body: JSON.stringify({ to, text }) }),
   chat: (code: string, token: string, text: string) =>
     call(`/api/games/${code}/chat`, { method: "POST", token, body: JSON.stringify({ text }) }),
   state: (code: string, token: string, since: number) => call<ClientState>(`/api/games/${code}/state?since=${since}`, { token }),
@@ -130,6 +132,11 @@ export function useGame(code: string) {
     try { await api.chat(code, token, text); await refresh(); } catch (e) { setError((e as Error).message); }
   }, [code, token, refresh]);
 
+  const whisper = useCallback(async (to: number, text: string) => {
+    if (!token) return false;
+    try { await api.whisper(code, token, to, text); await refresh(); return true; } catch (e) { setError((e as Error).message); return false; }
+  }, [code, token, refresh]);
+
   const now = () => Date.now() + skew.current;
-  return { hydrated, token, state, messages, error, setError, act, say, reclaim, refresh, now };
+  return { hydrated, token, state, messages, error, setError, act, say, whisper, reclaim, refresh, now };
 }

@@ -15,7 +15,7 @@ import { EndSheet } from "./EndSheet";
 import { useFilmPlaying } from "./FilmLayer";
 
 export function TableScreen({ code }: { code: string }) {
-  const { hydrated, token, state, act, now, error, reclaim, refresh } = useGame(code);
+  const { hydrated, token, state, act, now, error, reclaim, refresh, whisper } = useGame(code);
   const router = useRouter();
   const C = code.toUpperCase();
   // a shared link opened on a phone with no seat here: take the seat at home (age check + name live there)
@@ -68,7 +68,7 @@ export function TableScreen({ code }: { code: string }) {
 
   return (
     <>
-      <Table view={state.view} deadline={state.deadline} now={now} total={state.timers.turn} onMove={act} voice={me ? voice : null} />
+      <Table view={state.view} deadline={state.deadline} now={now} total={state.timers.turn} onMove={act} voice={me ? voice : null} bots={state.bots} onWhisper={whisper} />
       {state.you.away && state.status === "playing" && (
         <button onClick={() => reclaim()}
           className="fixed inset-x-3 top-[max(10px,env(safe-area-inset-top))] z-50 rounded-2xl bg-[#3a2a08f2] px-4 py-3 text-center text-[14px] font-semibold text-[#ffe7a6] shadow-[inset_0_0_0_2px_#f7bb1f,0_8px_24px_rgba(0,0,0,.5)]">

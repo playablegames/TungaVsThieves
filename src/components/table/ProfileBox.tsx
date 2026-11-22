@@ -1,0 +1,132 @@
+"use client";
+// TAP A PLAYER (owner 2026-11-22: "every profile must be clickable… I just need 2 things: 1st button Chat, below it
+// tags (Villager, Thief, Tunga, Bhadra) — that's it"). A small box opens from the seat you tapped:
+//   Chat  → a private chat with that player (WhisperPanel); the table only sees THAT you whispered
+//   tags  → your own markers on their seat, only on your phone (Villager / Thief cancel each other; Tunga, Bhadra each on/off)
+// Mute · Report stays as one small line for real people (Play Store user-content rules).
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { play } from "@/lib/sfx";
+import type { TableView } from "@/server/game";
+import { H, HAND_TOP, W, seatSpot } from "./layout";
+
+export type Tag = "Villager" | "Thief" | "Tunga" | "Bhadra";
+export const TAGS: Tag[] = ["Villager", "Thief", "Tunga", "Bhadra"];
+
+// ---------------------------------------------------------------- your tags (this phone only; a lost tag costs nothing)
+const subs = new Set<() => void>();
+const cache = new Map<string, string>();
+function readTags(game: string): string {
+  if (!cache.has(game)) { let v = "{}"; try { v = localStorage.getItem(`tunga:tags:${game}`) ?? "{}"; } catch {} cache.set(game, v); }
+  return cache.get(game)!;
+}
+export function useTags(game: string): [Record<number, Tag[]>, (seat: number, t: Tag) => void] {
+  const raw = useSyncExternalStore((f) => { subs.add(f); return () => subs.delete(f); }, () => readTags(game), () => "{}");
+  let tags: Record<number, Tag[]> = {};
+  try { tags = JSON.parse(raw); } catch {}
+  const toggle = (seat: number, t: Tag) => {
+    const now = new Set(tags[seat] ?? []);
+    if (now.has(t)) now.delete(t);
+    else { now.add(t); if (t === "Villager") now.delete("Thief"); if (t === "Thief") now.delete("Villager"); }
+    const next = { ...tags, [seat]: TAGS.filter((x) => now.has(x)) };
+    const v = JSON.stringify(next);
+    cache.set(game, v);
+    try { localStorage.setItem(`tunga:tags:${game}`, v); } catch {}
+    subs.forEach((f) => f());
+  };
+  return [tags, toggle];
+}
+export const tagColour = (t: Tag) => (t === "Thief" ? "#ff8a7a" : t === "Villager" ? "#7ee0a1" : "#f7bb1f");
+
+const pill = (on: boolean, c: string) => on
+  ? { background: `${c}26`, color: c, boxShadow: `inset 0 0 0 2px ${c}` }
+  : { background: "linear-gradient(#0d1f4a, #061538)", color: "#ffe7a6", boxShadow: "inset 0 0 0 1px rgba(247,187,31,.45)" };
+
+/** the box, opening from the seat you tapped (above it, or below it for the seats at the top of the table) */
+export function ProfileBox({ view, seat, bot, tags, onTag, onChat, onMore, onClose, unread }: {
+  view: TableView; seat: number; bot: boolean; tags: Tag[]; unread: number;
+  onTag: (t: Tag) => void; onChat: () => void; onMore: (() => void) | null; onClose: () => void;
+}) {
+  const { x, y } = seatSpot(seat, view.you, view.players.length);
+  const below = y < 300;
+  const BW = 214;
+  const left = Math.max(12, Math.min(W - BW - 12, x - BW / 2));
+  const name = view.players[seat]?.name ?? "";
+  return (
+    <>
+      <div className="absolute inset-0 z-[8]" onClick={onClose} aria-hidden />
+      <div role="dialog" aria-label={name}
+        className="tt-pop absolute z-[9] rounded-2xl p-3 shadow-[inset_0_0_0_1.5px_#f7bb1f,0_16px_34px_rgba(0,0,0,.7)]"
+        style={{ width: BW, left, ...(below ? { top: y + 66 } : { bottom: H - (y - 50) }),
+          background: "linear-gradient(rgba(12,44,107,.98), rgba(2,18,48,.98))", transformOrigin: below ? "50% 0" : "50% 100%" }}>
+        <p className="truncate text-center font-[family-name:var(--font-cinzel)] text-[14px] font-bold tracking-[1.5px] text-[#f7bb1f]">{name.toUpperCase()}</p>
+        <button disabled={bot} onClick={() => { play("tap"); onChat(); }}
+          className="relative mt-2.5 h-12 w-full rounded-2xl bg-gradient-to-b from-[#f7c94a] to-[#e0a020] text-[16px] font-bold text-[#2a1404] shadow-[inset_0_1px_0_#ffe7a6,0_4px_0_#8a5a08] transition-transform active:translate-y-0.5 disabled:from-[#3a3f55] disabled:to-[#2a2f44] disabled:text-[#ffe7a680] disabled:shadow-none">
+          {bot ? "Bots don't chat" : "Chat"}
+          {unread > 0 && <span className="absolute -right-1.5 -top-1.5 grid h-[22px] min-w-[22px] place-items-center rounded-full bg-[#e8434b] px-1 text-[12px] font-bold text-white shadow-[0_0_0_2px_#021230]">{unread}</span>}
+        </button>
+        <div className="mt-2.5 grid grid-cols-2 gap-2">
+          {TAGS.map((t) => {
+            const on = tags.includes(t);
+            return (
+              <button key={t} onClick={() => { play("tap"); onTag(t); }} aria-pressed={on}
+                className="h-10 rounded-xl text-[14px] font-semibold transition-transform active:scale-95" style={pill(on, tagColour(t))}>{t}</button>
+            );
+          })}
+        </div>
+        {onMore && (
+          <button onClick={() => { play("tap"); onMore(); }} className="mt-2 h-8 w-full text-[12px] text-[#ffe7a6a6] underline-offset-2 active:underline">Mute · Report</button>
+        )}
+      </div>
+    </>
+  );
+}
+
+/** the private chat with one player, in your area at the bottom (the table stays in view above it) */
+export function WhisperPanel({ view, seat, onSend, onClose }: {
+  view: TableView; seat: number; onSend: (text: string) => Promise<boolean>; onClose: () => void;
+}) {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const list = useRef<HTMLDivElement>(null);
+  const you = view.you;
+  const lines = view.events.filter((e) => {
+    if (e.type !== "whisper") return false;
+    const d = e.data as { seat: number; to: number };
+    return (d.seat === you && d.to === seat) || (d.seat === seat && d.to === you);
+  });
+  useEffect(() => { list.current?.scrollTo({ top: 1e6 }); }, [lines.length]);
+  const name = view.players[seat]?.name ?? "";
+  const send = async () => {
+    const t = text.trim();
+    if (!t || busy) return;
+    setBusy(true);
+    if (await onSend(t)) setText("");
+    setBusy(false);
+  };
+  return (
+    <div className="absolute inset-x-0 bottom-0 z-[7]" style={{ top: HAND_TOP }} role="dialog" aria-label={`Chat with ${name}`}>
+      <div className="absolute inset-0" style={{ background: "linear-gradient(#020a1e, #020818)" }} />
+      <p className="absolute inset-x-[64px] top-[16px] truncate text-center text-[15px] font-semibold text-[#ffe7a6]">{name}</p>
+      <p className="absolute inset-x-[64px] top-[38px] text-center text-[11px] text-[#ffe7a68c]">Only you two read this · the table sees you whisper</p>
+      <button onClick={() => { play("tap"); onClose(); }} aria-label="Close chat"
+        className="absolute right-4 top-[8px] grid size-11 place-items-center rounded-xl bg-[#021230e6] text-[#f7bb1f] shadow-[inset_0_0_0_1.5px_rgba(247,187,31,.6)] active:scale-95">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M5 5l14 14M19 5L5 19" /></svg>
+      </button>
+      <div ref={list} className="absolute inset-x-4 bottom-[78px] top-[62px] flex flex-col gap-1.5 overflow-y-auto">
+        {lines.length === 0 && <p className="m-auto text-[13px] text-[#ffe7a68c]">Say something only {name} sees</p>}
+        {lines.map((e) => {
+          const mine = (e.data as { seat: number }).seat === you;
+          return (
+            <p key={e.n} className={`max-w-[78%] rounded-2xl px-3 py-1.5 text-[14px] leading-snug ${mine ? "self-end bg-[#f7bb1f] text-[#2a1404]" : "self-start bg-[#0c2c6b] text-white shadow-[inset_0_0_0_1px_rgba(247,187,31,.35)]"}`}>{e.msg}</p>
+          );
+        })}
+      </div>
+      <form className="absolute inset-x-4 bottom-[18px] flex h-[48px] gap-2" onSubmit={(ev) => { ev.preventDefault(); void send(); }}>
+        <input value={text} onChange={(ev) => setText(ev.target.value)} maxLength={120} placeholder={`Message ${name}`} enterKeyHint="send"
+          className="min-w-0 flex-1 rounded-2xl bg-[#0c1a3c] px-4 text-[16px] text-white outline-none shadow-[inset_0_0_0_1.5px_rgba(247,187,31,.5)] placeholder:text-[#ffe7a666] focus:shadow-[inset_0_0_0_2px_#f7bb1f]" />
+        <button disabled={!text.trim() || busy}
+          className="rounded-2xl bg-gradient-to-b from-[#f7c94a] to-[#e0a020] px-5 text-[15px] font-bold text-[#2a1404] shadow-[inset_0_1px_0_#ffe7a6,0_4px_0_#8a5a08] active:translate-y-0.5 disabled:opacity-50">Send</button>
+      </form>
+    </div>
+  );
+}

@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   act, addBot, chat, chatLimit, createBotGame, createRoom, getState, HttpError, joinRoom, peekRoom, reclaim, rematch,
-  removeBot, renameSeat, startGame, sweep, tick,
+  removeBot, renameSeat, startGame, sweep, tick, whisper,
 } from "./game";
 import { memoryStore } from "./store";
 import { legalMoves, waitingOn, type Move } from "@/rules/game";
@@ -235,5 +235,30 @@ describe("chat", () => {
     const m = (await getState(code, token, 0)).messages;
     expect(m.map((x) => x.text)).toEqual(["x".repeat(50), "again"]);
     await fails(chat(code, "nobody", "hi"), 403);
+  });
+});
+
+describe("whisper (owner 2026-11-22: chat is for coordination and scheming)", () => {
+  it("only the two read it; the table sees THAT they whispered; bots can't be whispered to", async () => {
+    const { code, token: a } = await createRoom("Asha");
+    const { token: b } = await joinRoom(code, "Vik");
+    const { token: c } = await joinRoom(code, "Om");
+    await addBot(code, a, 1);
+    await startGame(code, a);
+    const r = await row(code);
+    const seat = (t: string) => r.lobby.findIndex((p) => p.token === t);
+    await whisper(code, a, seat(b), "  I have the   Tunga Stone ");
+    const words = async (t: string) => (await getState(code, t, 0)).view!.events.filter((e) => e.type === "whisper").map((e) => e.msg);
+    expect(await words(a)).toEqual(["I have the Tunga Stone"]);
+    expect(await words(b)).toEqual(["I have the Tunga Stone"]);
+    expect(await words(c)).toEqual([]);
+    const seen = (await getState(code, c, 0)).view!.events.filter((e) => e.type === "whisper_seen");
+    expect(seen).toHaveLength(1);
+    expect(seen[0].msg).not.toContain("Tunga");
+    await checkNoLeak(code);
+    const bot = r.lobby.findIndex((p) => p.bot);
+    await fails(whisper(code, a, bot, "hi"), 422);
+    await fails(whisper(code, a, seat(a), "hi"), 422);
+    await fails(whisper(code, a, seat(b), "   "), 400);
   });
 });

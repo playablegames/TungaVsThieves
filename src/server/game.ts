@@ -509,6 +509,27 @@ export async function chat(code: string, token: string | null, text: unknown) {
   await ping(row.code, row.version);
 }
 
+/** WHISPER (owner 2026-11-22: "chat is for coordination and scheming"): typed chat between TWO players. The words go
+ *  only to the two of them; everyone sees THAT they whispered (a public `whisper_seen`), never what. Kept in the game's
+ *  own log so view() hides it like any private event — no new table. Bots don't read chat (multiplayer first). */
+export async function whisper(code: string, token: string | null, to: unknown, text: unknown) {
+  const t = String(text ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
+  if (!t) throw new HttpError(400, "Empty message");
+  await mutate(code, (row) => {
+    const s = row.state;
+    if (!s || s.phase.kind === "over") throw new HttpError(409, "The game isn't on");
+    const at = seatOf(row, token), seat = Number(to);
+    if (!Number.isInteger(seat) || seat === at || !row.lobby[seat]) throw new HttpError(422, "Pick another player");
+    if (row.lobby[seat].bot) throw new HttpError(422, "Bots don't read chat");
+    const key = `${row.code}:${at}`, now = Date.now();
+    if (now - (lastChat.get(key) ?? 0) < chatLimit.gapMs / 2) throw new HttpError(429, "Slow down");
+    lastChat.set(key, now);
+    s.events.push({ n: s.events.length, to: [at, seat], type: "whisper", msg: t, data: { seat: at, to: seat } });
+    s.events.push({ n: s.events.length, to: "all", type: "whisper_seen", msg: `${row.lobby[at].name} whispers to ${row.lobby[seat].name}.`, data: { seat: at, to: seat } });
+    return row;
+  });
+}
+
 /** the host mutes or unmutes a player's voice for everyone (messages stay open) */
 export async function mutePlayer(code: string, token: string | null, at: unknown, muted: unknown) {
   await mutate(code, (row) => {

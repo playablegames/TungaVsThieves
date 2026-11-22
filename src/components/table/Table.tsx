@@ -14,6 +14,7 @@ import { RolesSheet } from "./RolesSheet";
 import { FilmLayer } from "./FilmLayer";
 import { notes as knownNotes } from "./knowledge";
 import { SecretLayer } from "./SecretLayer";
+import { ProfileBox, useTags, WhisperPanel } from "./ProfileBox";
 import { CardFace, LINE } from "./CardSheet";
 import { CARD, isStoneCard } from "@/lib/cards";
 
@@ -55,8 +56,14 @@ const RING = 2 * Math.PI * 19;
 /** when this phone first saw each talk line (by event n + text): its bubble shows for 7 s from then */
 const HEARD = new Map<string, number>();
 
-export function Table({ view, deadline, now, total = 20, onMove, initialOpen = null, voice = null }: {
+export function Table({ view, deadline, now, total = 20, onMove, initialOpen = null, voice = null, bots = [], onWhisper, initialBox = null }: {
   view: TableView; deadline: number | null; now: () => number; total?: number; onMove: (m: Move) => void;
+  /** the bots' seats (they get tags, not chat) */
+  bots?: number[];
+  /** dev preview only: start with this seat's box open */
+  initialBox?: number | null;
+  /** send a private chat line to one player (owner 2026-11-22) */
+  onWhisper?: (to: number, text: string) => Promise<boolean>;
   /** table voice (TableScreen owns the call): the mic button + who is talking */
   voice?: VoiceControls | null;
   /** dev preview only: start with this card's screen open */
@@ -81,12 +88,21 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
   const [note, setNote] = useState<{ text: string; until: number } | null>(null);
   // [1.4c] roles in play: shown once when a game opens (before anyone has passed), and on tapping the round chip
   const [rolesOpen, setRolesOpen] = useState(() => {
+    if (initialBox !== null) return false; // dev preview of the player box
     // once per game per phone (a game = its players + roles); round 1 only
     const k = `tunga:roles-seen:${view.players.map((p) => p.name).join("|")}:${view.rolesInPlay.join("|")}`;
     try { if (view.round !== 1 || sessionStorage.getItem(k)) return false; sessionStorage.setItem(k, "1"); } catch { return view.round === 1; }
     return true;
   });
   const [who, setWho] = useState<number | null>(null);
+  // TAP A PLAYER (owner 2026-11-22): the box (Chat + tags), the chat itself, what you have read
+  const [box, setBox] = useState<number | null>(initialBox);
+  const [chatWith, setChatWith] = useState<number | null>(null);
+  const lastN = view.events.at(-1)?.n ?? 0;
+  const [readTo, setReadTo] = useState<Record<number, number>>({});
+  const [openedAt] = useState(lastN);
+  const gameKey = `${view.players.map((p) => p.name).join("|")}:${view.rolesInPlay.join("|")}`;
+  const [tags, toggleTag] = useTags(gameKey);
   const [armed, setArmed] = useState<string | null>(null); // "Play Kundli" pressed: the names fill the bottom area
   const [passMode, setPassMode] = useState<string | null>(null); // "Pass 3 cards" pressed: every tap raises ONE card
   const shooting = view.phase.kind === "aim" && view.phase.shooter === you; // [3.7] Teer Kaman step 2
@@ -171,6 +187,20 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
     const at = HEARD.get(k) ?? 0;
     if (t !== null && t - at < 7000) saying[seat] = { text: e.msg.slice(e.msg.indexOf(":") + 1).trim(), key: e.n };
   }
+  // whispers: who whispered in the last 5 s (everyone sees that), and what you haven't read
+  const whispering: number[] = [];
+  const unread: Record<number, number> = {};
+  for (const e of view.events) {
+    const d = (e.data ?? {}) as { seat?: number; to?: number };
+    if (e.type === "whisper_seen" && typeof d.seat === "number") {
+      const k = `${e.n}:w`;
+      if (!HEARD.has(k) && t !== null) HEARD.set(k, t);
+      if (t !== null && t - (HEARD.get(k) ?? 0) < 5000) whispering.push(d.seat, d.to!);
+    }
+    if (e.type === "whisper" && d.to === you && typeof d.seat === "number" && d.seat !== chatWith && e.n > (readTo[d.seat] ?? openedAt))
+      unread[d.seat] = (unread[d.seat] ?? 0) + 1;
+  }
+  const openChat = (s: number | null) => { if (chatWith !== null) setReadTo((r) => ({ ...r, [chatWith]: lastN })); if (s !== null) setReadTo((r) => ({ ...r, [s]: lastN })); setChatWith(s); };
   useTableSounds(view, left);
 
   // your cards in their printed near-square shape: big when you hold 2, smaller and overlapping when you hold 5
@@ -206,8 +236,8 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
         </div>
 
         <Centre view={view} />
-        <Seats players={view.players} you={you} myRole={me?.role ?? null} active={activeSeats(view)} picked={open || giving ? picked : []} talking={voice?.talking} muted={voice?.muted} doing={doing} saying={saying} notes={knownNotes(view.events, you)}
-          onSeat={voice && !open && !voting && !giving && up.length === 0 ? (s) => { if (!voice.bots.includes(s)) { play("tap"); setWho(s); } } : undefined} hideYou={(!voting && up.length > 0) || shooting}
+        <Seats players={view.players} you={you} myRole={me?.role ?? null} active={activeSeats(view)} picked={open || giving ? picked : []} talking={voice?.talking} muted={voice?.muted} doing={doing} saying={saying} notes={knownNotes(view.events, you)} tags={tags} whispering={whispering} unread={unread}
+          onSeat={!open && !voting && !giving && up.length === 0 ? (s) => { play("tap"); setBox(s); } : undefined} hideYou={(!voting && up.length > 0) || shooting}
           votes={view.phase.kind === "vote" ? liveCount(view.phase, view.extraVote) : undefined} />
         <VoteResult view={view} />
 
@@ -287,6 +317,13 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
         {view.phase.kind === "vote" && me?.alive && <VoteSheet view={view} onMove={onMove} />}
         {who !== null && voice && <PlayerSheet key={who} name={view.players[who]?.name ?? ""} muted={voice.muted.includes(who)}
           onMute={(on) => voice.mute(who, on)} onReport={(reason) => voice.report(who, reason)} onClose={() => setWho(null)} />}
+        {box !== null && (
+          <ProfileBox view={view} seat={box} bot={bots.includes(box) || !onWhisper} tags={tags[box] ?? []} unread={unread[box] ?? 0}
+            onTag={(x) => toggleTag(box, x)} onClose={() => setBox(null)}
+            onChat={() => { openChat(box); setBox(null); }}
+            onMore={voice && !bots.includes(box) ? () => { setWho(box); setBox(null); } : null} />
+        )}
+        {chatWith !== null && onWhisper && <WhisperPanel view={view} seat={chatWith} onSend={(x) => onWhisper(chatWith, x)} onClose={() => openChat(null)} />}
         {giving && <GiftPanel view={view} picked={picked} setPicked={setPicked} onMove={(m) => { play("tap"); onMove(m); }} />}
 
         {rolesOpen && <RolesSheet roles={view.rolesInPlay} onClose={() => setRolesOpen(false)} />}

@@ -9,6 +9,7 @@
 //   ?phase=gift     you were just put out: give your extra vote
 //   ?phase=out      you are out, watching
 //   ?phase=over     the end screen (a thief holds a Stone, one player is out); ?win=V for a village win
+//   ?box=3        open the tap-a-player box on seat 3 (Chat + tags)
 //   ?phone=1      show it inside a true 442×884 phone frame (headless Chrome can't make a window that narrow)
 import { notFound, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -100,7 +101,8 @@ export default function DevTable() {
   }
   if (s.phase.kind === "over") return <EndSheet view={view(s, start.you) as TableView} host hostName="" next={null} busy={false} error={null} onAgain={() => {}} onFollow={() => {}} />;
   return (
-    <Table view={tally ? { ...(view(s, start.you) as TableView), events: [...(view(s, start.you) as TableView).events, tally] } : view(s, start.you) as TableView} deadline={deadline} now={now} initialOpen={open}
+    <Table view={tally ? { ...(view(s, start.you) as TableView), events: [...(view(s, start.you) as TableView).events, tally] } : view(s, start.you) as TableView} deadline={deadline} now={now} initialOpen={open} initialBox={q.get("box") ? Number(q.get("box")) : null}
+      onWhisper={async () => true}
       onMove={(m) => { try { setS(move(s, start.you, m)); } catch (e) { alert((e as Error).message); } }} />
   );
 }

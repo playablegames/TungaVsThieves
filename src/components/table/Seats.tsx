@@ -4,11 +4,12 @@
 /* eslint-disable @next/next/no-img-element */
 import { CARD_BACK, roleArt } from "@/components/CardIcon";
 import { isThiefRole, type Note } from "./knowledge";
+import { tagColour, type Tag } from "./ProfileBox";
 import { W, seatSpot } from "./layout";
 
 export interface SeatInfo { seat: number; name: string; alive: boolean; cards?: number }
 
-export function Seats({ players, you, myRole, active, votes = {}, picked = [], hideYou = false, talking = [], muted = [], onSeat, doing = {}, saying = {}, notes = {} }: {
+export function Seats({ players, you, myRole, active, votes = {}, picked = [], hideYou = false, talking = [], muted = [], onSeat, doing = {}, saying = {}, notes = {}, tags = {}, whispering = [], unread = {} }: {
   players: SeatInfo[]; you: number; myRole: string | null; active: number[];
   /** while you play a card: the players you have picked glow (you pick them by name in the bottom area) */
   picked?: number[];
@@ -22,10 +23,16 @@ export function Seats({ players, you, myRole, active, votes = {}, picked = [], h
   saying?: Record<number, { text: string; key: number }>;
   /** players you muted for yourself (a small slashed speaker) */
   muted?: number[];
-  /** tap another person's seat: mute or report them (Play Store user-content rules) */
+  /** tap another player's seat: chat + your tags (ProfileBox), and mute / report for people */
   onSeat?: (seat: number) => void;
   /** what only YOU know about them, kept all game (knowledge.ts): role from Kundli / Teer Kaman, cards seen or passed */
   notes?: Record<number, Note>;
+  /** your own tags on them (ProfileBox), only on your phone */
+  tags?: Record<number, Tag[]>;
+  /** they whispered just now (everyone sees THAT, never what) */
+  whispering?: number[];
+  /** whispers from them you haven't opened */
+  unread?: Record<number, number>;
   /** [3.4] open vote: the live count on each player, a red bubble */
   votes?: Record<number, number>;
 }) {
@@ -39,10 +46,11 @@ export function Seats({ players, you, myRole, active, votes = {}, picked = [], h
         if (me && hideYou) return null;
         const pick = picked.includes(p.seat);
         const talk = talking.includes(p.seat);
+        const hush = whispering.includes(p.seat);
         const ring = (talk ? "0 0 0 5px rgba(126,224,161,.95), 0 0 18px rgba(126,224,161,.7), " : "") + (pick ? "0 0 0 3px #f7bb1f, 0 0 26px rgba(247,187,31,.95)" : turn ? "0 0 0 2.5px #f7bb1f, 0 0 22px rgba(247,187,31,.8)" : me ? "0 0 0 2px #f7bb1f" : "0 0 0 1.5px rgba(247,187,31,.55)");
         return (
           <div key={p.seat} className="absolute z-[2] flex -translate-x-1/2 -translate-y-1/2 flex-col items-center"
-            onClick={onSeat && !me ? () => onSeat(p.seat) : undefined} role={onSeat && !me ? "button" : undefined} aria-label={onSeat && !me ? `${p.name}: mute or report` : undefined}
+            onClick={onSeat && !me ? () => onSeat(p.seat) : undefined} role={onSeat && !me ? "button" : undefined} aria-label={onSeat && !me ? `${p.name}: chat and tags` : undefined}
             style={{ left: x, top: y, opacity: p.alive ? 1 : 0.4, filter: p.alive ? undefined : "grayscale(1)" }}>
             <div className="relative">
               <img src={face ?? CARD_BACK} alt={me && myRole ? `You are ${myRole}` : ""} draggable={false}
@@ -55,6 +63,20 @@ export function Seats({ players, you, myRole, active, votes = {}, picked = [], h
               {talk && (
                 <span className="absolute -left-[9px] -top-2 grid size-[22px] place-items-center rounded-full bg-[#7ee0a1] text-[#06321a] shadow-[0_0_0_2px_#021230]" aria-label={`${p.name} is talking`}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M4 10v4M9 6v12M14 3v18M19 8v8" /></svg>
+                </span>
+              )}
+              {(tags[p.seat]?.length ?? 0) > 0 && !me && (
+                <span className="absolute inset-x-[-14px] top-[3px] flex flex-wrap justify-center gap-[3px]" aria-label={`Your tags: ${tags[p.seat].join(", ")}`}>
+                  {tags[p.seat].map((t) => (
+                    <span key={t} className="rounded-[5px] bg-[#021230f0] px-1 text-[9.5px] font-bold leading-[15px]" style={{ color: tagColour(t), boxShadow: `inset 0 0 0 1px ${tagColour(t)}` }}>{t}</span>
+                  ))}
+                </span>
+              )}
+              {(hush || (unread[p.seat] ?? 0) > 0) && (
+                <span className={`absolute -left-[10px] top-[30px] grid h-[22px] min-w-[22px] place-items-center rounded-full px-1 shadow-[0_0_0_2px_#021230] ${hush ? "tt-pop" : ""}`}
+                  style={{ background: (unread[p.seat] ?? 0) > 0 ? "#f7bb1f" : "#ffe7a6", color: "#2a1404" }} aria-label={(unread[p.seat] ?? 0) > 0 ? `${unread[p.seat]} new from ${p.name}` : `${p.name} is whispering`}>
+                  {(unread[p.seat] ?? 0) > 0 ? <span className="text-[11.5px] font-bold">{unread[p.seat]}</span>
+                    : <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h16v11H9l-5 4z" /></svg>}
                 </span>
               )}
               {notes[p.seat]?.role && !me && (
