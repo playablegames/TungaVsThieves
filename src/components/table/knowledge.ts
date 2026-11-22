@@ -81,3 +81,30 @@ export function notes(events: Ev[], you: number): Record<number, Note> {
   for (const k of Object.keys(n)) if (!n[+k].role && !n[+k].cards) delete n[+k];
   return n;
 }
+
+export type Claim = "Villager" | "Thief" | "Tunga" | "Bhadra";
+/** what each player has SAID about themselves, out loud (owner 2026-11-22: tap your own profile → tags = public claims).
+ *  Everyone sees these on the seat. Role claims replace each other; a Stone claim stays until they say they have none. */
+export function claims(events: Ev[]): Record<number, Claim[]> {
+  const out: Record<number, Set<Claim>> = {};
+  for (const e of events) {
+    if (e.type !== "say") continue;
+    const d = (e.data ?? {}) as { seat?: number; talk?: { t: string; target?: number; role?: string; has?: boolean; which?: string } };
+    const seat = d.seat, k = d.talk;
+    if (typeof seat !== "number" || !k) continue;
+    const set = (out[seat] ??= new Set());
+    const role = (c: Claim) => { set.delete("Villager"); set.delete("Thief"); set.add(c); };
+    if (k.t === "claim" && k.role) role(isThiefRole(k.role) ? "Thief" : "Villager");
+    else if (k.target === seat && k.t === "vouch") role("Villager");
+    else if (k.target === seat && k.t === "accuse") role("Thief");
+    else if (k.target === seat && k.t === "stone") {
+      if (!k.has && k.which === "TUNGA_STONE") set.delete("Tunga");
+      else if (!k.has && k.which === "BHADRA_STONE") set.delete("Bhadra");
+      else if (!k.has) { set.delete("Tunga"); set.delete("Bhadra"); }
+      else if (k.which === "TUNGA_STONE") set.add("Tunga");
+      else if (k.which === "BHADRA_STONE") set.add("Bhadra");
+    }
+  }
+  const order: Claim[] = ["Villager", "Thief", "Tunga", "Bhadra"];
+  return Object.fromEntries(Object.entries(out).filter(([, v]) => v.size).map(([k, v]) => [k, order.filter((c) => v.has(c))]));
+}

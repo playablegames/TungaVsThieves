@@ -9,7 +9,7 @@ import { W, seatSpot } from "./layout";
 
 export interface SeatInfo { seat: number; name: string; alive: boolean; cards?: number }
 
-export function Seats({ players, you, myRole, active, votes = {}, picked = [], hideYou = false, talking = [], muted = [], onSeat, doing = {}, saying = {}, notes = {}, tags = {}, whispering = [], unread = {} }: {
+export function Seats({ players, you, myRole, active, votes = {}, picked = [], hideYou = false, talking = [], muted = [], onSeat, doing = {}, saying = {}, notes = {}, tags = {}, whispering = [], unread = {}, says = {} }: {
   players: SeatInfo[]; you: number; myRole: string | null; active: number[];
   /** while you play a card: the players you have picked glow (you pick them by name in the bottom area) */
   picked?: number[];
@@ -29,6 +29,8 @@ export function Seats({ players, you, myRole, active, votes = {}, picked = [], h
   notes?: Record<number, Note>;
   /** your own tags on them (ProfileBox), only on your phone */
   tags?: Record<number, Tag[]>;
+  /** what they SAID about themselves out loud — everyone sees it, your own seat too */
+  says?: Record<number, Tag[]>;
   /** they whispered just now (everyone sees THAT, never what) */
   whispering?: number[];
   /** whispers from them you haven't opened */
@@ -50,7 +52,7 @@ export function Seats({ players, you, myRole, active, votes = {}, picked = [], h
         const ring = (talk ? "0 0 0 5px rgba(126,224,161,.95), 0 0 18px rgba(126,224,161,.7), " : "") + (pick ? "0 0 0 3px #f7bb1f, 0 0 26px rgba(247,187,31,.95)" : turn ? "0 0 0 2.5px #f7bb1f, 0 0 22px rgba(247,187,31,.8)" : me ? "0 0 0 2px #f7bb1f" : "0 0 0 1.5px rgba(247,187,31,.55)");
         return (
           <div key={p.seat} className="absolute z-[2] flex -translate-x-1/2 -translate-y-1/2 flex-col items-center"
-            onClick={onSeat && !me ? () => onSeat(p.seat) : undefined} role={onSeat && !me ? "button" : undefined} aria-label={onSeat && !me ? `${p.name}: chat and tags` : undefined}
+            onClick={onSeat ? () => onSeat(p.seat) : undefined} role={onSeat ? "button" : undefined} aria-label={onSeat ? `${p.name}: chat and tags` : undefined}
             style={{ left: x, top: y, opacity: p.alive ? 1 : 0.4, filter: p.alive ? undefined : "grayscale(1)" }}>
             <div className="relative">
               <img src={face ?? CARD_BACK} alt={me && myRole ? `You are ${myRole}` : ""} draggable={false}
@@ -90,7 +92,7 @@ export function Seats({ players, you, myRole, active, votes = {}, picked = [], h
                   aria-label={`${votes[p.seat]} votes`}>{votes[p.seat]}</span>
               )}
             </div>
-            {saying[p.seat] && !me && (
+            {saying[p.seat] && (
               // the bubble keeps inside the screen: pinned to the seat's left or right edge near the sides
               <div className="pointer-events-none absolute bottom-[calc(100%+4px)] z-[4] w-max max-w-[150px]"
                 style={x > W - 110 ? { right: -8 } : x < 110 ? { left: -8 } : { left: "50%", transform: "translateX(-50%)" }}>
@@ -103,6 +105,14 @@ export function Seats({ players, you, myRole, active, votes = {}, picked = [], h
               style={{ color: me ? "#f7bb1f" : turn ? "#ffe7a6" : "#fff", boxShadow: `inset 0 0 0 ${me || turn ? 1.5 : 1}px rgba(247,187,31,${me || turn ? 1 : 0.55})` }}>
               {me ? `${p.name} · you` : p.name}
             </div>
+            {(says[p.seat]?.length ?? 0) > 0 && (
+              // said out loud (a claim, not a fact): quoted, in the tag's colour
+              <div className="mt-0.5 flex max-w-[130px] flex-wrap justify-center gap-[3px]" aria-label={`${p.name} says: ${says[p.seat].join(", ")}`}>
+                {says[p.seat].map((t) => (
+                  <span key={t} className="rounded-full bg-[#021230f0] px-1.5 text-[10px] font-semibold italic leading-[16px]" style={{ color: tagColour(t), boxShadow: `inset 0 0 0 1px ${tagColour(t)}80` }}>“{t}”</span>
+                ))}
+              </div>
+            )}
             {notes[p.seat]?.cards && !me && (
               <div className="mt-0.5 max-w-[124px] truncate rounded-md bg-[#2a1d04e6] px-2 py-[1px] text-[10.5px] font-semibold text-[#f7bb1f] shadow-[inset_0_0_0_1px_rgba(247,187,31,.5)]">{notes[p.seat].cards}</div>
             )}

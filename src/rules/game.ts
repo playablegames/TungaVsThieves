@@ -79,7 +79,7 @@ export type Talk =
   | { t: "claim"; role: string }                          // "I am Kisaan"
   | { t: "accuse"; target: number; role?: string }        // "Raju is a thief" / "Raju is Chor"
   | { t: "vouch"; target: number }                        // "Raju is with the village"
-  | { t: "stone"; target: number; has: boolean }          // "Asha has a Stone" / "I have none" (target = self)
+  | { t: "stone"; target: number; has: boolean; which?: "TUNGA_STONE" | "BHADRA_STONE" } // "Asha has a Stone" / "I have the Tunga Stone" / "I have none"
   | { t: "saw_cards"; target: number; cards: Card[] }     // "My Talashi: Raju holds ..."
   | { t: "saw_role"; target: number; role: string }       // "My Kundli: Raju is Daku"
   | { t: "react"; emoji: React };
@@ -521,9 +521,13 @@ export function talkText(s: State, seat: number, k: Talk): string {
   const n = (x: number) => (x === seat ? "I" : P(s, x).name);
   switch (k.t) {
     case "claim": return `I am ${k.role}.`;
-    case "accuse": return k.role ? `${n(k.target)} is ${k.role}!` : `${n(k.target)} is a thief!`;
-    case "vouch": return `${n(k.target)} is with the village.`;
-    case "stone": return k.target === seat ? (k.has ? "I have a Stone." : "I have no Stone.") : `${n(k.target)} ${k.has ? "has a" : "has no"} Stone.`;
+    case "accuse": return k.target === seat ? "I am a thief!" : k.role ? `${n(k.target)} is ${k.role}!` : `${n(k.target)} is a thief!`;
+    case "vouch": return k.target === seat ? "I am with the village." : `${n(k.target)} is with the village.`;
+    case "stone": {
+      const which = k.which ? `the ${NAME[k.which]}` : "a Stone";
+      if (k.target === seat) return k.has ? `I have ${which}.` : k.which ? `I don't have ${which}.` : "I have no Stone.";
+      return k.has ? `${n(k.target)} has ${which}.` : k.which ? `${n(k.target)} doesn't have ${which}.` : `${n(k.target)} has no Stone.`;
+    }
     case "saw_cards": return `My Talashi: ${n(k.target)} holds ${k.cards.map((c) => NAME[c]).join(" and ") || "nothing"}.`;
     case "saw_role": return `My Kundli: ${n(k.target)} is ${k.role}.`;
     case "react": return ({ cry: "😭", cheer: "😁", shock: "😱", doubt: "🙄", angry: "😤", shh: "🤫" } as const)[k.emoji];

@@ -289,7 +289,7 @@ const talk = z.discriminatedUnion("t", [
   z.object({ t: z.literal("claim"), role: z.string().max(20) }),
   z.object({ t: z.literal("accuse"), target: seat, role: z.string().max(20).optional() }),
   z.object({ t: z.literal("vouch"), target: seat }),
-  z.object({ t: z.literal("stone"), target: seat, has: z.boolean() }),
+  z.object({ t: z.literal("stone"), target: seat, has: z.boolean(), which: z.enum(["TUNGA_STONE", "BHADRA_STONE"]).optional() }),
   z.object({ t: z.literal("saw_cards"), target: seat, cards: z.array(card).max(3) }),
   z.object({ t: z.literal("saw_role"), target: seat, role: z.string().max(20) }),
   z.object({ t: z.literal("react"), emoji: z.enum(["cry", "cheer", "shock", "doubt", "angry", "shh"]) }),
@@ -519,11 +519,15 @@ export async function whisper(code: string, token: string | null, to: unknown, t
     const s = row.state;
     if (!s || s.phase.kind === "over") throw new HttpError(409, "The game isn't on");
     const at = seatOf(row, token), seat = Number(to);
-    if (!Number.isInteger(seat) || seat === at || !row.lobby[seat]) throw new HttpError(422, "Pick another player");
-    if (row.lobby[seat].bot) throw new HttpError(422, "Bots don't read chat");
     const key = `${row.code}:${at}`, now = Date.now();
     if (now - (lastChat.get(key) ?? 0) < chatLimit.gapMs / 2) throw new HttpError(429, "Slow down");
     lastChat.set(key, now);
+    if (seat === at) { // your own profile → Chat = say it to the whole table (owner 2026-11-22), a bubble at your seat
+      s.events.push({ n: s.events.length, to: "all", type: "chat", msg: `${row.lobby[at].name}: ${t}`, data: { seat: at } });
+      return row;
+    }
+    if (!Number.isInteger(seat) || !row.lobby[seat]) throw new HttpError(422, "Pick another player");
+    if (row.lobby[seat].bot) throw new HttpError(422, "Bots don't read chat");
     s.events.push({ n: s.events.length, to: [at, seat], type: "whisper", msg: t, data: { seat: at, to: seat } });
     s.events.push({ n: s.events.length, to: "all", type: "whisper_seen", msg: `${row.lobby[at].name} whispers to ${row.lobby[seat].name}.`, data: { seat: at, to: seat } });
     return row;

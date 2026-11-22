@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { move, newGame, view, type State } from "@/rules/game";
-import { notes, secrets } from "./knowledge";
+import { claims, notes, secrets } from "./knowledge";
 
 const NAMES = ["Moon", "Pappu", "Babu", "Shyam", "Raju", "Munna"];
 
@@ -52,5 +52,18 @@ describe("what you know (owner 2026-11-22: 'I can't see the effects of the card 
       return;
     }
     throw new Error("no seed");
+  });
+});
+
+describe("claims out loud (owner 2026-11-22: tap your own profile → tags tell everyone)", () => {
+  const say = (n: number, seat: number, talk: object) => ({ n, to: "all" as const, type: "say", msg: "", data: { seat, talk } });
+  it("role claims replace each other; a Stone stays until taken back", () => {
+    const ev = [
+      say(0, 2, { t: "vouch", target: 2 }), say(1, 2, { t: "stone", target: 2, has: true, which: "TUNGA_STONE" }),
+      say(2, 2, { t: "stone", target: 2, has: true, which: "BHADRA_STONE" }), say(3, 2, { t: "accuse", target: 2 }),
+      say(4, 2, { t: "stone", target: 2, has: false, which: "TUNGA_STONE" }),
+      say(5, 3, { t: "claim", role: "Daku" }), say(6, 4, { t: "vouch", target: 2 }), // about someone else: not a self-claim
+    ];
+    expect(claims(ev as never)).toEqual({ 2: ["Thief", "Bhadra"], 3: ["Thief"] });
   });
 });
