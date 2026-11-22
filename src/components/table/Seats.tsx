@@ -4,12 +4,13 @@
 /* eslint-disable @next/next/no-img-element */
 import { CARD_BACK, roleArt } from "@/components/CardIcon";
 import { isThiefRole, type Note } from "./knowledge";
-import { tagColour, type Tag } from "./ProfileBox";
+import { tagColour } from "./ProfileBox";
+import type { Claim } from "./knowledge";
 import { W, seatSpot } from "./layout";
 
 export interface SeatInfo { seat: number; name: string; alive: boolean; cards?: number }
 
-export function Seats({ players, you, myRole, active, votes = {}, picked = [], hideYou = false, talking = [], muted = [], onSeat, doing = {}, saying = {}, notes = {}, tags = {}, whispering = [], unread = {}, says = {} }: {
+export function Seats({ players, you, myRole, active, votes = {}, picked = [], hideYou = false, talking = [], muted = [], onSeat, doing = {}, saying = {}, notes = {}, whispering = [], unread = {}, says = {} }: {
   players: SeatInfo[]; you: number; myRole: string | null; active: number[];
   /** while you play a card: the players you have picked glow (you pick them by name in the bottom area) */
   picked?: number[];
@@ -27,10 +28,8 @@ export function Seats({ players, you, myRole, active, votes = {}, picked = [], h
   onSeat?: (seat: number) => void;
   /** what only YOU know about them, kept all game (knowledge.ts): role from Kundli / Teer Kaman, cards seen or passed */
   notes?: Record<number, Note>;
-  /** your own tags on them (ProfileBox), only on your phone */
-  tags?: Record<number, Tag[]>;
-  /** what they SAID about themselves out loud — everyone sees it, your own seat too */
-  says?: Record<number, Tag[]>;
+  /** PUBLIC TAGS: what the table has said about them (who said each), everyone sees it */
+  says?: Record<number, Partial<Record<Claim, number[]>>>;
   /** they whispered just now (everyone sees THAT, never what) */
   whispering?: number[];
   /** whispers from them you haven't opened */
@@ -67,13 +66,6 @@ export function Seats({ players, you, myRole, active, votes = {}, picked = [], h
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M4 10v4M9 6v12M14 3v18M19 8v8" /></svg>
                 </span>
               )}
-              {(tags[p.seat]?.length ?? 0) > 0 && !me && (
-                <span className="absolute inset-x-[-14px] top-[3px] flex flex-wrap justify-center gap-[3px]" aria-label={`Your tags: ${tags[p.seat].join(", ")}`}>
-                  {tags[p.seat].map((t) => (
-                    <span key={t} className="rounded-[5px] bg-[#021230f0] px-1 text-[9.5px] font-bold leading-[15px]" style={{ color: tagColour(t), boxShadow: `inset 0 0 0 1px ${tagColour(t)}` }}>{t}</span>
-                  ))}
-                </span>
-              )}
               {(hush || (unread[p.seat] ?? 0) > 0) && (
                 <span className={`absolute -left-[10px] top-[30px] grid h-[22px] min-w-[22px] place-items-center rounded-full px-1 shadow-[0_0_0_2px_#021230] ${hush ? "tt-pop" : ""}`}
                   style={{ background: (unread[p.seat] ?? 0) > 0 ? "#f7bb1f" : "#ffe7a6", color: "#2a1404" }} aria-label={(unread[p.seat] ?? 0) > 0 ? `${unread[p.seat]} new from ${p.name}` : `${p.name} is whispering`}>
@@ -105,11 +97,12 @@ export function Seats({ players, you, myRole, active, votes = {}, picked = [], h
               style={{ color: me ? "#f7bb1f" : turn ? "#ffe7a6" : "#fff", boxShadow: `inset 0 0 0 ${me || turn ? 1.5 : 1}px rgba(247,187,31,${me || turn ? 1 : 0.55})` }}>
               {me ? `${p.name} · you` : p.name}
             </div>
-            {(says[p.seat]?.length ?? 0) > 0 && (
-              // said out loud (a claim, not a fact): quoted, in the tag's colour
-              <div className="mt-0.5 flex max-w-[130px] flex-wrap justify-center gap-[3px]" aria-label={`${p.name} says: ${says[p.seat].join(", ")}`}>
-                {says[p.seat].map((t) => (
-                  <span key={t} className="rounded-full bg-[#021230f0] px-1.5 text-[10px] font-semibold italic leading-[16px]" style={{ color: tagColour(t), boxShadow: `inset 0 0 0 1px ${tagColour(t)}80` }}>“{t}”</span>
+            {says[p.seat] && Object.keys(says[p.seat]).length > 0 && (
+              // PUBLIC TAGS: said out loud (a claim, not a fact) — the count is how many players said it
+              <div className="mt-0.5 flex max-w-[136px] flex-wrap justify-center gap-[3px]">
+                {(Object.entries(says[p.seat]) as [Claim, number[]][]).map(([t, who]) => (
+                  <span key={t} className="rounded-full bg-[#021230f0] px-1.5 text-[10px] font-semibold leading-[16px]" style={{ color: tagColour(t), boxShadow: `inset 0 0 0 1px ${tagColour(t)}80` }}
+                    aria-label={`${who.length} said ${p.name}: ${t}`}>{t}{who.length > 1 ? ` ${who.length}` : ""}</span>
                 ))}
               </div>
             )}

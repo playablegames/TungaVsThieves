@@ -12,9 +12,9 @@ import type { TableView } from "@/server/game";
 import { Centre } from "./Centre";
 import { RolesSheet } from "./RolesSheet";
 import { FilmLayer } from "./FilmLayer";
-import { claims, notes as knownNotes, type Claim } from "./knowledge";
+import { notes as knownNotes, publicTags, type Claim } from "./knowledge";
 import { SecretLayer } from "./SecretLayer";
-import { ProfileBox, useTags, WhisperPanel } from "./ProfileBox";
+import { ProfileBox, WhisperPanel } from "./ProfileBox";
 import { CardFace, LINE } from "./CardSheet";
 import { CARD, isStoneCard } from "@/lib/cards";
 
@@ -101,8 +101,6 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
   const lastN = view.events.at(-1)?.n ?? 0;
   const [readTo, setReadTo] = useState<Record<number, number>>({});
   const [openedAt] = useState(lastN);
-  const gameKey = `${view.players.map((p) => p.name).join("|")}:${view.rolesInPlay.join("|")}`;
-  const [tags, toggleTag] = useTags(gameKey);
   const [armed, setArmed] = useState<string | null>(null); // "Play Kundli" pressed: the names fill the bottom area
   const [passMode, setPassMode] = useState<string | null>(null); // "Pass 3 cards" pressed: every tap raises ONE card
   const shooting = view.phase.kind === "aim" && view.phase.shooter === you; // [3.7] Teer Kaman step 2
@@ -201,15 +199,16 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
       unread[d.seat] = (unread[d.seat] ?? 0) + 1;
   }
   const openChat = (s: number | null) => { if (chatWith !== null) setReadTo((r) => ({ ...r, [chatWith]: lastN })); if (s !== null) setReadTo((r) => ({ ...r, [s]: lastN })); setChatWith(s); };
-  // what everyone has claimed out loud; your own tags SAY it (owner 2026-11-22)
-  const said = claims(view.events);
-  const claim = (c: Claim) => {
-    const on = (said[you] ?? []).includes(c);
-    const which = c === "Tunga" ? "TUNGA_STONE" : "BHADRA_STONE";
-    if (c === "Villager") { if (!on) onMove({ kind: "say", talk: { t: "vouch", target: you } }); return; }
-    if (c === "Thief") { if (!on) onMove({ kind: "say", talk: { t: "accuse", target: you } }); return; }
-    if (!on) { onMove({ kind: "say", talk: { t: "stone", target: you, has: true, which } }); return; }
-    onMove({ kind: "say", talk: { t: "stone", target: you, has: false, which } }); // take it back: "I don't have the Tunga Stone"
+  // PUBLIC TAGS (owner 2026-11-22: "tags are public"): a tag is said out loud about that player; tap again = take it back
+  const said = publicTags(view.events);
+  const mine = (seat: number) => (Object.entries(said[seat] ?? {}) as [Claim, number[]][]).filter(([, who]) => who.includes(you)).map(([c]) => c);
+  const tag = (seat: number, c: Claim) => {
+    const on = mine(seat).includes(c);
+    if (c === "Villager" || c === "Thief") {
+      onMove({ kind: "say", talk: on ? { t: "retract", target: seat } : c === "Villager" ? { t: "vouch", target: seat } : { t: "accuse", target: seat } });
+      return;
+    }
+    onMove({ kind: "say", talk: { t: "stone", target: seat, has: !on, which: c === "Tunga" ? "TUNGA_STONE" : "BHADRA_STONE" } });
   };
   useTableSounds(view, left);
 
@@ -246,7 +245,7 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
         </div>
 
         <Centre view={view} />
-        <Seats players={view.players} you={you} myRole={me?.role ?? null} active={activeSeats(view)} picked={open || giving ? picked : []} talking={voice?.talking} muted={voice?.muted} doing={doing} saying={saying} notes={knownNotes(view.events, you)} tags={tags} whispering={whispering} unread={unread} says={said}
+        <Seats players={view.players} you={you} myRole={me?.role ?? null} active={activeSeats(view)} picked={open || giving ? picked : []} talking={voice?.talking} muted={voice?.muted} doing={doing} saying={saying} notes={knownNotes(view.events, you)} whispering={whispering} unread={unread} says={said}
           onSeat={!open && !voting && !giving && up.length === 0 ? (s) => { play("tap"); setBox(s); } : undefined} hideYou={(!voting && up.length > 0) || shooting}
           votes={view.phase.kind === "vote" ? liveCount(view.phase, view.extraVote) : undefined} />
         <VoteResult view={view} />
@@ -329,8 +328,7 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
           onMute={(on) => voice.mute(who, on)} onReport={(reason) => voice.report(who, reason)} onClose={() => setWho(null)} />}
         {box !== null && (
           <ProfileBox view={view} seat={box} self={box === you} bot={box !== you && (bots.includes(box) || !onWhisper)} unread={box === you ? 0 : unread[box] ?? 0}
-            tags={box === you ? said[you] ?? [] : tags[box] ?? []}
-            onTag={(x) => (box === you ? claim(x) : toggleTag(box, x))} onClose={() => setBox(null)}
+            tags={mine(box)} onTag={(x) => tag(box, x)} onClose={() => setBox(null)}
             onChat={() => { openChat(box); setBox(null); }}
             onMore={voice && box !== you && !bots.includes(box) ? () => { setWho(box); setBox(null); } : null} />
         )}

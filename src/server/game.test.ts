@@ -258,9 +258,7 @@ describe("whisper (owner 2026-11-22: chat is for coordination and scheming)", ()
     await checkNoLeak(code);
     const bot = r.lobby.findIndex((p) => p.bot);
     await fails(whisper(code, a, bot, "hi"), 422);
-    // your own profile: Chat goes to the whole table
-    await whisper(code, a, seat(a), "trust me");
-    expect((await getState(code, c, 0)).view!.events.filter((e) => e.type === "chat").map((e) => e.msg)).toEqual(["Asha: trust me"]);
+    await fails(whisper(code, a, seat(a), "hi"), 422); // chat is always with one other player (owner 2026-11-22)
     await fails(whisper(code, a, seat(b), "   "), 400);
   });
 });

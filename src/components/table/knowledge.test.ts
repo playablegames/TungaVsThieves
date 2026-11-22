@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { move, newGame, view, type State } from "@/rules/game";
-import { claims, notes, secrets } from "./knowledge";
+import { notes, publicTags, secrets } from "./knowledge";
 
 const NAMES = ["Moon", "Pappu", "Babu", "Shyam", "Raju", "Munna"];
 
@@ -55,15 +55,15 @@ describe("what you know (owner 2026-11-22: 'I can't see the effects of the card 
   });
 });
 
-describe("claims out loud (owner 2026-11-22: tap your own profile → tags tell everyone)", () => {
+describe("public tags (owner 2026-11-22: chat is private, tags are public)", () => {
   const say = (n: number, seat: number, talk: object) => ({ n, to: "all" as const, type: "say", msg: "", data: { seat, talk } });
-  it("role claims replace each other; a Stone stays until taken back", () => {
+  it("who said what about whom; side tags replace, retract and 'not the Stone' take back", () => {
     const ev = [
       say(0, 2, { t: "vouch", target: 2 }), say(1, 2, { t: "stone", target: 2, has: true, which: "TUNGA_STONE" }),
-      say(2, 2, { t: "stone", target: 2, has: true, which: "BHADRA_STONE" }), say(3, 2, { t: "accuse", target: 2 }),
-      say(4, 2, { t: "stone", target: 2, has: false, which: "TUNGA_STONE" }),
-      say(5, 3, { t: "claim", role: "Daku" }), say(6, 4, { t: "vouch", target: 2 }), // about someone else: not a self-claim
+      say(2, 1, { t: "accuse", target: 2 }), say(3, 3, { t: "accuse", target: 2 }), say(4, 3, { t: "retract", target: 2 }),
+      say(5, 2, { t: "accuse", target: 2 }), say(6, 2, { t: "stone", target: 2, has: false, which: "TUNGA_STONE" }),
+      say(7, 4, { t: "claim", role: "Daku" }), say(8, 1, { t: "stone", target: 4, has: true, which: "BHADRA_STONE" }),
     ];
-    expect(claims(ev as never)).toEqual({ 2: ["Thief", "Bhadra"], 3: ["Thief"] });
+    expect(publicTags(ev as never)).toEqual({ 2: { Thief: [1, 2] }, 4: { Thief: [4], Bhadra: [1] } });
   });
 });

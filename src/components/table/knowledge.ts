@@ -83,28 +83,31 @@ export function notes(events: Ev[], you: number): Record<number, Note> {
 }
 
 export type Claim = "Villager" | "Thief" | "Tunga" | "Bhadra";
-/** what each player has SAID about themselves, out loud (owner 2026-11-22: tap your own profile → tags = public claims).
- *  Everyone sees these on the seat. Role claims replace each other; a Stone claim stays until they say they have none. */
-export function claims(events: Ev[]): Record<number, Claim[]> {
-  const out: Record<number, Set<Claim>> = {};
+const CLAIMS: Claim[] = ["Villager", "Thief", "Tunga", "Bhadra"];
+/** PUBLIC TAGS (owner 2026-11-22: "chat is private, tags are public"): what each player has SAID out loud about each
+ *  player (themselves included) — "Raju is a thief", "I have the Tunga Stone", a Kundli report. target → tag → who said it.
+ *  A speaker's side tags replace each other; a retract takes theirs back; "doesn't have the X Stone" takes a Stone back. */
+export function publicTags(events: Ev[]): Record<number, Partial<Record<Claim, number[]>>> {
+  const by: Record<number, Record<Claim, Set<number>>> = {};
+  const at = (t: number) => (by[t] ??= { Villager: new Set(), Thief: new Set(), Tunga: new Set(), Bhadra: new Set() });
   for (const e of events) {
     if (e.type !== "say") continue;
     const d = (e.data ?? {}) as { seat?: number; talk?: { t: string; target?: number; role?: string; has?: boolean; which?: string } };
-    const seat = d.seat, k = d.talk;
-    if (typeof seat !== "number" || !k) continue;
-    const set = (out[seat] ??= new Set());
-    const role = (c: Claim) => { set.delete("Villager"); set.delete("Thief"); set.add(c); };
-    if (k.t === "claim" && k.role) role(isThiefRole(k.role) ? "Thief" : "Villager");
-    else if (k.target === seat && k.t === "vouch") role("Villager");
-    else if (k.target === seat && k.t === "accuse") role("Thief");
-    else if (k.target === seat && k.t === "stone") {
-      if (!k.has && k.which === "TUNGA_STONE") set.delete("Tunga");
-      else if (!k.has && k.which === "BHADRA_STONE") set.delete("Bhadra");
-      else if (!k.has) { set.delete("Tunga"); set.delete("Bhadra"); }
-      else if (k.which === "TUNGA_STONE") set.add("Tunga");
-      else if (k.which === "BHADRA_STONE") set.add("Bhadra");
+    const who = d.seat, k = d.talk;
+    if (typeof who !== "number" || !k) continue;
+    const side = (t: number, c: "Villager" | "Thief" | null) => { at(t).Villager.delete(who); at(t).Thief.delete(who); if (c) at(t)[c].add(who); };
+    if (k.t === "claim" && k.role) side(who, isThiefRole(k.role) ? "Thief" : "Villager");
+    else if (typeof k.target !== "number") continue;
+    else if (k.t === "vouch") side(k.target, "Villager");
+    else if (k.t === "accuse") side(k.target, "Thief");
+    else if (k.t === "saw_role" && k.role) side(k.target, isThiefRole(k.role) ? "Thief" : "Villager");
+    else if (k.t === "retract") side(k.target, null);
+    else if (k.t === "stone") {
+      const tags: Claim[] = k.which === "TUNGA_STONE" ? ["Tunga"] : k.which === "BHADRA_STONE" ? ["Bhadra"] : ["Tunga", "Bhadra"];
+      for (const c of tags) if (k.has && k.which) at(k.target)[c].add(who); else if (!k.has) at(k.target)[c].delete(who);
     }
   }
-  const order: Claim[] = ["Villager", "Thief", "Tunga", "Bhadra"];
-  return Object.fromEntries(Object.entries(out).filter(([, v]) => v.size).map(([k, v]) => [k, order.filter((c) => v.has(c))]));
+  const out: Record<number, Partial<Record<Claim, number[]>>> = {};
+  for (const [t, m] of Object.entries(by)) for (const c of CLAIMS) if (m[c].size) (out[+t] ??= {})[c] = [...m[c]];
+  return out;
 }

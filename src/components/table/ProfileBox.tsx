@@ -1,10 +1,10 @@
 "use client";
-// TAP A PLAYER (owner 2026-11-22: "every profile must be clickable… I just need 2 things: 1st button Chat, below it
-// tags (Villager, Thief, Tunga, Bhadra) — that's it"). A small box opens from the seat you tapped:
-//   Chat  → a private chat with that player (WhisperPanel); the table only sees THAT you whispered
-//   tags  → your own markers on their seat, only on your phone (Villager / Thief cancel each other; Tunga, Bhadra each on/off)
+// TAP A PLAYER (owner 2026-11-22: "every profile must be clickable... 1st button Chat, below it tags (Villager, Thief,
+// Tunga, Bhadra) - that's it"; "chat is private, tags are public"). A small box opens from the seat you tapped:
+//   Chat  -> a private chat with that player (WhisperPanel); the table only sees THAT you whispered. Not on your own seat.
+//   tags  -> said OUT LOUD about them (or yourself): everyone sees them on the seat; tap again to take it back
 // Mute · Report stays as one small line for real people (Play Store user-content rules).
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState } from "react";
 import { play } from "@/lib/sfx";
 import type { TableView } from "@/server/game";
 import { H, HAND_TOP, W, seatSpot } from "./layout";
@@ -12,29 +12,6 @@ import { H, HAND_TOP, W, seatSpot } from "./layout";
 export type Tag = "Villager" | "Thief" | "Tunga" | "Bhadra";
 export const TAGS: Tag[] = ["Villager", "Thief", "Tunga", "Bhadra"];
 
-// ---------------------------------------------------------------- your tags (this phone only; a lost tag costs nothing)
-const subs = new Set<() => void>();
-const cache = new Map<string, string>();
-function readTags(game: string): string {
-  if (!cache.has(game)) { let v = "{}"; try { v = localStorage.getItem(`tunga:tags:${game}`) ?? "{}"; } catch {} cache.set(game, v); }
-  return cache.get(game)!;
-}
-export function useTags(game: string): [Record<number, Tag[]>, (seat: number, t: Tag) => void] {
-  const raw = useSyncExternalStore((f) => { subs.add(f); return () => subs.delete(f); }, () => readTags(game), () => "{}");
-  let tags: Record<number, Tag[]> = {};
-  try { tags = JSON.parse(raw); } catch {}
-  const toggle = (seat: number, t: Tag) => {
-    const now = new Set(tags[seat] ?? []);
-    if (now.has(t)) now.delete(t);
-    else { now.add(t); if (t === "Villager") now.delete("Thief"); if (t === "Thief") now.delete("Villager"); }
-    const next = { ...tags, [seat]: TAGS.filter((x) => now.has(x)) };
-    const v = JSON.stringify(next);
-    cache.set(game, v);
-    try { localStorage.setItem(`tunga:tags:${game}`, v); } catch {}
-    subs.forEach((f) => f());
-  };
-  return [tags, toggle];
-}
 export const tagColour = (t: Tag) => (t === "Thief" ? "#ff8a7a" : t === "Villager" ? "#7ee0a1" : "#f7bb1f");
 
 const pill = (on: boolean, c: string) => on
@@ -61,13 +38,13 @@ export function ProfileBox({ view, seat, bot, tags, onTag, onChat, onMore, onClo
         style={{ width: BW, left, ...(below ? { top: y + 66 } : { bottom: H - (y - 50) }),
           background: "linear-gradient(rgba(12,44,107,.98), rgba(2,18,48,.98))", transformOrigin: below ? "50% 0" : "50% 100%" }}>
         <p className="truncate text-center font-[family-name:var(--font-cinzel)] text-[14px] font-bold tracking-[1.5px] text-[#f7bb1f]">{self ? "YOU" : name.toUpperCase()}</p>
-        <button disabled={bot} onClick={() => { play("tap"); onChat(); }}
+        {!self && <button disabled={bot} onClick={() => { play("tap"); onChat(); }}
           className="relative mt-2.5 h-12 w-full rounded-2xl bg-gradient-to-b from-[#f7c94a] to-[#e0a020] text-[16px] font-bold text-[#2a1404] shadow-[inset_0_1px_0_#ffe7a6,0_4px_0_#8a5a08] transition-transform active:translate-y-0.5 disabled:from-[#3a3f55] disabled:to-[#2a2f44] disabled:text-[#ffe7a680] disabled:shadow-none">
           {bot ? "Bots don't chat" : "Chat"}
           {unread > 0 && <span className="absolute -right-1.5 -top-1.5 grid h-[22px] min-w-[22px] place-items-center rounded-full bg-[#e8434b] px-1 text-[12px] font-bold text-white shadow-[0_0_0_2px_#021230]">{unread}</span>}
-        </button>
-        {self && <p className="mt-2 text-center text-[11px] text-[#ffe7a68c]">Tags here tell everyone</p>}
-        <div className={`${self ? "mt-1.5" : "mt-2.5"} grid grid-cols-2 gap-2`}>
+        </button>}
+        <p className="mt-2 text-center text-[11px] text-[#ffe7a68c]">{self ? "Tell everyone about you" : `Tell everyone about ${name}`}</p>
+        <div className="mt-1.5 grid grid-cols-2 gap-2">
           {TAGS.map((t) => {
             const on = tags.includes(t);
             return (

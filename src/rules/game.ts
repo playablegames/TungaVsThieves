@@ -82,6 +82,7 @@ export type Talk =
   | { t: "stone"; target: number; has: boolean; which?: "TUNGA_STONE" | "BHADRA_STONE" } // "Asha has a Stone" / "I have the Tunga Stone" / "I have none"
   | { t: "saw_cards"; target: number; cards: Card[] }     // "My Talashi: Raju holds ..."
   | { t: "saw_role"; target: number; role: string }       // "My Kundli: Raju is Daku"
+  | { t: "retract"; target: number }                     // "I take back what I said about Raju" (a public tag removed)
   | { t: "react"; emoji: React };
 
 export class RuleError extends Error {}
@@ -530,6 +531,7 @@ export function talkText(s: State, seat: number, k: Talk): string {
     }
     case "saw_cards": return `My Talashi: ${n(k.target)} holds ${k.cards.map((c) => NAME[c]).join(" and ") || "nothing"}.`;
     case "saw_role": return `My Kundli: ${n(k.target)} is ${k.role}.`;
+    case "retract": return k.target === seat ? "I take back what I said about me." : `I take back what I said about ${n(k.target)}.`;
     case "react": return ({ cry: "😭", cheer: "😁", shock: "😱", doubt: "🙄", angry: "😤", shh: "🤫" } as const)[k.emoji];
   }
 }
