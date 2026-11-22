@@ -28,11 +28,9 @@ export function secrets(events: Ev[], you: number, names: string[]): Secret[] {
     if (e.type === "play") lastPlay = { seat: d.seat as number, card: d.card as string, target: d.target as number | undefined };
     if (e.to === "all") continue;
     switch (e.type) {
-      case "talashi": { // (owner 2026-11-22) Talashi talks only about the Stone
-        const st = (d.cards as Card[]).filter((c) => STONES.has(c));
-        out.push(st.length ? { n: e.n, title: "Talashi", line: `${name(d.target)} has`, cards: st } : { n: e.n, title: "Talashi", line: `${name(d.target)} has no Stone` });
+      case "talashi": // [3.1] the reveal shows the cards they hold; only the seat TAG after it is about the Stone (owner 2026-11-22)
+        out.push({ n: e.n, title: "Talashi", line: `${name(d.target)} holds`, cards: d.cards as Card[] });
         break;
-      }
       case "kundli": {
         const mine = lastPlay?.card === "KUNDLI" && lastPlay.seat === you;
         out.push({ n: e.n, title: "Kundli", role: d.role as string,
