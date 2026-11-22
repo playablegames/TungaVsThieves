@@ -2,9 +2,9 @@
 // from a stored game. A server call has no memory between requests, so each call rebuilds every bot's brain from the
 // game's own log: it reads the OLD events quietly (beliefs only, no talk), then the NEW ones out loud (it may answer).
 // What a bot already said is read back from the log, so a rebuilt bot never says the same hunch twice.
-import { Brain, decide, SKILLS, type SkillName } from "@/rules/brain";
+import { Brain, decide, reconsider, SKILLS, type SkillName } from "@/rules/brain";
 import { next } from "@/rules/rng";
-import { move, type Move, type State, type Talk } from "@/rules/game";
+import { ask, move, type Move, type State, type Talk } from "@/rules/game";
 
 /** how many lines one bot may say in one go — nobody blabbers (SITUATIONS.md) */
 const MAX_LINES = 2;
@@ -69,6 +69,8 @@ export class BotTable {
         if (s.phase.kind === "over") return s;
         const b = this.brain(bot.seat, s);
         b.hunch(s, this.r, bigMoment(s));
+        b.scheme(s, this.r);
+        for (const a of b.asks.splice(0)) { if (s.phase.kind === "over") return s; s = ask(s, bot.seat, a.to, a.card); said = true; }
         for (const t of b.out.splice(0).slice(0, MAX_LINES)) {
           if (s.phase.kind === "over") return s;
           s = move(s, bot.seat, { kind: "say", talk: t });
@@ -76,6 +78,20 @@ export class BotTable {
         }
       }
       if (!said) break;
+    }
+    return s;
+  }
+
+  /** THE OPEN VOTE (owner 2026-11-22): bots that already voted look at the live count and may swing (reconsider) */
+  revote(s: State): State {
+    for (let look = 0; look < 3 && s.phase.kind === "vote"; look++) {
+      let moved = false;
+      for (const bot of this.bots) {
+        if (s.phase.kind !== "vote") return s;
+        const m = reconsider(this.brain(bot.seat, s), s);
+        if (m) { s = move(s, bot.seat, m); moved = true; }
+      }
+      if (!moved) break;
     }
     return s;
   }

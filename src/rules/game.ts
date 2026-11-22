@@ -16,11 +16,13 @@ const isAction = (c: Card): c is Action => (ACTIONS as Card[]).includes(c);
 
 /** [1.2] [1.3] players -> villagers, thieves, rounds */
 export const TABLE: Record<number, [number, number, number]> = {
-  4: [3, 1, 2], 5: [4, 1, 2], 6: [4, 2, 3], 7: [5, 2, 3], 8: [5, 3, 3], 9: [6, 3, 3], 10: [6, 4, 4], 11: [7, 4, 4], 12: [8, 4, 4],
+  // (owner 2026-11-22: smarter bots made the village too strong → one more thief where it was over ~55%, Aawara as 5th;
+  // "villagers must be more than thieves, not equal" → 4 and 6 keep 3+1 and 4+2)
+  4: [3, 1, 2], 5: [3, 2, 2], 6: [4, 2, 3], 7: [4, 3, 3], 8: [5, 3, 3], 9: [5, 4, 3], 10: [6, 4, 4], 11: [7, 4, 4], 12: [7, 5, 4], // 11 back to 7+4 (owner 2026-11-22: "moved a lot")
 };
 /** [1.4] */
 export const VILLAGERS = ["Kisaan", "Sarpanch", "Baba", "Teacher", "Police", "Doctor", "NRI", "Deewani"];
-export const THIEVES = ["Chor", "Lootera", "Gunda", "Daku"];
+export const THIEVES = ["Chor", "Lootera", "Gunda", "Daku", "Aawara"]; // Aawara = 5th thief, ONLINE ONLY (owner 2026-11-22)
 
 
 export interface Player { seat: number; name: string; role: string; side: Side; alive: boolean; hand: Card[] }
@@ -507,6 +509,19 @@ export function closeVoteNow(state: State): State {
 export function move(s: State, seat: number, m: Move): State {
   if (m.kind === "say") return say(s, seat, m.talk);
   return m.kind === "gift" ? gift(s, seat, m.to) : apply(s, seat, m);
+}
+
+/** ASKING FOR A CARD (owner 2026-11-22: "asking for specific cards also must be modelled"): a private whisper "Pass me
+ *  Kundli" to one player — the two of them read it, the table only sees THAT they whispered. Nobody has to say yes:
+ *  the pass stays the same 3 face-down cards [2.6]; the asked player only CHOOSES which. */
+export function ask(state: State, from: number, to: number, card: Card): State {
+  if (state.phase.kind === "over") throw new RuleError("The game is over");
+  if (from === to) throw new RuleError("Ask another player");
+  P(state, from); P(state, to);
+  const s = clone(state);
+  emit(s, [from, to], "whisper", `Pass me ${NAME[card]}.`, { seat: from, to, ask: card });
+  emit(s, "all", "whisper_seen", `${P(s, from).name} whispers to ${P(s, to).name}.`, { seat: from, to });
+  return s;
 }
 
 /** TALK: anyone (out players too), any time until the game is over. Checked for shape, never for truth. */

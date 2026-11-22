@@ -125,6 +125,7 @@ function settle(row: GameRow, s: State, from: number, bots = new BotTable(botSea
     if (!auto.length) break;
     for (const seat of auto) if (waitingOn(s).includes(seat)) s = move(s, seat, autoMove(row, bots, s, seat));
   }
+  s = bots.revote(s); // [3.4] open vote: bots look at the live count after every ballot and may swing
   const waiting = waitingOn(s);
   const prev = row.state?.phase;
   row.state = bots.flush(s);

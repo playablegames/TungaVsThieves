@@ -14,6 +14,7 @@ import { RolesSheet } from "./RolesSheet";
 import { FilmLayer } from "./FilmLayer";
 import { notes as knownNotes, publicTags, type Claim } from "./knowledge";
 import { SecretLayer } from "./SecretLayer";
+import { GearButton, SettingsSheet } from "./SettingsSheet";
 import { ProfileBox, WhisperPanel } from "./ProfileBox";
 import { CardFace, LINE } from "./CardSheet";
 import { CARD, isStoneCard } from "@/lib/cards";
@@ -95,6 +96,7 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
     return true;
   });
   const [who, setWho] = useState<number | null>(null);
+  const [settings, setSettings] = useState(false);
   // TAP A PLAYER (owner 2026-11-22): the box (Chat + tags), the chat itself, what you have read
   const [box, setBox] = useState<number | null>(initialBox);
   const [chatWith, setChatWith] = useState<number | null>(null);
@@ -225,7 +227,10 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
         <VillageScene />
 
         <div className="absolute inset-x-3.5 top-3 z-10 flex h-[46px] items-center justify-between">
-          {voice ? <MicButton voice={voice} /> : <span className="size-10" aria-hidden />}
+          <div className="flex gap-2">
+            {voice && <MicButton voice={voice} />}
+            <GearButton onTap={() => setSettings(true)} />
+          </div>
           <button onClick={() => { play("tap"); setRolesOpen(true); }} aria-label="Roles in play"
             className="rounded-xl bg-[#021230d1] px-3.5 py-[7px] font-[family-name:var(--font-cinzel)] text-[12.5px] font-bold tracking-[2px] text-[#f7bb1f] shadow-[inset_0_0_0_1.5px_rgba(247,187,31,.6)] active:scale-95">
             ROUND {view.round} OF {view.rounds} <span className="ml-1 font-[family-name:var(--font-poppins)] text-[11px] font-semibold tracking-normal text-[#ffe7a6]">· roles</span>
@@ -340,6 +345,7 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
         <FilmLayer view={view} />
         {/* your private result (Kundli, Talashi, Hera Pheri, Teer Kaman, Bhukamp), after its film — owner 2026-11-22 */}
         <SecretLayer view={view} />
+        {settings && <SettingsSheet onClose={() => setSettings(false)} />}
 
       </div>
     </div>

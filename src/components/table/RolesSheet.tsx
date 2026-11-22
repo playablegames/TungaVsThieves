@@ -5,7 +5,7 @@
 import { roleArt } from "@/components/CardIcon";
 import { play } from "@/lib/sfx";
 
-const THIEF_ROLES = new Set(["Chor", "Lootera", "Gunda", "Daku"]); // [1.4]
+const THIEF_ROLES = new Set(["Chor", "Lootera", "Gunda", "Daku", "Aawara"]); // [1.4]
 
 export function RolesSheet({ roles, onClose }: { roles: string[]; onClose: () => void }) {
   const village = roles.filter((r) => !THIEF_ROLES.has(r));
