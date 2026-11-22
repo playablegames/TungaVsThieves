@@ -4,7 +4,7 @@
 // What a bot already said is read back from the log, so a rebuilt bot never says the same hunch twice.
 import { Brain, decide, reconsider, SKILLS, type SkillName } from "@/rules/brain";
 import { next } from "@/rules/rng";
-import { ask, move, type Move, type State, type Talk } from "@/rules/game";
+import { ask, move, tell, type Move, type State, type Talk } from "@/rules/game";
 
 /** how many lines one bot may say in one go — nobody blabbers (SITUATIONS.md) */
 const MAX_LINES = 2;
@@ -71,6 +71,7 @@ export class BotTable {
         b.hunch(s, this.r, bigMoment(s));
         b.scheme(s, this.r);
         for (const a of b.asks.splice(0)) { if (s.phase.kind === "over") return s; s = ask(s, bot.seat, a.to, a.card); said = true; }
+        for (const w of b.tells.splice(0)) { if (s.phase.kind === "over") return s; s = tell(s, bot.seat, w.to, w.talk); said = true; }
         for (const t of b.out.splice(0).slice(0, MAX_LINES)) {
           if (s.phase.kind === "over") return s;
           s = move(s, bot.seat, { kind: "say", talk: t });
@@ -123,7 +124,7 @@ export function rebuild(bot: BotSeat, s: State, from: number, notes: Map<number,
   b.notes = notes;
   // the random stream used here is thrown away, and so is any talk it would have made
   b.read({ ...s, events: s.events.slice(0, Math.min(from, s.events.length)) }, { rng: 1 });
-  b.out = []; b.noted = [];
+  b.out = []; b.noted = []; b.askedMe = []; b.tells = []; b.asks = [];
   remember(b, s);
   return b;
 }
@@ -134,7 +135,8 @@ function notesFrom(s: State, seat: number): Map<number, boolean> {
   return m;
 }
 
-const claimFor = (b: Brain, s: State): Talk => ({ t: "claim", role: b.side(s) === "V" ? b.me(s).role : b.fakeRole(s) });
+// (owner 2026-11-22) speaking for itself a bot says its side only — never a role (see Brain.selfLine)
+const claimFor = (b: Brain, _s: State): Talk => b.selfLine();
 
 function lastIndex(s: State, f: (e: State["events"][number]) => boolean): number {
   for (let i = s.events.length - 1; i >= 0; i--) if (f(s.events[i])) return i;

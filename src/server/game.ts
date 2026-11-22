@@ -11,7 +11,7 @@ import { BotTable, type BotSeat } from "./bots";
 import { ping, store, type ChatMessage, type GameRow, type Timers } from "./store";
 import { NAME_MAX } from "@/lib/names";
 import { filmFor } from "@/components/table/films";
-import { ACTIONS, closeVoteNow, move, newGame, RuleError, TABLE, timeoutMove, view, waitingOn, type Move, type State } from "@/rules/game";
+import { ACTIONS, besideMe, closeVoteNow, move, newGame, RuleError, TABLE, timeoutMove, view, waitingOn, type Move, type State } from "@/rules/game";
 
 export class HttpError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -293,6 +293,7 @@ const talk = z.discriminatedUnion("t", [
   z.object({ t: z.literal("stone"), target: seat, has: z.boolean(), which: z.enum(["TUNGA_STONE", "BHADRA_STONE"]).optional() }),
   z.object({ t: z.literal("saw_cards"), target: seat, cards: z.array(card).max(3) }),
   z.object({ t: z.literal("saw_role"), target: seat, role: z.string().max(20) }),
+  z.object({ t: z.literal("ask"), target: seat, what: z.enum(["role", "stone"]) }),
   z.object({ t: z.literal("retract"), target: seat }),
   z.object({ t: z.literal("react"), emoji: z.enum(["cry", "cheer", "shock", "doubt", "angry", "shh"]) }),
 ]);
@@ -526,6 +527,7 @@ export async function whisper(code: string, token: string | null, to: unknown, t
     lastChat.set(key, now);
     if (!Number.isInteger(seat) || seat === at || !row.lobby[seat]) throw new HttpError(422, "Pick another player");
     if (row.lobby[seat].bot) throw new HttpError(422, "Bots don't read chat");
+    if (!besideMe(s.players, at).includes(seat)) throw new HttpError(422, "Whisper only to the player on your left or right");
     s.events.push({ n: s.events.length, to: [at, seat], type: "whisper", msg: t, data: { seat: at, to: seat } });
     s.events.push({ n: s.events.length, to: "all", type: "whisper_seen", msg: `${row.lobby[at].name} whispers to ${row.lobby[seat].name}.`, data: { seat: at, to: seat } });
     return row;

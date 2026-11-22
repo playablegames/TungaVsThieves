@@ -6,6 +6,7 @@
 // Mute · Report stays as one small line for real people (Play Store user-content rules).
 import { useEffect, useRef, useState } from "react";
 import { play } from "@/lib/sfx";
+import { besideMe } from "@/rules/game";
 import type { TableView } from "@/server/game";
 import { H, HAND_TOP, W, seatSpot } from "./layout";
 
@@ -30,6 +31,8 @@ export function ProfileBox({ view, seat, bot, tags, onTag, onChat, onMore, onClo
   const BW = 214;
   const left = Math.max(12, Math.min(W - BW - 12, x - BW / 2));
   const name = view.players[seat]?.name ?? "";
+  // (owner 2026-11-22) like at a real table: you whisper only to the player on your left or right
+  const near = besideMe(view.players, view.you).includes(seat);
   return (
     <>
       <div className="absolute inset-0 z-[8]" onClick={onClose} aria-hidden />
@@ -38,9 +41,9 @@ export function ProfileBox({ view, seat, bot, tags, onTag, onChat, onMore, onClo
         style={{ width: BW, left, ...(below ? { top: y + 66 } : { bottom: H - (y - 50) }),
           background: "linear-gradient(rgba(12,44,107,.98), rgba(2,18,48,.98))", transformOrigin: below ? "50% 0" : "50% 100%" }}>
         <p className="truncate text-center font-[family-name:var(--font-cinzel)] text-[14px] font-bold tracking-[1.5px] text-[#f7bb1f]">{self ? "YOU" : name.toUpperCase()}</p>
-        {!self && <button disabled={bot} onClick={() => { play("tap"); onChat(); }}
+        {!self && <button disabled={bot || !near} onClick={() => { play("tap"); onChat(); }}
           className="relative mt-2.5 h-12 w-full rounded-2xl bg-gradient-to-b from-[#f7c94a] to-[#e0a020] text-[16px] font-bold text-[#2a1404] shadow-[inset_0_1px_0_#ffe7a6,0_4px_0_#8a5a08] transition-transform active:translate-y-0.5 disabled:from-[#3a3f55] disabled:to-[#2a2f44] disabled:text-[#ffe7a680] disabled:shadow-none">
-          {bot ? "Bots don't chat" : "Chat"}
+          {bot ? "Bots don't chat" : near ? "Chat" : "Whisper left or right only"}
           {unread > 0 && <span className="absolute -right-1.5 -top-1.5 grid h-[22px] min-w-[22px] place-items-center rounded-full bg-[#e8434b] px-1 text-[12px] font-bold text-white shadow-[0_0_0_2px_#021230]">{unread}</span>}
         </button>}
         <p className="mt-2 text-center text-[11px] text-[#ffe7a68c]">{self ? "Tell everyone about you" : `Tell everyone about ${name}`}</p>

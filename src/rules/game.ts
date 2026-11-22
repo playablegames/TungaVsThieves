@@ -18,7 +18,7 @@ const isAction = (c: Card): c is Action => (ACTIONS as Card[]).includes(c);
 export const TABLE: Record<number, [number, number, number]> = {
   // (owner 2026-11-22: smarter bots made the village too strong → one more thief where it was over ~55%, Aawara as 5th;
   // "villagers must be more than thieves, not equal" → 4 and 6 keep 3+1 and 4+2)
-  4: [3, 1, 2], 5: [3, 2, 2], 6: [4, 2, 3], 7: [4, 3, 3], 8: [5, 3, 3], 9: [5, 4, 3], 10: [6, 4, 4], 11: [7, 4, 4], 12: [7, 5, 4], // 11 back to 7+4 (owner 2026-11-22: "moved a lot")
+  4: [3, 1, 2], 5: [4, 1, 2], 6: [4, 2, 3], 7: [5, 2, 3], 8: [5, 3, 3], 9: [6, 3, 3], 10: [6, 4, 4], 11: [7, 4, 4], 12: [7, 5, 4], // 11 back to 7+4 (owner 2026-11-22: "moved a lot")
 };
 /** [1.4] */
 export const VILLAGERS = ["Kisaan", "Sarpanch", "Baba", "Teacher", "Police", "Doctor", "NRI", "Deewani"];
@@ -84,6 +84,7 @@ export type Talk =
   | { t: "stone"; target: number; has: boolean; which?: "TUNGA_STONE" | "BHADRA_STONE" } // "Asha has a Stone" / "I have the Tunga Stone" / "I have none"
   | { t: "saw_cards"; target: number; cards: Card[] }     // "My Talashi: Raju holds ..."
   | { t: "saw_role"; target: number; role: string }       // "My Kundli: Raju is Daku"
+  | { t: "ask"; target: number; what: "role" | "stone" }  // "Raju, what is your role?" / "Raju, do you have a Stone?" (owner 2026-11-22)
   | { t: "retract"; target: number }                     // "I take back what I said about Raju" (a public tag removed)
   | { t: "react"; emoji: React };
 
@@ -108,6 +109,13 @@ export function nextLiving(s: State, seat: number): number {
   const n = s.players.length;
   for (let k = 1; k <= n; k++) { const t = (seat + k) % n; if (s.players[t].alive) return t; }
   return seat;
+}
+/** (owner 2026-11-22: "in a board game a person can only communicate left or right") the players you can whisper to:
+ *  the nearest player still in on each side */
+export function besideMe(players: { seat: number; alive: boolean }[], seat: number): number[] {
+  const n = players.length, out: number[] = [];
+  for (const dir of [1, -1]) for (let k = 1; k < n; k++) { const t = (seat + dir * k + n * k) % n; if (players[t].alive) { if (t !== seat && !out.includes(t)) out.push(t); break; } }
+  return out;
 }
 /** [2.7] draw, reshuffling the discards when the draw pile runs out */
 function draw(s: State, seat: number, k: number) {
@@ -518,8 +526,23 @@ export function ask(state: State, from: number, to: number, card: Card): State {
   if (state.phase.kind === "over") throw new RuleError("The game is over");
   if (from === to) throw new RuleError("Ask another player");
   P(state, from); P(state, to);
+  if (!besideMe(state.players, from).includes(to)) throw new RuleError("Whisper only to the player on your left or right");
   const s = clone(state);
   emit(s, [from, to], "whisper", `Pass me ${NAME[card]}.`, { seat: from, to, ask: card });
+  emit(s, "all", "whisper_seen", `${P(s, from).name} whispers to ${P(s, to).name}.`, { seat: from, to });
+  return s;
+}
+
+/** TELLING ONE PLAYER (owner 2026-11-22: "whisper to trusted only, publicly only villager or thief"): a role or what a
+ *  card showed, said to ONE player. The two of them read it; the table only sees THAT they whispered. Never checked for truth. */
+export function tell(state: State, from: number, to: number, talk: Talk): State {
+  if (state.phase.kind === "over") throw new RuleError("The game is over");
+  if (from === to) throw new RuleError("Tell another player");
+  P(state, from); P(state, to);
+  if (!besideMe(state.players, from).includes(to)) throw new RuleError("Whisper only to the player on your left or right");
+  if ("target" in talk) P(state, talk.target);
+  const s = clone(state);
+  emit(s, [from, to], "whisper", talkText(s, from, talk), { seat: from, to, talk });
   emit(s, "all", "whisper_seen", `${P(s, from).name} whispers to ${P(s, to).name}.`, { seat: from, to });
   return s;
 }
@@ -546,6 +569,7 @@ export function talkText(s: State, seat: number, k: Talk): string {
     }
     case "saw_cards": return `My Talashi: ${n(k.target)} holds ${k.cards.map((c) => NAME[c]).join(" and ") || "nothing"}.`;
     case "saw_role": return `My Kundli: ${n(k.target)} is ${k.role}.`;
+    case "ask": return k.what === "role" ? `${n(k.target)}, what is your role?` : `${n(k.target)}, do you have a Stone?`;
     case "retract": return k.target === seat ? "I take back what I said about me." : `I take back what I said about ${n(k.target)}.`;
     case "react": return ({ cry: "😭", cheer: "😁", shock: "😱", doubt: "🙄", angry: "😤", shh: "🤫" } as const)[k.emoji];
   }

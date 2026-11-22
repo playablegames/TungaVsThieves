@@ -11,7 +11,7 @@
 import { next } from "./rng";
 import {
   type Action, type Ballot, type Card, canDalBadal, closeVoteNow, isStone, living, type Move, move, newGame, nextLiving, type Side,
-  type State, type Talk, tkRoles, waitingOn, ask,
+  type State, type Talk, tkRoles, waitingOn, ask, tell, besideMe,
 } from "./game";
 
 const THIEF_ROLES = ["Chor", "Lootera", "Gunda", "Daku", "Aawara"];
@@ -44,8 +44,15 @@ export const SKILLS: Record<SkillName, Skill> = {
 // L last pile safe · F final vote weighs Stones
 // H hold the Stone (no pair play that would pass it on) · Q read the quiet-pass tell · X villagers hunt a quiet suspect
 const EXP = (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env.BRAIN_EXP ?? "KSTVPCALFHQX";
+const ENV = (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env ?? {};
+const TRY = ENV.BRAIN_TRY ?? "";
 const M = { honest: 0.9, hunch: 1.6, ballot: 1.4, aim: 0.7, liar: 0.6, steal: 1.5 };
 const BIG = new Set(["kundli", "teer_kaman", "robbed", "dal_badal", "tally"]);
+
+/** one key per secret (who it is about + what) so each is told to each friend once */
+function tellKey(k: Talk): string {
+  return k.t === "claim" ? `me:${k.role}` : "target" in k ? `${k.t}:${k.target}:${"role" in k ? k.role : ""}` : k.t;
+}
 
 function placements(n: number, k: number): number[] {
   const out: number[] = [];
@@ -79,8 +86,15 @@ export class Brain {
   stoneWent: Record<number, Card[]> = {};
   /** the big plays I have already made with what I know (said once each) */
   played = new Set<string>();
+  /** the round the log has reached as I read it */
+  atRound = 1;
   /** whose turn it is, did they play, and how often each player has passed without playing (the Stone tell) */
   turnOf = -1; turnPlayed = false; quiet: Record<number, number> = {};
+  /** questions put to ME (owner 2026-11-22): who asked, what, and whether by whisper — I choose whether and how to answer */
+  askedMe: { from: number; what: "role" | "stone"; priv: boolean }[] = [];
+  private hearingPrivate = false;
+  /** secrets I want to tell this call, each to ONE player I trust (a whisper) */
+  tells: { to: number; talk: Talk }[] = [];
   /** cards I want to ask for this call: whispered to the player who passes to me */
   asks: { to: number; card: Card }[] = [];
   /** who asked ME for a card (the latest ask from each player) */
@@ -200,6 +214,19 @@ export class Brain {
         }
         case "whisper": { // an ask for a card, to me
           if (d.ask && d.to === this.seat && typeof actor === "number") this.askedBy[actor] = d.ask as Card;
+          if (actor === this.seat && d.ask) this.played.add(`ask:${this.atRound}`);
+          // a TOLD secret (a role, a Kundli seen): mine already sent, or one to me — heard like talk, from someone who chose me
+          if (d.talk && actor === this.seat) this.played.add(`tell:${d.to}:${tellKey(d.talk as Talk)}`);
+          else if (d.talk && d.to === this.seat && typeof actor === "number") {
+            const k = d.talk as Talk;
+            this.hearingPrivate = true;
+            this.hear(s, actor, k, "target" in k ? k.target : undefined, e.n, r);
+            this.hearingPrivate = false;
+            if (k.t === "stone" && k.has && k.target === actor && this.side(s) === "V" && !TRY.includes("s")) {
+              const trusted = this.known[actor] ? sideOf(this.known[actor]) === "V" : this.p(s)[actor] < 0.25;
+              if (trusted && !this.played.has(`cover:${actor}`)) { this.played.add(`cover:${actor}`); this.out.push({ t: "vouch", target: actor }); }
+            }
+          }
           break;
         }
         case "pass": { // (owner 2026-11-22) passing without playing is a TELL: maybe sitting on a Stone (or Dal Badal)
@@ -257,8 +284,12 @@ export class Brain {
           }
           break;
         }
+        case "round": this.atRound = (d.round as number) ?? this.atRound; break;
         case "say": {
-          if (actor === undefined || actor === this.seat) break;
+          // (owner 2026-11-22, game KU7KB: "I am Baba" x12) the server rebuilds a bot every call, so what I already
+          // said comes back from the log — each "say once" line stays once
+          if (actor === this.seat) { this.markSaid(d.talk as Talk); break; }
+          if (actor === undefined) break;
           const k = d.talk as Talk;
           // MIX-UP: rarely a bot pins what it heard on the wrong (neighbouring) player
           if ("target" in k && this.coin(e.n) < this.skill.mixUp) target = (k.target + 1) % this.n; else target = "target" in k ? k.target : undefined;
@@ -288,7 +319,7 @@ export class Brain {
         if (target === this.seat) {
           if (says === "T") { this.accusedMe[from] = (this.accusedMe[from] ?? 0) + 1; this.pointed[this.seat] = (this.pointed[this.seat] ?? 0) + 1;
             if (this.sideThen(s) === "V") this.weigh("small", (h) => (this.isT(h, from) ? 1.6 : 1)); // a wrong guess about me — maybe a lie
-            if (!this.answered.has(from) && next(r) < this.talky * 0.7) this.answered.add(from), this.out.push(this.side(s) === "V" ? { t: "claim", role: this.me(s).role } : { t: "claim", role: this.fakeRole(s) }, { t: "accuse", target: from });
+            if (!this.answered.has(from) && next(r) < this.talky * 0.7) this.answered.add(from), this.out.push(this.selfLine(s), { t: "accuse", target: from });
           }
           break;
         }
@@ -320,6 +351,7 @@ export class Brain {
         break;
       }
       case "stone": if (target !== undefined) this.stone[target] = k.has ? Math.max(this.stone[target] ?? 0, k.which ? 0.7 : 0.5) : (this.stone[target] ?? 0) * 0.5; break;
+      case "ask": if (k.target === this.seat && s.players[this.seat].alive) this.askedMe.push({ from, what: k.what, priv: this.hearingPrivate }); break;
       case "react": break;
     }
   }
@@ -328,16 +360,32 @@ export class Brain {
   private speakAboutRole(s: State, t: number, role: string, r: R) {
     const mine = this.side(s), theirs = sideOf(role);
     // a villager says exactly what it saw — "I checked X: Teacher" — so the village can count roles off for Teer Kaman
-    if (mine === "V") { this.out.push(EXP.includes("S") || theirs === "T" ? { t: "saw_role", target: t, role } : { t: "vouch", target: t }); return; }
+    // (owner 2026-11-22) a villager's role is NEVER named out loud (it hands the thieves a Teer Kaman name): "with the village"
+    if (mine === "V") { this.out.push(theirs === "T" || TRY.includes("k") ? { t: "saw_role", target: t, role } : { t: "vouch", target: t }); return; }
     // (owner 2026-11-21) the thieves' counter: a thief almost always LIES about its Kundli, so the village can't trust every report
-    if (next(r) > Math.max(this.skill.lies, 0.85)) { this.out.push(theirs === "V" ? { t: "saw_role", target: t, role } : { t: "vouch", target: t }); return; }
-    if (theirs === "T") { this.out.push({ t: "saw_role", target: t, role: this.fakeRole(s) }); return; } // cover a partner: "they're Kisaan"
+    if (next(r) > Math.max(this.skill.lies, 0.85)) { this.out.push({ t: "vouch", target: t }); return; }
+    if (theirs === "T") { this.out.push({ t: "vouch", target: t }); return; } // cover a partner: "with the village"
     if (theirs === "V") this.out.push({ t: "saw_role", target: t, role: THIEF_ROLES.find((x) => s.rolesInPlay.includes(x)) ?? "Chor" }); // frame
     else this.out.push({ t: "vouch", target: t }); // cover a partner it just found
   }
 
-  fakeRole(s: State): string {
-    const vs = s.rolesInPlay.filter((x) => sideOf(x) === "V");
+  private markSaid(k: Talk) {
+    if (k.t === "claim" || (k.t === "vouch" && k.target === this.seat)) this.played.add("claim");
+    if (k.t === "stone") this.played.add(k.target === this.seat ? "stone" : `went:${k.target}`);
+    if (k.t === "vouch" && k.target !== this.seat) this.played.add(`cover:${k.target}`);
+    if (k.t === "ask") { this.played.add(`asked:${k.what}:${k.target}`); this.played.add(`askq:${this.atRound}`); }
+  }
+
+  /** (owner 2026-11-22, game KU7KB: "bots reveal roles publicly and thieves use it") a player speaking for itself says
+   *  only its SIDE, never its role — a villager role said out loud is a free Teer Kaman name. A thief says the same. */
+  selfLine(s?: State): Talk {
+    // experiment r: a villager under fire names its own role (one line, once — it is said only when accused or aimed at)
+    if (TRY.includes("r") && s && this.side(s) === "V") return { t: "claim", role: this.me(s).role };
+    return { t: "vouch", target: this.seat };
+  }
+
+  fakeRole(s: State, not?: string): string {
+    const vs = s.rolesInPlay.filter((x) => sideOf(x) === "V" && x !== not);
     const free = vs.filter((x) => !Object.values(this.claims).includes(x));
     return free[0] ?? vs[0];
   }
@@ -376,6 +424,34 @@ export class Brain {
         if (once(`went:${x}`, { t: "accuse", target: x })) this.out.push({ t: "stone", target: x, has: true, which: st[0] as "TUNGA_STONE" });
       }
     }
+    // TELL A FRIEND (owner 2026-11-22): roles go only by whisper, only to a player I trust, each secret once.
+    // A villager tells its own role and the villager roles its Kundli found; a thief tells its known partners the same
+    // (who it is, and the villager roles it learnt — their Teer Kaman names).
+    {
+      const live = besideMe(s.players, this.seat); // whispers go left or right only
+      // trust = clearly less suspect than an unknown seat (the prior), not near-certainty: villagers rarely get below 0.3
+      const prior = this.K / Math.max(1, this.n - 1);
+      const bar = TRY.includes("t") ? prior * 0.75 : 0.2; void prior;
+      const friend = (x: number) => (this.known[x] ? sideOf(this.known[x]) === mine : mine === "V" && p[x] < bar);
+      const friends = live.filter(friend);
+      if (friends.length) {
+        const secrets: Talk[] = [{ t: "claim", role: me.role }];
+        // (owner 2026-11-22: "a thief holding a Stone is a play — the village must read it") a villager on a Stone tells a
+        // trusted neighbour, who then speaks for it out loud; a thief on a Stone gets no such cover
+        const myStone = me.hand.find(isStone);
+        if (mine === "V" && myStone && !TRY.includes("s")) secrets.unshift({ t: "stone", target: this.seat, has: true, which: myStone as "TUNGA_STONE" });
+        for (const [k, role] of Object.entries(this.known)) {
+          const x = Number(k);
+          if (x !== this.seat && s.players[x]?.alive && sideOf(role) === "V") secrets.push({ t: "saw_role", target: x, role });
+        }
+        for (const to of friends) for (const k of secrets) {
+          if ("target" in k && k.target === to) continue;
+          const key = `tell:${to}:${tellKey(k)}`;
+          if (this.played.has(key) || this.tells.length >= 2) continue;
+          this.played.add(key); this.tells.push({ to, talk: k });
+        }
+      }
+    }
     // ASK FOR A CARD: I hold ONE of a card I'd play — the player who passes to me may have its twin. Only a teammate
     // I trust is asked (asking tells them what I want). Once a round; more often when the pressure is on.
     if (EXP.includes("A") && !this.played.has(`ask:${s.round}`)) {
@@ -386,16 +462,59 @@ export class Brain {
       const trusted = prev !== this.seat && (this.known[prev] ? sideOf(this.known[prev]) === mine : mine === "V" && p[prev] < 0.2);
       if (single && trusted && next(r) < 0.3 + 0.6 * press) { this.played.add(`ask:${s.round}`); this.asks.push({ to: prev, card: single }); }
     }
-    // TRUST: a villager under fire shows its hand — its role, and (when desperate) its Stone
-    if (mine === "V" && Object.keys(this.accusedMe).length && press > 0.45) {
-      once("claim", { t: "claim", role: me.role });
-      const st = me.hand.find(isStone);
-      if (st && press > 0.7) once("stone", { t: "stone", target: this.seat, has: true, which: st as "TUNGA_STONE" });
+    this.claimsAndAsks(s, r, press, once);
+  }
+
+  /** (owner 2026-11-22) ROLE AND STONE CLAIMS: never compulsory — they come with the game's progress and the team's
+   *  desperation. A side that feels it is losing claims its role or Stone (out loud, or by whisper to a neighbour) and
+   *  ASKS others for theirs. The asked player chooses: a villager tells the truth about a Stone; about its role it is
+   *  mostly true but may lie to dodge a Teer Kaman; a thief lies, always with roles that are in the game. */
+  private claimsAndAsks(s: State, r: R, press: number, once: (key: string, t: Talk) => boolean) {
+    const mine = this.side(s), me = this.me(s), p = this.p(s);
+    // (owner 2026-11-22: "it depends on the type of player — a talkative one asks early, a skilled one asks early to
+    // finish the puzzle") the URGE to claim/ask = the pressure, or the player's own nature, whichever is bigger
+    const chatty = (this.talky - 0.45) / 0.45;                                   // 0 quiet … 1 chatterbox
+    const solver = this.skill.name === "sharp" ? 0.6 : this.skill.name === "average" ? 0.35 : 0.1;
+    const urge = Math.max(press, 0.6 * chatty, solver * (s.round > 1 || this.turns > 2 ? 1 : 0.5));
+    const st = me.hand.find(isStone) as "TUNGA_STONE" | "BHADRA_STONE" | undefined;
+    const roleLine = (): Talk => {
+      if (mine === "T") return { t: "claim", role: this.fakeRole(s) };
+      // a villager may lie about its role to dodge a Teer Kaman — less as the game gets desperate (the truth is needed then)
+      if (next(r) < 0.25 * (1 - press)) return { t: "claim", role: this.fakeRole(s, me.role) };
+      return { t: "claim", role: me.role };
+    };
+    const stoneLine = (): Talk => (mine === "V" ? (st ? { t: "stone", target: this.seat, has: true, which: st } : { t: "stone", target: this.seat, has: false }) : { t: "stone", target: this.seat, has: false });
+    // 1. ANSWER what I was asked: whether at all is my choice (silence looks bad, more so under pressure)
+    for (const q of this.askedMe.splice(0)) {
+      // one role claim and one Stone word per game (kept from the log, so a rebuilt server bot stays consistent)
+      const key = q.what === "role" ? "claim" : "stone";
+      if (this.played.has(key)) continue;
+      const willing = mine === "T" ? 0.85 : q.priv ? 0.9 : 0.45 + 0.5 * Math.max(press, 0.5 * chatty);
+      if (next(r) > willing) { this.played.add(key); continue; }
+      const line = q.what === "role" ? roleLine() : stoneLine();
+      this.played.add(key);
+      if (q.priv && besideMe(s.players, this.seat).includes(q.from)) this.tells.push({ to: q.from, talk: line });
+      else this.out.push(line);
     }
-    // a thief under fire: a calm cover story, and its Stone hidden
-    if (mine === "T" && Object.keys(this.accusedMe).length && press > 0.45 && next(r) < this.skill.lies) {
-      once("claim", { t: "claim", role: this.fakeRole(s) });
-      if (me.hand.some(isStone)) once("stone", { t: "stone", target: this.seat, has: false });
+    // 2. CLAIM unasked, when my side feels it is losing
+    if (urge > 0.55 || (Object.keys(this.accusedMe).length && urge > 0.35)) {
+      once("claim", roleLine());
+      if (mine === "V" && st && press > 0.75) once("stone", stoneLine());
+      if (mine === "T" && st && Object.keys(this.accusedMe).length) once("stone", stoneLine());
+    }
+    // 3. ASK someone, once a round when the pressure is on: a villager asks its top suspect (a lie can be caught);
+    //    a thief asks the likeliest villager (a true answer is a Teer Kaman name)
+    if (urge > 0.3 && !this.played.has(`askq:${s.round}`) && next(r) < 0.3 + 0.6 * urge) {
+      const live = living(s).map((q) => q.seat).filter((x) => x !== this.seat && !this.known[x]);
+      if (live.length) {
+        const x = mine === "V" ? argmax(live, (y) => p[y]) : argmax(live, (y) => 1 - p[y]);
+        const what: "role" | "stone" = this.claims[x] === undefined ? "role" : "stone";
+        if (!this.played.has(`asked:${what}:${x}`)) {
+          this.played.add(`askq:${s.round}`); this.played.add(`asked:${what}:${x}`);
+          const q: Talk = { t: "ask", target: x, what };
+          if (besideMe(s.players, this.seat).includes(x) && press < 0.7) this.tells.push({ to: x, talk: q }); else this.out.push(q);
+        }
+      }
     }
   }
 
@@ -544,7 +663,7 @@ function chooseVote(b: Brain, s: State, final: boolean, r: R): Move {
     // [6.2] the final vote moves the out player's Stones to the OTHER team: a thief out with a Stone = a Stone for us,
     // a villager out with a Stone = a Stone for them. So weigh who holds a Stone, both ways.
     const swing = (x: number) => ((final || EXP.includes("X")) && EXP.includes("F") ? (b.stone[x] ?? 0) * (2 * p[x] - 1) * 0.6 : 0);
-    const top = argmax(o, (x) => p[x] + mood(x) + known(x) + swing(x) + next(r) * 0.02);
+    const top = argmax(o, (x) => p[x] + mood(x) * (TRY.includes("c") ? 3 : 1) + known(x) + swing(x) + next(r) * 0.02);
     const prior = b.K / Math.max(1, b.n - 1);
     // the FINAL vote: everyone votes (nothing to save the vote for); a Faisla: only when the case is real
     if (!final && p[top] + mood(top) < prior * 1.5 && known(top) <= 0) return { kind: "vote", for: null };
@@ -628,7 +747,7 @@ export function playGame(n: number, seed: number, skill: Skill, probe?: (s: Stat
   const bots = s.players.map((p) => new Brain(p.seat, skill, 0.45 + next(r) * 0.45, s));
   for (const b of bots) {
     b.read(s, r);
-    if (next(r) < 0.3) s = move(s, b.seat, { kind: "say", talk: { t: "claim", role: b.side(s) === "V" ? b.me(s).role : b.fakeRole(s) } });
+    if (next(r) < 0.3) s = move(s, b.seat, { kind: "say", talk: b.selfLine() });
   }
   let steps = 0, turns = 0, lastBig = -1;
   while (s.phase.kind !== "over" && steps++ < 4000) {
@@ -642,13 +761,14 @@ export function playGame(n: number, seed: number, skill: Skill, probe?: (s: Stat
       b.hunch(s, r, fresh);
       if (EXP.includes("S")) b.scheme(s, r);
       for (const a of b.asks.splice(0)) if (s.phase.kind !== "over") s = ask(s, b.seat, a.to, a.card);
+      for (const w of b.tells.splice(0)) if (s.phase.kind !== "over") s = tell(s, b.seat, w.to, w.talk);
       for (const t of b.out.splice(0)) { if (s.phase.kind === "over") break; s = move(s, b.seat, { kind: "say", talk: t }); }
     }
     if (s.phase.kind === "over") break;
     if (s.phase.kind === "aim") {
       const tb = bots[s.phase.target];
       if (next(r) < 0.7 && !s.events.slice(-4).some((e) => e.type === "say" && (e.data as { seat: number }).seat === tb.seat))
-        s = move(s, tb.seat, { kind: "say", talk: { t: "claim", role: tb.side(s) === "V" ? tb.me(s).role : tb.fakeRole(s) } });
+        s = move(s, tb.seat, { kind: "say", talk: tb.selfLine() });
     }
     if (s.phase.kind === "vote" && !waitingOn(s).length) {
       // the open vote: everyone sees the count and may swing (a few rounds of looking again), then the clock closes it
