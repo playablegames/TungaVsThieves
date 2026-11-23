@@ -7,7 +7,7 @@
 // No separate Pass button. Stones rise only on your own turn. One fixed design size (layout.ts) scaled to the phone.
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { play } from "@/lib/sfx";
-import type { Card, Move, Talk } from "@/rules/game";
+import { besideMe, type Card, type Move, type Talk } from "@/rules/game";
 import type { TableView } from "@/server/game";
 import { Centre } from "./Centre";
 import { RolesSheet } from "./RolesSheet";
@@ -185,13 +185,16 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
   }
   const saying: Record<number, { text: string; key: number }> = {};
   for (const e of view.events) {
-    if (e.type !== "say" && e.type !== "chat") continue;
-    const seat = (e.data as { seat?: number } | undefined)?.seat;
+    const dd = (e.data ?? {}) as { seat?: number; to?: number };
+    // (owner 2026-11-23) a whisper TO YOU shows as a bubble over the one who whispered (only on your phone)
+    const toMe = e.type === "whisper" && dd.to === you && dd.seat !== you;
+    if (e.type !== "say" && e.type !== "chat" && !toMe) continue;
+    const seat = dd.seat;
     if (typeof seat !== "number") continue;
     const k = `${e.n}:${e.msg}`;
     if (!HEARD.has(k) && t !== null) HEARD.set(k, t);
     const at = HEARD.get(k) ?? 0;
-    if (t !== null && t - at < 4000) { for (const k of Object.keys(saying)) delete saying[+k]; saying[seat] = { text: e.msg.slice(e.msg.indexOf(":") + 1).trim(), key: e.n }; }
+    if (t !== null && t - at < (toMe ? 7000 : 4000)) { for (const k of Object.keys(saying)) delete saying[+k]; saying[seat] = { text: toMe ? `🤫 ${e.msg}` : e.msg.slice(e.msg.indexOf(":") + 1).trim(), key: e.n }; }
   } // (owner 2026-11-23) ONE bubble at a time — only the latest speaker — for 4 s (was every speaker for 7 s)
   // whispers: who whispered in the last 5 s (everyone sees that), and what you haven't read
   const whispering: number[] = [];
@@ -274,7 +277,7 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
 
         <Centre view={view} onRoles={() => { play("tap"); setRolesOpen(true); }} />
         <Seats players={view.players} you={you} myRole={me?.role ?? null} active={activeSeats(view)} reveal={view.phase.kind === "over"} picked={open || giving ? picked : []} talking={voice?.talking} muted={voice?.muted} doing={doing} saying={saying} notes={knownNotes(view.events, you)} whispering={whispering} unread={unread} says={said}
-          onSeat={!open && !voting && !giving && up.length === 0 ? (s) => { play("tap"); setBox(s); } : undefined} hideYou={(!voting && up.length > 0) || shooting}
+          onSeat={!open && !voting && !giving && up.length === 0 ? (s) => { play("tap"); if (s !== you && me?.alive && besideMe(view.players, you).includes(s) && view.phase.kind !== "over") openChat(s); else setBox(s); } : undefined} hideYou={(!voting && up.length > 0) || shooting}
           votes={view.phase.kind === "vote" ? liveCount(view.phase, view.extraVote) : undefined} />
         <VoteResult view={view} />
 
@@ -372,6 +375,7 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
         {whisperSeat !== null && (
           <WhisperPanel key={`${whisperSeat}:${preset ?? ""}`} view={view} seat={whisperSeat} bot={bots.includes(whisperSeat)} preset={preset}
             onSend={onWhisper ? (x) => onWhisper(whisperSeat, x) : null} onTell={onTell ?? null}
+            onTags={whisperSeat !== you ? () => { const s = whisperSeat; openChat(null); setBox(s); } : null}
             onClose={() => { if (preset && asked) setSkipped((x) => [...x, asked.n]); openChat(null); }} />
         )}
         {giving && <GiftPanel view={view} picked={picked} setPicked={setPicked} onMove={(m) => { play("tap"); onMove(m); }} />}
