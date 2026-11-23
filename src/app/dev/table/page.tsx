@@ -61,7 +61,7 @@ export default function DevTable() {
       for (const p of s.players) p.hand = p.hand.filter((c) => c !== "TUNGA_STONE" && c !== "BHADRA_STONE");
       keeper.hand = village ? ["TUNGA_STONE", "BHADRA_STONE"] : ["BHADRA_STONE", "FAISLA"];
       s.players[(o.you + 2) % n].alive = false; s.players[(o.you + 2) % n].hand = [];
-      s.phase = { kind: "over", winner: village ? "V" : "T", reason: village ? `${keeper.name} holds both Stones.` : `${thief.name}, a thief, holds the Bhadra Stone.` };
+      s.phase = { kind: "over", winner: village ? "V" : "T", reason: village ? "Villagers protected the Stones." : `${thief.role} got away with the Bhadra Stone.` };
       return { s, you: o.you };
     }
     if (!voting) return opening(n, onTurn, (q.get("pair") as Card | null) ?? "KUNDLI");
@@ -99,10 +99,14 @@ export default function DevTable() {
     const inner = new URLSearchParams(q); inner.delete("phone");
     return <iframe src={`/dev/table?${inner}`} width={442} height={884} className="fixed left-0 top-0 border-0" title="table" />;
   }
-  if (s.phase.kind === "over") return <EndSheet view={view(s, start.you) as TableView} host hostName="" next={null} busy={false} error={null} onAgain={() => {}} onFollow={() => {}} />;
+  // the end = the same table, roles face up, with Play again · Share · Home where your cards were (owner 2026-11-23)
+  const end = s.phase.kind === "over" ? <EndSheet view={view(s, start.you) as TableView} host hostName="" next={null} busy={false} error={null} onAgain={() => {}} onFollow={() => {}} /> : null;
   return (
+    <>
     <Table view={tally ? { ...(view(s, start.you) as TableView), events: [...(view(s, start.you) as TableView).events, tally] } : view(s, start.you) as TableView} deadline={deadline} now={now} initialOpen={open} initialBox={q.get("box") ? Number(q.get("box")) : null}
       onWhisper={async () => true}
       onMove={(m) => { try { setS(move(s, start.you, m)); } catch (e) { alert((e as Error).message); } }} />
+    {end}
+    </>
   );
 }

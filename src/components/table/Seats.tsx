@@ -8,10 +8,12 @@ import { tagColour } from "./ProfileBox";
 import type { Claim } from "./knowledge";
 import { W, seatSpot } from "./layout";
 
-export interface SeatInfo { seat: number; name: string; alive: boolean; cards?: number }
+export interface SeatInfo { seat: number; name: string; alive: boolean; cards?: number; role?: string | null }
 
-export function Seats({ players, you, myRole, active, votes = {}, picked = [], hideYou = false, talking = [], muted = [], onSeat, doing = {}, saying = {}, notes = {}, whispering = [], unread = {}, says = {} }: {
+export function Seats({ players, you, myRole, active, reveal = false, votes = {}, picked = [], hideYou = false, talking = [], muted = [], onSeat, doing = {}, saying = {}, notes = {}, whispering = [], unread = {}, says = {} }: {
   players: SeatInfo[]; you: number; myRole: string | null; active: number[];
+  /** the game is over: every role card face up in its seat (owner 2026-11-23) */
+  reveal?: boolean;
   /** while you play a card: the players you have picked glow (you pick them by name in the bottom area) */
   picked?: number[];
   /** a raised card sits over your seat — your role card hides under it */
@@ -43,7 +45,7 @@ export function Seats({ players, you, myRole, active, votes = {}, picked = [], h
         const { x, y } = seatSpot(p.seat, you, players.length);
         const turn = active.includes(p.seat) && p.alive;
         const me = p.seat === you;
-        const face = me ? roleArt(myRole) : null;
+        const face = me ? roleArt(myRole) : reveal ? roleArt(p.role) : null;
         if (me && hideYou) return null;
         const pick = picked.includes(p.seat);
         const talk = talking.includes(p.seat);

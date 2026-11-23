@@ -89,7 +89,7 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
   const [note, setNote] = useState<{ text: string; until: number } | null>(null);
   // [1.4c] roles in play: shown once when a game opens (before anyone has passed), and on tapping the round chip
   const [rolesOpen, setRolesOpen] = useState(() => {
-    if (initialBox !== null) return false; // dev preview of the player box
+    if (initialBox !== null || view.phase.kind === "over") return false; // dev preview of the player box · the game already ended
     // once per game per phone (a game = its players + roles); round 1 only
     const k = `tunga:roles-seen:${view.players.map((p) => p.name).join("|")}:${view.rolesInPlay.join("|")}`;
     try { if (view.round !== 1 || sessionStorage.getItem(k)) return false; sessionStorage.setItem(k, "1"); } catch { return view.round === 1; }
@@ -250,14 +250,14 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
         </div>
 
         <Centre view={view} />
-        <Seats players={view.players} you={you} myRole={me?.role ?? null} active={activeSeats(view)} picked={open || giving ? picked : []} talking={voice?.talking} muted={voice?.muted} doing={doing} saying={saying} notes={knownNotes(view.events, you)} whispering={whispering} unread={unread} says={said}
+        <Seats players={view.players} you={you} myRole={me?.role ?? null} active={activeSeats(view)} reveal={view.phase.kind === "over"} picked={open || giving ? picked : []} talking={voice?.talking} muted={voice?.muted} doing={doing} saying={saying} notes={knownNotes(view.events, you)} whispering={whispering} unread={unread} says={said}
           onSeat={!open && !voting && !giving && up.length === 0 ? (s) => { play("tap"); setBox(s); } : undefined} hideYou={(!voting && up.length > 0) || shooting}
           votes={view.phase.kind === "vote" ? liveCount(view.phase, view.extraVote) : undefined} />
         <VoteResult view={view} />
 
         <div className="absolute inset-x-0 bottom-0 z-[1]" style={{ top: HAND_TOP }}>
           <div className="absolute inset-0 shadow-[0_-10px_24px_rgba(0,0,0,.5)]" style={{ background: "linear-gradient(rgba(2,10,30,.35), rgba(2,8,24,.9)), repeating-linear-gradient(90deg, rgba(255,231,166,.035) 0 1px, transparent 1px 12px), repeating-linear-gradient(0deg, #0e1a3c 0 6px, #0a1532 6px 12px)" }} />
-          {!voting && !open && !giving && (
+          {!voting && !open && !giving && view.phase.kind !== "over" && (
             <p className="absolute inset-x-0 top-10 text-center text-[12px] text-[#ffe7a6d9]">
               {note && t !== null && t < note.until ? note.text
                 : quaking ? `Bhukamp · 1 card goes to ${nextName}`
@@ -266,7 +266,7 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
                 : myTurn || passing ? "Your turn" : "Your cards"}
             </p>
           )}
-          <div className="absolute inset-x-0 top-[74px]" style={{ height: cw, visibility: voting || open ? "hidden" : undefined }}>
+          <div className="absolute inset-x-0 top-[74px]" style={{ height: cw, visibility: voting || open || view.phase.kind === "over" ? "hidden" : undefined }}>
             {rest.map(({ c, i }, k) => {
               const off = k - (n - 1) / 2;
               return (

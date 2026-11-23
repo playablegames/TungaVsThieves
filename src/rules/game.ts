@@ -185,8 +185,8 @@ function endTurn(s: State, seat: number) {
 /** [5.7] instant win, counted after any shuffle */
 function winByWipe(s: State): boolean {
   const live = living(s);
-  if (!live.some((p) => p.side === "T")) { finish(s, "V", "Every thief is out."); return true; }
-  if (!live.some((p) => p.side === "V")) { finish(s, "T", "Every villager is out."); return true; }
+  if (!live.some((p) => p.side === "T")) { finish(s, "V", "Every thief was eliminated."); return true; }
+  if (!live.some((p) => p.side === "V")) { finish(s, "T", "Every Villager was eliminated."); return true; }
   return false;
 }
 
@@ -279,13 +279,19 @@ function count_(s: State, votedOut: number | null = null) {
     return p.side;
   };
   const tunga = owner("TUNGA_STONE"), bhadra = owner("BHADRA_STONE");
-  if (tunga === "V" && bhadra === "V") finish(s, "V", "Both Stones are with the village.");
+  if (tunga === "V" && bhadra === "V") finish(s, "V", "Villagers protected the Stones.");
   else {
-    // say WHICH Stone decided it and why (owner 2026-11-21: the end screen read "a thief holds a Stone" when a
-    // villager had been voted out with it)
-    const c: Card = tunga === "T" ? "TUNGA_STONE" : "BHADRA_STONE";
-    const p = s.players.find((x) => x.hand.includes(c))!;
-    finish(s, "T", p.seat === votedOut ? `${p.name} was voted out with the ${NAME[c]}, so it goes to the thieves.` : `${p.name}, a thief, holds the ${NAME[c]}.`);
+    // THE END LINE (owner 2026-11-23): role names, no explaining — the roles are face up on the end screen.
+    // "Kisaan was voted out holding the Tunga Stone." / "Daku got away with both Stones."
+    const lost = (["TUNGA_STONE", "BHADRA_STONE"] as Card[]).filter((c) => owner(c) === "T");
+    const holders = [...new Set(lost.map((c) => s.players.find((x) => x.hand.includes(c))!))];
+    const what = (p: Player) => {
+      const mine = lost.filter((c) => p.hand.includes(c));
+      return mine.length === 2 ? "both Stones" : `the ${NAME[mine[0]]}`;
+    };
+    // the voted-out villager first (that's the moment that lost it), then any thief who kept one
+    holders.sort((a, b) => Number(b.seat === votedOut) - Number(a.seat === votedOut));
+    finish(s, "T", holders.map((p) => (p.seat === votedOut && p.side === "V" ? `${p.role} was voted out holding ${what(p)}.` : `${p.role} got away with ${what(p)}.`)).join(" "));
   }
 }
 
