@@ -5,6 +5,7 @@
 //   roles   : every role in this game as a button (thieves red) — one tap whispers "I am X" and closes
 //   stones  : Tunga Stone · Bhadra Stone · Both Stones · No Stone, with the Stone pictures — one tap, closes
 //   typing  : people only (bots read the buttons, never free text)
+// Answering a whispered question: ONLY the asked row (roles, or Stones) + No answer — one tap (owner 2026-11-23).
 // No thread here: what they whisper back pops up as a bubble over their seat. Your own seat = the table's chat.
 import { useEffect, useRef, useState } from "react";
 import { play } from "@/lib/sfx";
@@ -80,12 +81,14 @@ export function WhisperPanel({ view, seat, bot, preset = null, onSend, onTell, o
             <img src={CARD_BACK} alt="" className="h-[46px] w-[34px] shrink-0 rounded-[5px] object-cover shadow-[0_0_0_1.5px_#f7bb1f,0_4px_10px_rgba(0,0,0,.6)]" />
           )}
           <p className="min-w-0 flex-1 text-[17px] font-semibold leading-tight text-[#ffe7a6]">{title}</p>
-          {onTags && (
+          {onTags && !preset && (
             <button onClick={() => { play("tap"); onTags(); }} className={`h-10 shrink-0 rounded-xl bg-[#021230e6] px-3 text-[13px] font-semibold text-[#ffe7a6] shadow-[inset_0_0_0_1.5px_rgba(247,187,31,.6)] ${press}`}>Tag</button>
           )}
-          <button onClick={() => { play("tap"); onClose(); }} aria-label="Close" className={`${small} ${press}`}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M5 5l14 14M19 5L5 19" /></svg>
-          </button>
+          {!preset && (
+            <button onClick={() => { play("tap"); onClose(); }} aria-label="Close" className={`${small} ${press}`}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M5 5l14 14M19 5L5 19" /></svg>
+            </button>
+          )}
         </div>
 
         {all ? (
@@ -103,7 +106,7 @@ export function WhisperPanel({ view, seat, bot, preset = null, onSend, onTell, o
           </div>
         ) : (
           <div className="flex min-h-0 flex-1 flex-col justify-center gap-2.5">
-            {onTell && (
+            {onTell && preset !== "stone" && (
               <div className="grid grid-cols-4 gap-1.5">
                 {roles.map((r) => (
                   <button key={r} disabled={busy} onClick={() => tell([{ t: "claim", role: r }])}
@@ -111,7 +114,7 @@ export function WhisperPanel({ view, seat, bot, preset = null, onSend, onTell, o
                 ))}
               </div>
             )}
-            {onTell && (
+            {onTell && preset !== "role" && (
               <div className="grid grid-cols-2 gap-1.5">
                 {stones.map(([label, talks, imgs]) => (
                   <button key={label} disabled={busy} onClick={() => tell(talks)}
@@ -127,10 +130,15 @@ export function WhisperPanel({ view, seat, bot, preset = null, onSend, onTell, o
                 ))}
               </div>
             )}
+            {/* (owner 2026-11-23) answering a question: only what was asked, or no answer */}
+            {preset && (
+              <button disabled={busy} onClick={() => { play("tap"); onClose(); }}
+                className={`h-11 rounded-xl text-[14px] font-semibold text-[#ffe7a6b3] shadow-[inset_0_0_0_1.5px_rgba(247,187,31,.3)] ${press}`}>No answer</button>
+            )}
           </div>
         )}
 
-        {canType && (
+        {canType && !preset && (
           <form className="flex h-[46px] shrink-0 gap-2" onSubmit={(ev) => { ev.preventDefault(); void send(); }}>
             <input value={text} onChange={(ev) => setText(ev.target.value)} maxLength={120} placeholder={all ? "Message everyone" : `Whisper to ${name}`} enterKeyHint="send"
               className="min-w-0 flex-1 rounded-2xl bg-[#0a1838] px-4 text-[16px] text-white outline-none shadow-[inset_0_0_0_1.5px_rgba(247,187,31,.45)] placeholder:text-[#ffe7a659] focus:shadow-[inset_0_0_0_2px_#f7bb1f]" />
