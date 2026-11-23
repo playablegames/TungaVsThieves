@@ -15,7 +15,8 @@ import { FilmLayer } from "./FilmLayer";
 import { notes as knownNotes, publicTags, type Claim } from "./knowledge";
 import { SecretLayer } from "./SecretLayer";
 import { GearButton, SettingsSheet } from "./SettingsSheet";
-import { ProfileBox, WhisperPanel } from "./ProfileBox";
+import { ProfileBox } from "./ProfileBox";
+import { WhisperPanel } from "./WhisperPanel";
 import { AnswerPanel } from "./AnswerPanel";
 import { CardFace, LINE } from "./CardSheet";
 import { CARD, isStoneCard } from "@/lib/cards";
@@ -105,7 +106,6 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
   const [chatWith, setChatWith] = useState<number | null>(null);
   // (owner 2026-11-23) answering a question put to you, or whispering a fact to the bot beside you
   const [skipped, setSkipped] = useState<number[]>([]);
-  const [tellTo, setTellTo] = useState<number | null>(null);
   const lastN = view.events.at(-1)?.n ?? 0;
   const [readTo, setReadTo] = useState<Record<number, number>>({});
   const [openedAt] = useState(lastN);
@@ -236,6 +236,9 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
     }
     return q && !skipped.includes(q.n) ? q : null;
   })();
+  const freeHands = !open && !voting && !giving && box === null;
+  const whisperSeat = chatWith ?? (asked?.priv && freeHands ? asked.from : null);
+  const preset = asked?.priv && asked.from === whisperSeat ? asked.what : null;
   useTableSounds(view, left);
 
   // your cards in their printed near-square shape: big when you hold 2, smaller and overlapping when you hold 5
@@ -354,22 +357,23 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
         {box !== null && (
           <ProfileBox view={view} seat={box} self={box === you} bot={box !== you && bots.includes(box)} canTell={Boolean(onTell)} unread={box === you ? 0 : unread[box] ?? 0}
             tags={mine(box)} onTag={(x) => tag(box, x)} onClose={() => setBox(null)}
-            onChat={() => { if (bots.includes(box)) { if (onTell) setTellTo(box); } else openChat(box); setBox(null); }}
+            onChat={() => { openChat(box); setBox(null); }}
             onMore={voice && box !== you && !bots.includes(box) ? () => { setWho(box); setBox(null); } : null} />
         )}
-        {asked && !open && !voting && !giving && tellTo === null && box === null && (
+        {/* a question said OUT LOUD to you: answer out loud */}
+        {asked && !asked.priv && !open && !voting && !giving && chatWith === null && box === null && (
           <AnswerPanel key={asked.n} you={you} roles={view.rolesInPlay} mode={asked.what}
-            title={`${view.players[asked.from]?.name ?? ""} ${asked.priv ? "whispers" : "asks"}: ${asked.what === "role" ? "what is your role?" : "do you have a Stone?"}`}
-            sub={asked.priv ? "Your answer is whispered back · the table only sees that you whispered" : "Your answer is said out loud · you may bluff"}
-            onSend={async (talks) => { for (const t of talks) { if (asked.priv) await onTell?.(asked.from, t); else onMove({ kind: "say", talk: t }); } }}
+            title={`${view.players[asked.from]?.name ?? ""} asks: ${asked.what === "role" ? "what is your role?" : "do you have a Stone?"}`}
+            sub="Your answer is said out loud · you may bluff"
+            onSend={async (talks) => { for (const t of talks) onMove({ kind: "say", talk: t }); }}
             onClose={() => setSkipped((x) => [...x, asked.n])} />
         )}
-        {tellTo !== null && onTell && (
-          <AnswerPanel you={you} roles={view.rolesInPlay} mode="both" title={`Whisper to ${view.players[tellTo]?.name ?? ""}`}
-            sub="Only they read it · the table sees that you whispered · you may bluff"
-            onSend={async (talks) => { for (const t of talks) await onTell(tellTo, t); }} onClose={() => setTellTo(null)} />
+        {/* THE WHISPER SCREEN (owner 2026-11-23): the player beside you, person or bot; a whispered question opens it with the answers up */}
+        {whisperSeat !== null && (
+          <WhisperPanel key={`${whisperSeat}:${preset ?? ""}`} view={view} seat={whisperSeat} bot={bots.includes(whisperSeat)} preset={preset}
+            onSend={onWhisper ? (x) => onWhisper(whisperSeat, x) : null} onTell={onTell ?? null}
+            onClose={() => { if (preset && asked) setSkipped((x) => [...x, asked.n]); openChat(null); }} />
         )}
-        {chatWith !== null && onWhisper && <WhisperPanel view={view} seat={chatWith} onSend={(x) => onWhisper(chatWith, x)} onClose={() => openChat(null)} />}
         {giving && <GiftPanel view={view} picked={picked} setPicked={setPicked} onMove={(m) => { play("tap"); onMove(m); }} />}
 
         {rolesOpen && <RolesSheet roles={view.rolesInPlay} onClose={() => setRolesOpen(false)} />}

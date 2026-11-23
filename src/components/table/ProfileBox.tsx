@@ -4,11 +4,10 @@
 //   Chat  -> a private chat with that player (WhisperPanel); the table only sees THAT you whispered. Not on your own seat.
 //   tags  -> said OUT LOUD about them (or yourself): everyone sees them on the seat; tap again to take it back
 // Mute · Report stays as one small line for real people (Play Store user-content rules).
-import { useEffect, useRef, useState } from "react";
 import { play } from "@/lib/sfx";
 import { besideMe } from "@/rules/game";
 import type { TableView } from "@/server/game";
-import { H, HAND_TOP, W, seatSpot } from "./layout";
+import { H, W, seatSpot } from "./layout";
 
 export type Tag = "Villager" | "Thief" | "Tunga" | "Bhadra" | "No Stone";
 export const TAGS: Tag[] = ["Villager", "Thief", "Tunga", "Bhadra", "No Stone"]; // No Stone: owner 2026-11-23
@@ -63,59 +62,5 @@ export function ProfileBox({ view, seat, bot, tags, onTag, onChat, onMore, onClo
         )}
       </div>
     </>
-  );
-}
-
-/** the private chat with one player, in your area at the bottom (the table stays in view above it) */
-export function WhisperPanel({ view, seat, onSend, onClose }: {
-  view: TableView; seat: number; onSend: (text: string) => Promise<boolean>; onClose: () => void;
-}) {
-  const [text, setText] = useState("");
-  const [busy, setBusy] = useState(false);
-  const list = useRef<HTMLDivElement>(null);
-  const you = view.you;
-  const all = seat === you; // your own profile: the whole table's chat
-  const lines = view.events.filter((e) => {
-    if (all) return e.type === "chat";
-    if (e.type !== "whisper") return false;
-    const d = e.data as { seat: number; to: number };
-    return (d.seat === you && d.to === seat) || (d.seat === seat && d.to === you);
-  });
-  useEffect(() => { list.current?.scrollTo({ top: 1e6 }); }, [lines.length]);
-  const name = all ? "Everyone" : view.players[seat]?.name ?? "";
-  const send = async () => {
-    const t = text.trim();
-    if (!t || busy) return;
-    setBusy(true);
-    if (await onSend(t)) setText("");
-    setBusy(false);
-  };
-  return (
-    <div className="absolute inset-x-0 bottom-0 z-[7]" style={{ top: HAND_TOP }} role="dialog" aria-label={`Chat with ${name}`}>
-      <div className="absolute inset-0" style={{ background: "linear-gradient(#020a1e, #020818)" }} />
-      <p className="absolute inset-x-[64px] top-[16px] truncate text-center text-[15px] font-semibold text-[#ffe7a6]">{name}</p>
-      <p className="absolute inset-x-[64px] top-[38px] text-center text-[11px] text-[#ffe7a68c]">{all ? "The whole table reads this" : "Only you two read this · the table sees you whisper"}</p>
-      <button onClick={() => { play("tap"); onClose(); }} aria-label="Close chat"
-        className="absolute right-4 top-[8px] grid size-11 place-items-center rounded-xl bg-[#021230e6] text-[#f7bb1f] shadow-[inset_0_0_0_1.5px_rgba(247,187,31,.6)] active:scale-95">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M5 5l14 14M19 5L5 19" /></svg>
-      </button>
-      <div ref={list} className="absolute inset-x-4 bottom-[78px] top-[62px] flex flex-col gap-1.5 overflow-y-auto">
-        {lines.length === 0 && <p className="m-auto text-[13px] text-[#ffe7a68c]">{all ? "Say something to everyone" : `Say something only ${name} sees`}</p>}
-        {lines.map((e) => {
-          const mine = (e.data as { seat: number }).seat === you;
-          const who = all && !mine ? e.msg.slice(0, e.msg.indexOf(":")) : "";
-          const text = all ? e.msg.slice(e.msg.indexOf(":") + 1).trim() : e.msg;
-          return (
-            <p key={e.n} className={`max-w-[78%] rounded-2xl px-3 py-1.5 text-[14px] leading-snug ${mine ? "self-end bg-[#f7bb1f] text-[#2a1404]" : "self-start bg-[#0c2c6b] text-white shadow-[inset_0_0_0_1px_rgba(247,187,31,.35)]"}`}>{who && <b className="mr-1 text-[#f7bb1f]">{who}</b>}{text}</p>
-          );
-        })}
-      </div>
-      <form className="absolute inset-x-4 bottom-[18px] flex h-[48px] gap-2" onSubmit={(ev) => { ev.preventDefault(); void send(); }}>
-        <input value={text} onChange={(ev) => setText(ev.target.value)} maxLength={120} placeholder={`Message ${name}`} enterKeyHint="send"
-          className="min-w-0 flex-1 rounded-2xl bg-[#0c1a3c] px-4 text-[16px] text-white outline-none shadow-[inset_0_0_0_1.5px_rgba(247,187,31,.5)] placeholder:text-[#ffe7a666] focus:shadow-[inset_0_0_0_2px_#f7bb1f]" />
-        <button disabled={!text.trim() || busy}
-          className="rounded-2xl bg-gradient-to-b from-[#f7c94a] to-[#e0a020] px-5 text-[15px] font-bold text-[#2a1404] shadow-[inset_0_1px_0_#ffe7a6,0_4px_0_#8a5a08] active:translate-y-0.5 disabled:opacity-50">Send</button>
-      </form>
-    </div>
   );
 }
