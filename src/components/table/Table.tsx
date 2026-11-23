@@ -178,7 +178,9 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
     const d = (e.data ?? {}) as { seat?: number; card?: string; target?: number; hit?: boolean };
     if (typeof d.seat !== "number") continue;
     const who = (x?: number) => (x === undefined ? "" : x === you ? "you" : view.players[x]?.name ?? "");
-    if (e.type === "pass") doing[d.seat] = "Passed";
+    // (owner 2026-11-23: "the pass signal is fake") the 3 cards that go on after a pair / Dal Badal / Bhukamp are not a
+    // choice to pass: only a turn where they played nothing shows "Passed"
+    if (e.type === "pass") { if (!doing[d.seat] && !(e.data as { auto?: boolean }).auto) doing[d.seat] = "Passed"; }
     else if (e.type === "play" && d.card) doing[d.seat] = `${CARD[d.card as Card].name}${d.target !== undefined ? ` on ${who(d.target)}` : ""}`;
     else if (e.type === "teer_kaman") doing[d.seat] = `Teer Kaman ${d.hit ? "HIT" : "missed"} ${who(d.target)}`;
     else if (e.type === "dal_badal") doing[d.seat] = "Dal Badal";

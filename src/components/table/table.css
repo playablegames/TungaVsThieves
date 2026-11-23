@@ -28,3 +28,8 @@
   /* the Faisla result still shows, all at once */
   .tt-vote, .tt-vote * { animation-duration: .01ms !important; }
 }
+
+/* THE GAME STARTS (owner 2026-11-23): every role card in the lobby flips over to its back */
+@keyframes tt-flip-card { 0% { transform: scaleX(1); } 50% { transform: scaleX(0); } 100% { transform: scaleX(1); } }
+.tt-flip img { animation: tt-flip-card 700ms ease-in-out both; }
+@media (prefers-reduced-motion: reduce) { .tt-flip img { animation: none; } }

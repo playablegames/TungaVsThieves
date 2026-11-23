@@ -203,17 +203,18 @@ function finish(s: State, winner: Side, reason: string) {
 /** after a pair or Dal Badal: choose what to pass (or pass all automatically when there is no choice) */
 function toPass(s: State, seat: number, keep: number, drawN: number) {
   const p = P(s, seat);
-  if (p.hand.length - keep <= 3 && keep === 0) return give(s, seat, [...p.hand], 0, drawN); // nothing to choose
+  if (p.hand.length - keep <= 3 && keep === 0) return give(s, seat, [...p.hand], 0, drawN, true); // nothing to choose (after a pair)
   s.phase = { kind: "pass", seat, keep, draw: drawN };
 }
 
-function give(s: State, seat: number, cards: Card[], keep: number, drawN: number) {
+function give(s: State, seat: number, cards: Card[], keep: number, drawN: number, auto = false) {
   const p = P(s, seat);
   const n = Math.min(3, p.hand.length - keep);
   if (cards.length !== n) throw new RuleError(`Pass exactly ${n} cards`);
   take(p.hand, cards);
   s.pile = cards; // [2.6] face down
-  emit(s, "all", "pass", `${p.name} passes ${n} cards face down.`, { seat });
+  // auto: the own 3 going on after a pair / Dal Badal / a hit — not a choice, so no "Passed" tell (owner 2026-11-23)
+  emit(s, "all", "pass", `${p.name} passes ${n} cards face down.`, auto ? { seat, auto: true } : { seat });
   // only the passer knows what went (owner 2026-11-22: "whoever loses the Stone knows where it is — leverage")
   emit(s, [seat], "gave", `You passed ${cards.map((c) => NAME[c]).join(", ")} to ${P(s, nextLiving(s, seat)).name}.`, { to: nextLiving(s, seat), cards: [...cards] });
   if (drawN) draw(s, seat, drawN);
@@ -235,7 +236,7 @@ function goOut(s: State, seat: number, next: Next) {
  *  the next player face down — no choosing — and they keep the 2 they took. */
 function passOwn(s: State, seat: number, own: Card[]) {
   const p = P(s, seat);
-  if (own.length && p.hand.length - 2 === own.length) return give(s, seat, own, 2, 0);
+  if (own.length && p.hand.length - 2 === own.length) return give(s, seat, own, 2, 0, true);
   toPass(s, seat, 2, 0); // a short deck left an odd hand: fall back to choosing
 }
 

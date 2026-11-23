@@ -3,7 +3,8 @@
 // must be mentioned below as buttons not cards"; "no music in the lobby"; bot tables use this lobby too). The same
 // night village, courtyard, seats and garland as the game: people sit in their real seats as they join, empty seats
 // show "+" (tap to invite). The centre: table code (tap = copy link), who is seated, Add bot + Start game (host).
-// Where your cards will be: ONLY the roles in this game, big and bold [1.4c: the roles in play are public].
+// The roles in this game lie FACE UP in the seats [1.4c: the roles in play are public]; the bottom: Add bots,
+// Invite friends, Start the game, one below another. The start: the cards flip to their backs, the table spins.
 // Voice safety: your mic starts OFF; tap a person to mute them for yourself, report them, or (host) remove them.
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -17,10 +18,19 @@ import { MatEdge, VillageScene } from "./VillageScene";
 import { Seats } from "./Seats";
 import { GearButton, SettingsSheet } from "./SettingsSheet";
 import { MicButton, REPORT_REASONS, useScale, type VoiceControls } from "./Table";
+import { roleArt } from "@/components/CardIcon";
 
 const gold = "inset 0 0 0 1.5px rgba(247,187,31,.6)";
 const goldBtn = "rounded-2xl bg-gradient-to-b from-[#f7c94a] to-[#e0a020] font-bold text-[#2a1404] shadow-[inset_0_1px_0_#ffe7a6,0_4px_0_#8a5a08] active:translate-y-0.5 disabled:opacity-45";
 const lineBtn = "rounded-2xl bg-gradient-to-b from-[#0d1f4a] to-[#061538] font-semibold text-[#ffe7a6] shadow-[inset_0_0_0_1.5px_rgba(247,187,31,.6)] active:scale-95 disabled:opacity-40";
+
+/** villagers and thieves laid round the table, the thieves spread out (display only) */
+function spread(v: string[], th: string[]): string[] {
+  const all = v.length + th.length, out: string[] = new Array(all).fill("");
+  th.forEach((r, k) => { out[Math.floor(((k + 0.5) * all) / th.length)] = r; });
+  let i = 0;
+  return out.map((r) => r || v[i++]);
+}
 
 /** the roles in play at a table of `n` (below the minimum: what the smallest table plays) */
 function rolesAt(table: Record<number, [number, number, number]>, n: number, min: number) {
@@ -28,7 +38,11 @@ function rolesAt(table: Record<number, [number, number, number]>, n: number, min
   return { v: VILLAGERS.slice(0, v), t: THIEVES.slice(0, t), rounds };
 }
 
-export function WaitingRoom({ state, token, onStarted, voice }: { state: ClientState; token: string; onStarted: () => void; voice: VoiceControls | null }) {
+export function WaitingRoom({ state, token, onStarted, voice, spinning = false }: {
+  state: ClientState; token: string; onStarted: () => void; voice: VoiceControls | null;
+  /** THE GAME STARTS (owner 2026-11-23): the role cards flip to their backs, then the table SPINS */
+  spinning?: boolean;
+}) {
   const lobby = state.lobby;
   const router = useRouter();
   const scale = useScale();
@@ -37,6 +51,14 @@ export function WaitingRoom({ state, token, onStarted, voice }: { state: ClientS
   const [copied, setCopied] = useState(false);
   const [open, setOpen] = useState<number | null>(null);
   const [settings, setSettings] = useState(false);
+  // the start: 0-700ms the cards flip (faces -> backs at the half), then the ring spins two turns
+  const [backs, setBacks] = useState(false);
+  const [spin, setSpin] = useState(false);
+  useEffect(() => {
+    if (!spinning) return;
+    const a = setTimeout(() => setBacks(true), 350), b = setTimeout(() => setSpin(true), 700);
+    return () => { clearTimeout(a); clearTimeout(b); };
+  }, [spinning]);
   // MUSIC (owner 2026-11-23): the table's score plays in the lobby too (after the first tap, as browsers require)
   useEffect(() => { unlockOnFirstTap(); startMusicOnFirstTap(); setMood("calm"); }, []);
   // SAFETY: the mic starts OFF in the lobby — nobody is heard until they choose to talk
@@ -54,7 +76,10 @@ export function WaitingRoom({ state, token, onStarted, voice }: { state: ClientS
   const now = rolesAt(lobby.table, n, lobby.min);
   // the seats round the table: everyone here, then a few empty ones (at least up to the smallest table)
   const seats = Math.min(lobby.max, Math.max(lobby.min, n + (n < 8 ? 2 : 1)));
-  const players = lobby.names.map((name, seat) => ({ seat, name, alive: true }));
+  // THE ROLES ON THE TABLE (owner 2026-11-23): the roles in this game lie face up in the seats, thieves spread round.
+  // Only what is in the game, not who gets what (that is dealt face down at the start).
+  const shown = spread(now.v, now.t);
+  const players = lobby.names.map((name, seat) => ({ seat, name, alive: true, role: backs ? null : shown[seat] ?? null }));
 
   async function run(f: () => Promise<unknown>) {
     play("tap"); setBusy(true); setErr(null);
@@ -72,8 +97,6 @@ export function WaitingRoom({ state, token, onStarted, voice }: { state: ClientS
     try { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { setErr(link); }
   }
   const sel = open !== null && open < n ? open : null;
-  const big = now.v.length + now.t.length > 9;
-  const role = (thief: boolean) => `rounded-2xl bg-[#021230e6] ${big ? "px-3 py-[7px] text-[16px]" : "px-4 py-[9px] text-[19px]"} font-bold ${thief ? "text-[#ff8a7a] shadow-[inset_0_0_0_2px_rgba(255,138,122,.75)]" : "text-[#ffe7a6] shadow-[inset_0_0_0_2px_rgba(247,187,31,.65)]"}`;
 
   return (
     <div className="fixed inset-0 overflow-hidden bg-[#15142c]">
@@ -93,24 +116,15 @@ export function WaitingRoom({ state, token, onStarted, voice }: { state: ClientS
         </div>
 
         {/* the centre (owner 2026-11-23): the table code, who is seated, and the host's two buttons */}
-        <div className="absolute z-[3] w-[224px] -translate-x-1/2 -translate-y-1/2 rounded-[16px] px-3.5 pb-3.5 pt-3 text-center shadow-[inset_0_0_0_1px_rgba(247,187,31,.55),0_10px_24px_rgba(0,0,0,.55)]"
+        <div className="absolute z-[3] w-[196px] -translate-x-1/2 -translate-y-1/2 rounded-[16px] px-3.5 pb-3.5 pt-3 text-center shadow-[inset_0_0_0_1px_rgba(247,187,31,.55),0_10px_24px_rgba(0,0,0,.55)]"
           style={{ left: W / 2, top: CY, background: "linear-gradient(rgba(12,44,107,.95), rgba(2,18,48,.97))" }} role="status" aria-live="polite">
           <span className="absolute -top-[5px] left-1/2 size-2.5 -translate-x-1/2 rotate-45 bg-[#f7bb1f]" aria-hidden />
           <span className="absolute -bottom-[5px] left-1/2 size-2.5 -translate-x-1/2 rotate-45 bg-[#f7bb1f]" aria-hidden />
           <button onClick={() => { play("tap"); copy(); }} aria-label="Copy the table link" className="font-[family-name:var(--font-cinzel)] text-[12px] font-bold tracking-[2px] text-[#f7bb1f]">
             {copied ? "LINK COPIED ✓" : `TABLE ${state.code}`}
           </button>
-          <p className="text-[12px] text-[#ffe7a6e6]">{n} seated</p>
-          {host ? (
-            <div className="mt-2.5 flex flex-col gap-2">
-              <button disabled={busy || n >= lobby.max} onClick={() => run(() => api.addBot(state.code, token))} className={`h-11 text-[15px] ${lineBtn}`}>
-                {n >= lobby.max ? "Table full" : "Add bot"}
-              </button>
-              <button disabled={busy || n < lobby.min} onClick={() => run(() => api.start(state.code, token))} className={`h-11 text-[15px] ${goldBtn}`}>
-                {n < lobby.min ? `${lobby.min - n} more to start` : busy ? "One moment…" : "Start game"}
-              </button>
-            </div>
-          ) : (
+          <p className="mt-0.5 text-[13px] text-[#ffe7a6e6]">{n} seated</p>
+          {!host && (
             <p className="font-display mt-2 rounded-lg bg-[#021230bf] px-2 py-[7px] text-[15px] font-black leading-tight text-white shadow-[inset_0_0_0_1px_rgba(247,187,31,.3)]">
               Waiting for {lobby.names[state.host] ?? "the host"}
             </p>
@@ -118,24 +132,42 @@ export function WaitingRoom({ state, token, onStarted, voice }: { state: ClientS
           {err && <p role="alert" className="mt-2 rounded-lg bg-[#5a1010e6] px-2 py-1 text-[11.5px] text-white">{err}</p>}
         </div>
 
-        <Seats players={players} you={me} myRole={null} active={[]} total={seats} talking={voice?.talking} muted={voice?.muted}
-          onSeat={(s) => { play("tap"); setOpen(s === me ? null : s); }} />
+        <div className={`pointer-events-none absolute inset-0 z-[2] [&>*]:pointer-events-auto ${spinning && !spin ? "tt-flip" : ""}`}
+          style={{ transformOrigin: `${W / 2}px ${CY}px`, transform: spin ? "rotate(720deg)" : "none", transition: spin ? "transform 1900ms cubic-bezier(.3,.05,.15,1)" : "none" }}>
+        <Seats players={players} you={me} myRole={backs ? null : shown[me] ?? null} reveal={!backs} active={[]} total={seats} talking={voice?.talking} muted={voice?.muted}
+          onSeat={spinning ? undefined : (s) => { play("tap"); setOpen(s === me ? null : s); }} />
         {/* the empty seats: tap to invite */}
         {Array.from({ length: seats - n }, (_, k) => {
           const { x, y } = seatSpot(n + k, me, seats);
+          const r = backs ? null : shown[n + k];
           return (
-            <button key={`e${k}`} onClick={invite} aria-label="Empty seat: invite a friend"
-              className="absolute z-[2] grid h-[86px] w-[60px] -translate-x-1/2 -translate-y-1/2 place-items-center rounded-[6px] border-[1.5px] border-dashed border-[#f7bb1f99] bg-[#02123080] text-[26px] text-[#f7bb1f] active:scale-95"
-              style={{ left: x, top: y }}>+</button>
+            <button key={`e${k}`} onClick={invite} aria-label={r ? `Empty seat (${r}): invite a friend` : "Empty seat: invite a friend"}
+              className="absolute z-[2] grid h-[86px] w-[60px] -translate-x-1/2 -translate-y-1/2 place-items-center overflow-hidden rounded-[6px] border-[1.5px] border-dashed border-[#f7bb1f99] bg-[#02123080] text-[26px] text-[#f7bb1f] active:scale-95"
+              style={{ left: x, top: y }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              {r && <img src={roleArt(r) ?? ""} alt="" className="absolute inset-0 size-full object-cover opacity-45" />}
+              <span className="relative grid size-8 place-items-center rounded-full bg-[#021230e6] text-[22px] leading-none shadow-[0_0_0_1.5px_#f7bb1f]">+</span>
+            </button>
           );
         })}
+        </div>
 
         {/* where your cards will be: ONLY the roles in this game, big and bold (owner 2026-11-23) */}
         <div className="absolute inset-x-0 bottom-0 z-[1]" style={{ top: HAND_TOP }}>
           <div className="absolute inset-0 shadow-[0_-10px_24px_rgba(0,0,0,.5)]" style={{ background: "linear-gradient(rgba(2,10,30,.35), rgba(2,8,24,.9)), repeating-linear-gradient(90deg, rgba(255,231,166,.035) 0 1px, transparent 1px 12px), repeating-linear-gradient(0deg, #0e1a3c 0 6px, #0a1532 6px 12px)" }} />
-          <div className="absolute inset-x-3 top-[26px] bottom-[14px] flex flex-wrap content-center justify-center gap-2">
-            {now.v.map((r) => <span key={r} className={role(false)}>{r}</span>)}
-            {now.t.map((r) => <span key={r} className={role(true)}>{r}</span>)}
+          {/* (owner 2026-11-23) one below another: Add bots, Invite friends, Start the game */}
+          <div className="absolute inset-x-4 top-[30px] bottom-[16px] flex flex-col justify-center gap-2.5">
+            {host && (
+              <button disabled={busy || spinning || n >= lobby.max} onClick={() => run(() => api.addBot(state.code, token))} className={`h-[50px] text-[16px] ${lineBtn}`}>
+                {n >= lobby.max ? "The table is full" : "Add bots"}
+              </button>
+            )}
+            <button disabled={spinning} onClick={invite} className={`h-[50px] text-[16px] ${lineBtn}`}>Invite friends</button>
+            {host && (
+              <button disabled={busy || spinning || n < lobby.min} onClick={() => run(() => api.start(state.code, token))} className={`h-[54px] text-[17px] ${goldBtn}`}>
+                {n < lobby.min ? `${lobby.min - n} more to start` : busy || spinning ? "Shuffling..." : "Start the game"}
+              </button>
+            )}
           </div>
         </div>
         <MatEdge />
