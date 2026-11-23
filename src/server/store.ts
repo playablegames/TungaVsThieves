@@ -25,6 +25,8 @@ export interface GameRow {
   state: State | null;
   /** PLAY AGAIN: the table this group moved on to */
   next?: string | null;
+  /** (owner 2026-11-23 lobby safety) names the host removed from this table: they can't sit down again under that name */
+  removed?: string[];
   deadline: number | null;
   timers: Timers;
   createdAt: string;
@@ -74,11 +76,12 @@ function supabaseStore(sb: SupabaseClient): Store {
     hostToken: d.host_token as string, lobby: d.lobby as GameRow["lobby"], state: d.state as State | null,
     deadline: d.deadline as number | null, timers: { turn: Number((d.timers as Timers | null)?.turn) || 20 },
     next: (d.timers as { next?: string } | null)?.next ?? null, createdAt: d.created_at as string,
+    removed: (d.timers as { removed?: string[] } | null)?.removed ?? [],
   });
   const fromRow = (r: GameRow) => ({
     code: r.code, version: r.version, status: r.status, host_token: r.hostToken, lobby: r.lobby,
     // PLAY AGAIN's new code rides in the timers column (no table change needed)
-    state: r.state, deadline: r.deadline, timers: { ...r.timers, ...(r.next ? { next: r.next } : {}) },
+    state: r.state, deadline: r.deadline, timers: { ...r.timers, ...(r.next ? { next: r.next } : {}), ...(r.removed?.length ? { removed: r.removed } : {}) },
   });
   return {
     async get(code) {

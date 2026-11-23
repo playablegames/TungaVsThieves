@@ -231,6 +231,7 @@ export async function joinRoom(code: string, name: unknown, hops = 0, games?: un
   // YOUR NAME IS YOUR SEAT: a player already here (new phone, cleared browser) gets their seat back by typing the same name
   const mine = row.lobby.find((p) => !p.bot && p.name.toLowerCase() === n.toLowerCase());
   if (mine) return { code: row.code, token: mine.token };
+  if (row.removed?.includes(n.toLowerCase())) throw new HttpError(403, "The host removed this name from the table");
   const token = newToken();
   await mutate(row.code, (r) => {
     if (r.status !== "lobby") throw new HttpError(409, r.status === "over" ? "This game is over — ask the host for the new table's code" : "This game has already started — join with the name you played under to take your seat back");
@@ -279,6 +280,8 @@ export async function removeBot(code: string, token: string | null, index: unkno
     const i = Number(index);
     if (!row.lobby[i]) throw new HttpError(400, "No such seat");
     if (row.lobby[i].token === row.hostToken) throw new HttpError(400, "The host can't remove themselves");
+    // a person the host removes can't sit down again under the same name (lobby safety, owner 2026-11-23)
+    if (!row.lobby[i].bot) row.removed = [...(row.removed ?? []), row.lobby[i].name.toLowerCase()];
     row.lobby.splice(i, 1);
     return row;
   });

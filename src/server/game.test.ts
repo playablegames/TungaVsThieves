@@ -6,7 +6,7 @@ import {
   removeBot, renameSeat, startGame, sweep, tick, whisper,
 } from "./game";
 import { memoryStore } from "./store";
-import { legalMoves, waitingOn, type Move } from "@/rules/game";
+import { besideMe, legalMoves, waitingOn, type Move } from "@/rules/game";
 
 beforeEach(() => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(1_800_000_000_000); chatLimit.gapMs = 0; });
 afterEach(() => { vi.useRealTimers(); });
@@ -69,6 +69,11 @@ describe("the lobby", () => {
     await renameSeat(code, host, 2, "Moti");
     await fails(renameSeat(code, vik, 3, "Nope"), 403);
     await removeBot(code, host, 3);
+    // a PERSON the host removes can't sit down again under that name (lobby safety, owner 2026-11-23)
+    const { token: om } = await joinRoom(code, "Om");
+    await fails(removeBot(code, om, 0), 403);
+    await removeBot(code, host, (await row(code)).lobby.findIndex((p) => p.name === "Om"));
+    await fails(joinRoom(code, "om"), 403);
     await addBot(code, host);
     expect((await peekRoom(code)).players).toBe(5);
     await startGame(code, host);
@@ -240,13 +245,19 @@ describe("chat", () => {
 
 describe("whisper (owner 2026-11-22: chat is for coordination and scheming)", () => {
   it("only the two read it; the table sees THAT they whispered; bots can't be whispered to", async () => {
-    const { code, token: a } = await createRoom("Asha");
-    const { token: b } = await joinRoom(code, "Vik");
-    const { token: c } = await joinRoom(code, "Om");
-    await addBot(code, a, 1);
-    await startGame(code, a);
-    const r = await row(code);
-    const seat = (t: string) => r.lobby.findIndex((p) => p.token === t);
+    const { code, token: a0 } = await createRoom("Asha");
+    const { token: b0 } = await joinRoom(code, "Vik");
+    const { token: c0 } = await joinRoom(code, "Om");
+    await addBot(code, a0, 1);
+    await startGame(code, a0);
+    const r0 = await row(code);
+    const seat = (t: string) => r0.lobby.findIndex((p) => p.token === t);
+    // seats are shuffled at the start and whispers go left or right only: take two people sitting side by side
+    // (4 seats, 1 bot → two of the three people always are), the third is the one who must not read it
+    const people = [a0, b0, c0];
+    const pair = people.flatMap((x) => people.filter((y) => y !== x && besideMe(r0.state!.players, seat(x)).includes(seat(y))).map((y) => [x, y]))[0];
+    const [a, b] = pair, c = people.find((x) => !pair.includes(x))!;
+    const r = r0;
     await whisper(code, a, seat(b), "  I have the   Tunga Stone ");
     const words = async (t: string) => (await getState(code, t, 0)).view!.events.filter((e) => e.type === "whisper").map((e) => e.msg);
     expect(await words(a)).toEqual(["I have the Tunga Stone"]);

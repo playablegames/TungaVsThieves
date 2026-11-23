@@ -445,7 +445,7 @@ export function MicButton({ voice }: { voice: VoiceControls }) {
   );
 }
 
-const REPORT_REASONS = ["Rude or abusive", "Asked for personal details", "Sexual or adult talk", "Seems under 18", "Cheating or spamming", "Something else"];
+export const REPORT_REASONS = ["Rude or abusive", "Asked for personal details", "Sexual or adult talk", "Seems under 18", "Cheating or spamming", "Something else"];
 
 /** TAP A PLAYER (Play Store user-content rules, 2026-11-17 → new table 2026-11-21): mute them for yourself, or report
  *  them. A report is emailed to the owner (IT Rules 2021: acknowledge in 24 h). The game goes on as normal. */
