@@ -7,7 +7,7 @@ import { mailReport } from "./mail";
 import { iceServers } from "./turn";
 import { livekitConfigured, voicePasses } from "./livekit";
 import { sendPush, type Alert } from "./push";
-import { BotTable, type BotSeat } from "./bots";
+import { BotTable, talkyOf, type BotSeat } from "./bots";
 import { ping, store, type ChatMessage, type GameRow, type Timers } from "./store";
 import { NAME_MAX } from "@/lib/names";
 import { filmFor } from "@/components/table/films";
@@ -22,6 +22,14 @@ export const DECISION_SECONDS = 45; // owner 2026-11-21: 20 s was "unplayable", 
 const DEFAULT_TIMERS: Timers = { turn: DECISION_SECONDS };
 /** a bot's turn waits this long, so the table can follow it */
 export const BOT_DELAY_MS = 4000; // owner 2026-11-21: "pace down the game" (was 1.5 s)
+/** [75] each bot keeps its own pace (owner 2026-11-23: bots like people): a chatty one is quick, a quiet one slower,
+ *  and a thief takes a little longer — a tell a player can learn. 3-5.5 s around the 4 s. */
+function botDelayMs(row: GameRow, s: State, waiting: number[]): number {
+  if (waiting.length !== 1) return BOT_DELAY_MS;
+  const seat = waiting[0], name = row.lobby[seat]?.name ?? "";
+  const pace = 0.75 + (0.9 - talkyOf(name)) / 0.45 * 0.6;
+  return Math.round(BOT_DELAY_MS * pace * (s.players[seat]?.side === "T" ? 1.15 : 1));
+}
 /** [3.4] open vote: once everyone has voted, it closes this long after the last change (owner 2026-11-20: "you tell") */
 export const VOTE_QUIET_MS = 5000;
 /** [1.1] online tables seat 4-12 */
@@ -138,12 +146,12 @@ function settle(row: GameRow, s: State, from: number, bots = new BotTable(botSea
     const same = prev?.kind === "vote" && prev.opened === s.phase.opened && row.deadline !== null;
     let at = same ? row.deadline! : full;
     if (!waiting.length) at = Math.min(at, Date.now() + VOTE_QUIET_MS);
-    else if (waiting.every((x) => isAuto(row, x))) at = Math.min(at, Date.now() + hold + BOT_DELAY_MS);
+    else if (waiting.every((x) => isAuto(row, x))) at = Math.min(at, Date.now() + hold + botDelayMs(row, s, waiting));
     row.deadline = at;
     return row;
   }
   row.deadline = s.phase.kind === "over" ? null
-    : waiting.length && waiting.every((x) => isAuto(row, x)) ? Date.now() + hold + BOT_DELAY_MS
+    : waiting.length && waiting.every((x) => isAuto(row, x)) ? Date.now() + hold + botDelayMs(row, s, waiting)
     : full;
   return row;
 }

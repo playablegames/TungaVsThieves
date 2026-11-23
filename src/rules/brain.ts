@@ -19,25 +19,73 @@ const sideOf = (role: string): Side => (THIEF_ROLES.includes(role) ? "T" : "V");
 type R = { rng: number };
 
 export type SkillName = "casual" | "average" | "sharp";
-export interface Skill {
+/** HUMAN HABITS (owner 2026-11-23, research in chat: Asch, cascades, babble, Bond & DePaulo, Mafia/Werewolf/Clocktower
+ *  community tells). casual = a beginner, sharp = a skilled player. Each number is a chance (0-1) unless said. A bot's
+ *  personality (from its name) scales each habit 0.6-1.4x, so the same name plays the same way every game. */
+export interface Habits {
+  herd: number; anchor: number; switchy: number; revenge: number; gut: number; bus: number; middle: number; liar: number;
+  defensive: number; loud: number; truth: number; tunnel: number; evidence: number; counter: number; fight: number;
+  flail: number; lurk: number; buddy: number; revouch: number; dupClaim: number; slip: number; emoji: number;
+  pairAct: number; tkGut: number; blurt: number; faislaEarly: number; tkWrong: number; sit: number; careless: number;
+  confirm: number; stoneSlip: number; dbMiss: number; stoneBait: number; hold: number; target: number; outTell: number;
+  lastClaim: number; lieCatch: number;
+}
+export interface Skill extends Habits {
   name: SkillName;
   /** how much a turn-old SMALL piece of evidence still counts (claims, ballots) */
   memory: number;
   /** big moments (Kundli, Teer Kaman, a Stone stolen, a Dal Badal, a Faisla) fade this much slower */
   bigSlower: number;
-  /** spots provable lies (a role not in play, two claims of one role, a word against a fact) */
-  catchesLies: boolean;
   /** chance of pinning a remembered accusation on the wrong player (a neighbour) */
   mixUp: number;
   /** chance a thief bot tells a lie where it could (else silent) */
   lies: number;
 }
+// VOTING   herd: joins the leader (Asch/cascades) · anchor: the first ballot's weight (x) · switchy: last-second switch ·
+//          revenge: votes its accuser · gut: votes on a feeling · bus: thief votes out a doomed partner (a common
+//          MISTAKE, so beginners more) · middle: thief joins a pile-on in the middle, never first · liar: votes a caught liar
+// READING  lieCatch: catches a provable lie (Bond & DePaulo 54%) · defensive: "defending = guilty" (wrong) · loud: follows
+//          the most talkative (babble) · truth: believes claims (truth bias) · tunnel: locks on its first suspect ·
+//          evidence: weighs accusations by what's behind them, reads "busy, never names", words vs votes, whisper pairs,
+//          "jumps on a panicking player" (flailing data 35% vs 26%), a cheer at the wrong moment
+// TALK     counter: accused -> accuses back · fight: speaks up for a trusted player on the block · flail: panics when
+//          the vote is on it · lurk: thief talks without naming · buddy: thief befriends one villager · revouch: speaks
+//          for trusted players again (goldfish memory) · dupClaim: thief claims a villager's role · slip: thief tells
+//          two stories · emoji: thief cheers at a villager's fall
+// CARDS    pairAct: plays a pair just to act · tkGut: Teer Kaman on a hunch · blurt: says a Talashi at once · faislaEarly ·
+//          tkWrong: right side, wrong role · sit: never fires a weapon pair · careless: passes without a plan · confirm:
+//          holding a result, says it again at the vote · stoneSlip: plays a pair and passes its Stone · dbMiss: Dal
+//          Badal never/too early · stoneBait: thief fakes "I have the Stone" · hold: keeps a Kundli for a trusted
+//          neighbour · target: thief aims at the obvious villager, the persuader, the hunter, the quiet one ·
+//          outTell: out, tells all · lastClaim: last round, villagers claim the truth
 export const SKILLS: Record<SkillName, Skill> = {
-  casual: { name: "casual", memory: 0.8, bigSlower: 0.4, catchesLies: false, mixUp: 0.06, lies: 0.5 },
-  average: { name: "average", memory: 0.9, bigSlower: 0.4, catchesLies: true, mixUp: 0.03, lies: 0.75 },
-  sharp: { name: "sharp", memory: 0.97, bigSlower: 0.3, catchesLies: true, mixUp: 0, lies: 0.95 },
+  casual: { name: "casual", memory: 0.8, bigSlower: 0.4, mixUp: 0.06, lies: 0.5, lieCatch: 0.55,
+    herd: 0.7, anchor: 2, switchy: 0.4, revenge: 0.35, gut: 0.3, bus: 0.25, middle: 0, liar: 0.5,
+    defensive: 0.6, loud: 0.5, truth: 0.6, tunnel: 0.5, evidence: 0, counter: 0.9, fight: 0.6, flail: 0.6, lurk: 0,
+    buddy: 0, revouch: 0.3, dupClaim: 0, slip: 0.3, emoji: 0.3, pairAct: 0.4, tkGut: 0.3, blurt: 0.7, faislaEarly: 0.3,
+    tkWrong: 0.4, sit: 0.25, careless: 0.5, confirm: 0.8, stoneSlip: 0.15, dbMiss: 0.3, stoneBait: 0, hold: 0.1,
+    target: 0, outTell: 0.7, lastClaim: 0.5 },
+  average: { name: "average", memory: 0.9, bigSlower: 0.4, mixUp: 0.03, lies: 0.75, lieCatch: 0.75,
+    herd: 0.55, anchor: 1.5, switchy: 0.25, revenge: 0.2, gut: 0.18, bus: 0.17, middle: 0.3, liar: 0.65,
+    defensive: 0.3, loud: 0.35, truth: 0.5, tunnel: 0.3, evidence: 0.5, counter: 0.75, fight: 0.65, flail: 0.45, lurk: 0.25,
+    buddy: 0.2, revouch: 0.5, dupClaim: 0.15, slip: 0.15, emoji: 0.15, pairAct: 0.25, tkGut: 0.15, blurt: 0.5,
+    faislaEarly: 0.15, tkWrong: 0.25, sit: 0.15, careless: 0.25, confirm: 0.55, stoneSlip: 0.08, dbMiss: 0.15,
+    stoneBait: 0.15, hold: 0.25, target: 0.3, outTell: 0.6, lastClaim: 0.65 },
+  sharp: { name: "sharp", memory: 0.97, bigSlower: 0.3, mixUp: 0, lies: 0.95, lieCatch: 0.95,
+    herd: 0.4, anchor: 1, switchy: 0.15, revenge: 0.1, gut: 0.08, bus: 0.1, middle: 0.6, liar: 0.8,
+    defensive: 0.1, loud: 0.2, truth: 0.4, tunnel: 0.1, evidence: 1, counter: 0.6, fight: 0.7, flail: 0.3, lurk: 0.5,
+    buddy: 0.4, revouch: 0.7, dupClaim: 0.3, slip: 0.05, emoji: 0.05, pairAct: 0.1, tkGut: 0.05, blurt: 0.25,
+    faislaEarly: 0.05, tkWrong: 0.1, sit: 0.05, careless: 0.05, confirm: 0.3, stoneSlip: 0.02, dbMiss: 0.05,
+    stoneBait: 0.3, hold: 0.4, target: 0.6, outTell: 0.5, lastClaim: 0.8 },
 };
-
+/** BRAIN_HABITS=0 switches every habit off (the clean bots of 2026-11-22), for an A/B */
+const HABITS_ON = ((globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env.BRAIN_HABITS ?? "1") !== "0";
+/** BRAIN_OFF=herd,gut,... switches single habits off, for an A/B */
+const OFF = (((globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env.BRAIN_OFF) ?? "").split(",");
+const frac = (x: number) => x - Math.floor(x);
+function hashStr(str: string) { let h = 2166136261; for (const ch of str) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0; return h; }
+/** a small stable number per name: how talkative that bot is (0.45-0.9) — and, through rate(), its whole personality */
+export function talkyOf(name: string): number { return 0.45 + (hashStr(name) % 1000) / 1000 * 0.45; }
 
 /** behaviour model (from deduce.ts MODEL) */
 // feature switches for scripts/ab-brain.mts: K Kundli always spoken · S scheme (leverage + trust) · T Teer Kaman fired ·
@@ -112,8 +160,15 @@ export class Brain {
   notes = new Map<number, boolean>();
   noted: [number, boolean][] = [];
   n: number; K: number;
+  /** habits' memory (all rebuilt the same from the log): how much each player talked / named someone, who accused whom,
+   *  caught liars, whispers between two players, who voted for me or a known partner, how often a player was vouched */
+  said: Record<number, number> = {}; named: Record<number, number> = {}; accusedBy: Record<number, Set<number>> = {};
+  liars = new Set<number>(); wp: Record<string, number> = {}; hunter: Record<number, number> = {}; vouched: Record<number, number> = {};
+  firstHunch: number | null = null; myClaim: string | null = null; lastOut: number | null = null; outAt = -1; gone = new Set<number>();
+  private salt: number;
 
   constructor(public seat: number, public skill: Skill, public talky: number, s: State) {
+    this.salt = hashStr(s.players.map((q) => q.name).join("|") + s.rolesInPlay.join(","));
     this.n = s.players.length;
     this.K = s.rolesInPlay.filter((r) => sideOf(r) === "T").length; // [1.4c] the count is public
     this.H = placements(this.n, this.K);
@@ -123,6 +178,26 @@ export class Brain {
     this.big = new Float64Array(this.H.length);
   }
   isT(h: number, x: number) { return (h >> x) & 1; }
+  /** a habit's chance for THIS bot: its skill's rate x its personality (0.6-1.4, fixed by its talkiness = its name) */
+  rate(k: keyof Habits): number {
+    if (!HABITS_ON) return k === "lieCatch" || k === "anchor" ? 1 : k === "counter" || k === "blurt" ? this.talky * 0.7 : 0;
+    const v = OFF.includes(k) ? (k === "anchor" || k === "lieCatch" ? 1 : 0) : this.skill[k];
+    if (k === "anchor" || k === "lieCatch") return v;
+    return Math.max(0, Math.min(1, v * (0.6 + 0.8 * frac(Math.sin(this.talky * 10007 + (hashStr(k) % 997)) * 43758.5453))));
+  }
+  /** a fixed coin for one decision (the same on every server rebuild of this bot in this game) */
+  roll(key: string): number { return frac(Math.sin((this.salt % 100003) + (this.seat + 1) * 7919 + (hashStr(key) % 100019)) * 43758.5453); }
+  /** did I already say something since event n (matching f)? (once-per-vote / once-per-round talk, kept in the log) */
+  saidSince(s: State, n: number, f: (k: Talk) => boolean = () => true): boolean {
+    for (let i = Math.max(0, n); i < s.events.length; i++) {
+      const e = s.events[i]; const d = e.data as { seat?: number; talk?: Talk } | undefined;
+      if (e.type === "say" && d?.seat === this.seat && d.talk && f(d.talk)) return true;
+    }
+    return false;
+  }
+  roundStart(s: State): number { for (let i = s.events.length - 1; i >= 0; i--) if (s.events[i].type === "round") return i; return 0; }
+  /** someone I trust: known to be on my side, or (a villager) clearly less suspect than an unknown seat */
+  trusts(s: State, x: number): boolean { return this.known[x] ? sideOf(this.known[x]) === this.side(s) : this.side(s) === "V" && this.p(s)[x] < this.trust(0.15); }
   /** (kept 2026-11-23, off with BRAIN_TRY=-R) "below x is someone I trust" was tuned at 5 players (an unknown seat = 25% thief). At 12 players an
    *  unknown seat is 45% thief, so nobody ever got under 0.2 and villagers never trusted, told or traded. Scale the bar. */
   trust(x: number) { const prior = this.K / Math.max(1, this.n - 1); return !TRY.includes("-R") ? Math.min(x * prior / 0.25, prior * 0.9) : x; }
@@ -188,11 +263,11 @@ export class Brain {
         case "talashi": {
           const cards = d.cards as Card[];
           this.stone[target!] = cards.some(isStone) ? 1 : 0;
-          if (next(r) < this.talky * 0.7) {
+          if (next(r) < this.rate("blurt")) { // [23]
             const mine = this.side(s), pr = this.p(s)[target!];
             // BOT_LOGIC §3: a villager says what it saw (unless it exposes a likely friend's Stone); a thief says
             // "no Stone" either way — it wants the Stone for itself
-            if (mine === "V" && !(cards.some(isStone) && pr < 0.25)) this.out.push({ t: "saw_cards", target: target!, cards });
+            if (mine === "V" && !(cards.some(isStone) && pr < 0.25 && this.skill.name !== "casual")) this.out.push({ t: "saw_cards", target: target!, cards });
             if (mine === "T" && cards.some(isStone) && next(r) < this.skill.lies) this.out.push({ t: "saw_cards", target: target!, cards: cards.filter((c) => !isStone(c)) });
           }
           break;
@@ -290,17 +365,42 @@ export class Brain {
           for (const [k, b] of Object.entries(ballots)) {
             const voter = Number(k), t = b.for;
             if (t === null || voter === this.seat) continue;
+            // a thief remembers who voted for it or a known partner: that player is hunting us
+            if (t === this.seat || (this.known[t] && sideOf(this.known[t]) === "T")) this.hunter[voter] = (this.hunter[voter] ?? 0) + 1;
+            // [evidence] words don't match the vote: accused A out loud, voted B while A was still in
+            const acc = this.accusedBy[voter];
+            if (acc && acc.size && !acc.has(t) && [...acc].some((x) => !this.gone.has(x)) && this.roll(`wv:${e.n}:${voter}`) < this.rate("evidence") * 0.5)
+              this.weigh("small", (h) => (this.isT(h, voter) ? 1.2 : 1));
             this.weigh("small", (h) => (this.isT(h, voter) ? 1 : this.isT(h, t) ? M.ballot : 1) / M.ballot);
           }
           break;
         }
-        case "round": this.atRound = (d.round as number) ?? this.atRound; break;
+        case "round": {
+          this.atRound = (d.round as number) ?? this.atRound;
+          // [evidence] "busy, never names anyone" (IIoA / active lurking): lots of talk, no accusation or vouch
+          for (let x = 0; x < this.n; x++) if (x !== this.seat && (this.said[x] ?? 0) >= 4 && !(this.named[x] ?? 0) && !this.played.has(`busy:${x}`) && this.roll(`busy:${x}`) < this.rate("evidence")) {
+            this.played.add(`busy:${x}`); this.weigh("small", (h) => (this.isT(h, x) ? 1.3 : 1));
+          }
+          break;
+        }
+        case "out": { this.lastOut = (d.seat as number) ?? null; this.outAt = e.n; if (this.lastOut !== null) this.gone.add(this.lastOut); break; }
+        case "whisper_seen": {
+          // [evidence] two players whispering again and again may be a pair (mild: villager neighbours whisper too)
+          const a = actor, b = d.to as number | undefined;
+          if (a !== undefined && typeof b === "number" && a !== this.seat && b !== this.seat) {
+            const k = a < b ? `${a}-${b}` : `${b}-${a}`;
+            this.wp[k] = (this.wp[k] ?? 0) + 1;
+            if (this.wp[k] === 3 && this.roll(`wp:${k}`) < this.rate("evidence")) this.weigh("small", (h) => (this.isT(h, a) && this.isT(h, b) ? 1.3 : 1));
+          }
+          break;
+        }
         case "say": {
           // (owner 2026-11-22, game KU7KB: "I am Baba" x12) the server rebuilds a bot every call, so what I already
           // said comes back from the log — each "say once" line stays once
           if (actor === this.seat) { this.markSaid(d.talk as Talk); break; }
           if (actor === undefined) break;
           const k = d.talk as Talk;
+          this.said[actor] = (this.said[actor] ?? 0) + 1;
           // MIX-UP: rarely a bot pins what it heard on the wrong (neighbouring) player
           if ("target" in k && this.coin(e.n) < this.skill.mixUp) target = (k.target + 1) % this.n; else target = "target" in k ? k.target : undefined;
           this.hear(s, actor, k, target, e.n, r);
@@ -311,38 +411,58 @@ export class Brain {
   }
 
   private hear(s: State, from: number, k: Talk, target: number | undefined, n: number, r: R) {
-    const lieCaught = () => this.weigh("small", (h) => (this.isT(h, from) ? 1 : 0.15));
+    const lieCaught = () => { this.liars.add(from); this.weigh("small", (h) => (this.isT(h, from) ? 1 : 0.15)); };
+    const catches = this.roll(`lie:${n}`) < this.rate("lieCatch"); // [72] a provable lie is caught only so often
     switch (k.t) {
       case "claim": {
-        if (this.skill.catchesLies) {
+        if (catches) {
+          if (this.claims[from] && this.claims[from] !== k.role) lieCaught();                         // [126] two stories
           if (!s.rolesInPlay.includes(k.role)) lieCaught();                                         // [1.4c] not in play
           const dup = Object.entries(this.claims).find(([x, role]) => role === k.role && Number(x) !== from && sideOf(role) === "V");
           if (dup) { const o = Number(dup[0]); this.weigh("small", (h) => (this.isT(h, from) || this.isT(h, o) ? 1 : 0.1)); } // one of them lies
           if (this.known[from] && this.known[from] !== k.role) lieCaught();
           if (k.role === this.known[this.seat] && sideOf(k.role) === "V") lieCaught();               // they claim MY role
         }
+        // [34] truth bias: a beginner half-believes a role claim (a little less suspicion of the claimer)
+        const tb = this.rate("truth") - 0.3;
+        if (tb > 0 && !this.liars.has(from) && from !== this.seat) this.weigh("small", (h) => (this.isT(h, from) ? 1 : 1 + tb));
         this.claims[from] = k.role;
         break;
       }
       case "accuse": case "vouch": case "saw_role": {
         const says: Side = k.t === "vouch" ? "V" : k.t === "accuse" ? "T" : sideOf(k.role);
+        const before = target !== undefined && !!this.accusedBy[from]?.has(target);
+        if (target !== undefined && target !== from) this.named[from] = (this.named[from] ?? 0) + 1;
+        if (says === "T" && target !== undefined) (this.accusedBy[from] ??= new Set()).add(target);
+        if (k.t === "vouch" && target !== undefined && target !== from) this.vouched[target] = (this.vouched[target] ?? 0) + 1;
+        // [5] "defending = guilty": a beginner reads a player defending itself while under fire as a thief (it isn't)
+        if ((this.pointed[from] ?? 0) >= 1 && (target === from || says === "T") && this.roll(`def:${n}`) < this.rate("defensive"))
+          this.weigh("small", (h) => (this.isT(h, from) ? 1.5 : 1));
+        // [104] jumping on a player already under fire, never accused by you before: the jumper is the tell (35% vs 26%)
+        if (says === "T" && target !== undefined && target !== this.seat && !before && (this.pointed[target] ?? 0) >= 2 && this.roll(`jump:${n}`) < this.rate("evidence"))
+          this.weigh("small", (h) => (this.isT(h, from) ? 1.3 : 1));
         if (target === this.seat) {
           if (says === "T") { this.accusedMe[from] = (this.accusedMe[from] ?? 0) + 1; this.pointed[this.seat] = (this.pointed[this.seat] ?? 0) + 1;
             if (this.sideThen(s) === "V") this.weigh("small", (h) => (this.isT(h, from) ? 1.6 : 1)); // a wrong guess about me — maybe a lie
-            if (!this.answered.has(from) && next(r) < this.talky * 0.7) this.answered.add(from), this.out.push(this.selfLine(s), { t: "accuse", target: from });
+            if (!this.answered.has(from) && next(r) < this.rate("counter")) this.answered.add(from), this.out.push(this.selfLine(s), { t: "accuse", target: from }); // [32]
           }
           break;
         }
         if (target === undefined) break;
         if (says === "T") this.pointed[target] = (this.pointed[target] ?? 0) + 1;
-        if (this.skill.catchesLies && this.known[target] && sideOf(this.known[target]) !== says) { lieCaught(); break; } // a word against a fact
+        if (catches && this.known[target] && sideOf(this.known[target]) !== says) { lieCaught(); break; } // a word against a fact
         const seen = k.t === "saw_role";
         if (seen) { this.told[target] = { role: k.role, from }; this.weigh("small", (h) => (this.isT(h, from) ? M.liar : (this.isT(h, target) === 1) === (says === "T") ? M.honest : 1 - M.honest)); break; }
         // a hunch: leans toward the truth when a villager says it; a thief's pick is anyone (deduce.ts)
         const others = this.n - 1, K = this.K;
+        // [33] the loudest is followed (babble) · [46] a skilled player discounts a bare word with nothing behind it
+        const talk = Object.values(this.said), avg = talk.length ? talk.reduce((a, c) => a + c, 0) / talk.length : 1;
+        const loudness = Math.min(3, Math.max(0.5, (this.said[from] ?? 0) / Math.max(1, avg)));
+        const st = Math.max(0.2, (1 + this.rate("loud") * (loudness - 1)) * (1 - 0.3 * this.rate("evidence")));
+        const H = Math.pow(M.hunch, st);
         this.weigh("small", (h) => {
           if (this.isT(h, from)) return 1 / others;
-          const lT = says === "T" ? M.hunch : 1, lV = says === "T" ? 1 : M.hunch;
+          const lT = says === "T" ? H : 1, lV = says === "T" ? 1 : H;
           return (this.isT(h, target) ? lT : lV) / (K * lT + (others - K) * lV);
         });
         break;
@@ -350,7 +470,7 @@ export class Brain {
       case "saw_cards": {
         if (target === undefined) break;
         if (target === this.seat) {
-          if (this.skill.catchesLies) {
+          if (catches) {
             const lie = this.notes.get(n) ?? k.cards.some((c) => !this.me(s).hand.includes(c));
             this.noted.push([n, lie]);
             if (lie) lieCaught();
@@ -362,7 +482,13 @@ export class Brain {
       }
       case "stone": if (target !== undefined) this.stone[target] = k.has ? Math.max(this.stone[target] ?? 0, k.which ? 0.7 : 0.5) : (this.stone[target] ?? 0) * 0.5; break;
       case "ask": if (k.target === this.seat && s.players[this.seat].alive) this.askedMe.push({ from, what: k.what, priv: this.hearingPrivate }); break;
-      case "react": break;
+      case "react": {
+        // [84] a cheer right after a player went out: the cheerer is likely on the other side from the out player
+        const lo = this.lastOut;
+        if (k.emoji === "cheer" && lo !== null && lo !== from && n - this.outAt < 12 && this.roll(`cheer:${n}`) < this.rate("evidence"))
+          this.weigh("small", (h) => (this.isT(h, from) !== this.isT(h, lo) ? 1.3 : 1));
+        break;
+      }
     }
   }
 
@@ -371,7 +497,12 @@ export class Brain {
     const mine = this.side(s), theirs = sideOf(role);
     // a villager says exactly what it saw — "I checked X: Teacher" — so the village can count roles off for Teer Kaman
     // (owner 2026-11-22) a villager's role is NEVER named out loud (it hands the thieves a Teer Kaman name): "with the village"
-    if (mine === "V") { this.out.push(theirs === "T" || TRY.includes("k") ? { t: "saw_role", target: t, role } : { t: "vouch", target: t }); return; }
+    if (mine === "V") {
+      // [24] a skilled villager keeps a found thief for a trusted neighbour first (the thieves can't see who knows)
+      const nb = besideMe(s.players, this.seat).filter((x) => x !== t && this.trusts(s, x));
+      if (theirs === "T" && nb.length && this.roll(`hold:${t}`) < this.rate("hold")) { this.tells.push({ to: nb[0], talk: { t: "saw_role", target: t, role } }); return; }
+      this.out.push(theirs === "T" || TRY.includes("k") ? { t: "saw_role", target: t, role } : { t: "vouch", target: t }); return;
+    }
     // (owner 2026-11-21) the thieves' counter: a thief almost always LIES about its Kundli, so the village can't trust every report
     if (next(r) > Math.max(this.skill.lies, 0.85)) { this.out.push({ t: "vouch", target: t }); return; }
     if (theirs === "T") { this.out.push({ t: "vouch", target: t }); return; } // cover a partner: "with the village"
@@ -381,6 +512,9 @@ export class Brain {
 
   private markSaid(k: Talk) {
     if (k.t === "claim" || (k.t === "vouch" && k.target === this.seat)) this.played.add("claim");
+    if (k.t === "claim") this.myClaim = k.role;
+    if (k.t === "accuse" && this.firstHunch === null) this.firstHunch = k.target;
+    if (k.t === "stone" && k.target === this.seat) this.played.add("stone");
     if (k.t === "stone") this.played.add(k.target === this.seat ? "stone" : `went:${k.target}`);
     if (k.t === "vouch" && k.target !== this.seat) this.played.add(`cover:${k.target}`);
     if (k.t === "ask") { this.played.add(`asked:${k.what}:${k.target}`); this.played.add(`askq:${this.atRound}`); }
@@ -445,8 +579,9 @@ export class Brain {
       const friend = (x: number) => (this.known[x] ? sideOf(this.known[x]) === mine : mine === "V" && p[x] < bar);
       const friends = live.filter(friend);
       // experiment w: a thief with no partner found whispers a false villager role to a neighbour, to be trusted back
-      if (TRY.includes("w") && mine === "T" && !friends.length && live.length && s.round > 1) {
-        const to = live[0], fake: Talk = { t: "claim", role: this.fakeRole(s) }, key = `tell:${to}:fake`;
+      if ((TRY.includes("w") || this.roll("slip") < this.rate("slip")) && mine === "T" && !friends.length && live.length && s.round > 1) {
+        // [126] a thief whispers a role to a neighbour — beginners a DIFFERENT one from what they said out loud
+        const to = live[0], fake: Talk = { t: "claim", role: this.fakeRole(s, this.myClaim ?? undefined) }, key = `tell:${to}:fake`;
         if (!this.played.has(key) && this.tells.length < 2) { this.played.add(key); this.tells.push({ to, talk: fake }); }
       }
       if (friends.length) {
@@ -493,7 +628,14 @@ export class Brain {
     const urge = Math.max(press, 0.6 * chatty, solver * (s.round > 1 || this.turns > 2 ? 1 : 0.5));
     const st = me.hand.find(isStone) as "TUNGA_STONE" | "BHADRA_STONE" | undefined;
     const roleLine = (): Talk => {
-      if (mine === "T") return { t: "claim", role: this.fakeRole(s) };
+      if (mine === "T") {
+        // [39] claim the SAME role a likely villager claimed: now one of us "lies", and it may look like them
+        if (this.roll("dup") < this.rate("dupClaim")) {
+          const v = Object.entries(this.claims).find(([x, role]) => Number(x) !== this.seat && sideOf(role) === "V" && !(this.known[Number(x)] && sideOf(this.known[Number(x)]) === "T"));
+          if (v) return { t: "claim", role: v[1] };
+        }
+        return { t: "claim", role: this.fakeRole(s) };
+      }
       // a villager may lie about its role to dodge a Teer Kaman — less as the game gets desperate (the truth is needed then)
       if (next(r) < 0.25 * (1 - press)) return { t: "claim", role: this.fakeRole(s, me.role) };
       return { t: "claim", role: me.role };
@@ -511,6 +653,8 @@ export class Brain {
       if (q.priv && besideMe(s.players, this.seat).includes(q.from)) this.tells.push({ to: q.from, talk: line });
       else this.out.push(line);
     }
+    // [66] the LAST round: a villager tells the truth before the end
+    if (mine === "V" && s.round >= s.rounds && !this.played.has("claim") && this.roll("last") < this.rate("lastClaim")) once("claim", { t: "claim", role: me.role });
     // 2. CLAIM unasked, when my side feels it is losing
     if (urge > 0.55 || (Object.keys(this.accusedMe).length && urge > 0.35)) {
       once("claim", roleLine());
@@ -533,11 +677,70 @@ export class Brain {
     }
   }
 
+  /** HUMAN HABITS IN TALK (owner 2026-11-23). Every line here is said at most once per vote / round / game, and that is
+   *  read back from the log, so a bot rebuilt by the server never repeats itself. */
+  private habitTalk(s: State, r: R, live: number[], p: number[], mine: Side) {
+    const me = this.me(s), ph = s.phase, rs = this.roundStart(s);
+    const say = (t: Talk) => this.out.push(t);
+    // [65] OUT: a villager tells everything it knows (a thief keeps lying: rule 5.9, roles stay secret)
+    if (!me.alive) {
+      if (this.played.has("outtell") || this.saidSince(s, this.outAt) || next(r) > this.rate("outTell")) { this.played.add("outtell"); return; }
+      this.played.add("outtell");
+      for (const [k, role] of Object.entries(this.known)) {
+        const x = Number(k); if (x === this.seat || !s.players[x]?.alive) continue;
+        if (mine === "V") say(sideOf(role) === "T" ? { t: "saw_role", target: x, role } : { t: "vouch", target: x });
+        else if (sideOf(role) === "V") say({ t: "accuse", target: x });
+      }
+      return;
+    }
+    if (ph.kind === "vote") {
+      const bal = ph.ballots as Record<number, Ballot>;
+      const cnt: Record<number, number> = {};
+      for (const b of Object.values(bal)) if (b.for !== null) cnt[b.for] = (cnt[b.for] ?? 0) + 1;
+      const lead = Object.keys(cnt).map(Number).sort((a, b) => cnt[b] - cnt[a])[0];
+      const talked = this.saidSince(s, ph.opened);
+      // [107] FLAIL: the vote is on me — plead and point at anyone
+      if (!talked && lead === this.seat && cnt[lead] >= 2 && this.roll(`flail:${ph.opened}`) < this.rate("flail")) {
+        say(this.selfLine(s));
+        const pick = live.filter((x) => !this.trusts(s, x)).sort((a, b) => this.roll(`fl:${a}:${ph.opened}`) - this.roll(`fl:${b}:${ph.opened}`)).slice(0, 2);
+        for (const x of pick) say({ t: "accuse", target: x });
+        return;
+      }
+      // [120] holding a result: "good thing I'm voting him!" — the vote again, out loud
+      const mineB = bal[this.seat];
+      if (!talked && mineB?.for != null && this.known[mineB.for] && sideOf(this.known[mineB.for]) !== mine && mine === "V" && this.roll(`conf:${ph.opened}`) < this.rate("confirm")) { say({ t: "accuse", target: mineB.for }); return; }
+      // [111] FIGHT for a trusted player who is on the block
+      if (!talked && mine === "V" && lead !== undefined && lead !== this.seat && this.trusts(s, lead) && cnt[lead] >= 2 && this.roll(`fight:${ph.opened}`) < this.rate("fight")) { say({ t: "vouch", target: lead }); return; }
+      return;
+    }
+    const thisRound = this.saidSince(s, rs);
+    if (mine === "T") {
+      // [41+89] BUDDY one villager all game (an "audience of one" for the final vote)
+      if (!this.played.has("buddy") && this.turns > this.n / 2 && this.roll("buddy") < this.rate("buddy")) {
+        const cand = live.filter((x) => !(this.known[x] && sideOf(this.known[x]) === "T"));
+        if (cand.length) { const b = cand.sort((a, c) => (this.pointed[a] ?? 0) - (this.pointed[c] ?? 0) || (this.vouched[c] ?? 0) - (this.vouched[a] ?? 0))[0]; this.played.add("buddy"); say({ t: "vouch", target: b }); return; }
+      }
+      // [79] "I have the Tunga Stone" — a lie that draws a Hera Pheri away from the real holder
+      if (!this.played.has("stone") && s.round > 1 && !me.hand.some(isStone) && this.roll("bait") < this.rate("stoneBait")) { this.played.add("stone"); say({ t: "stone", target: this.seat, has: true, which: "TUNGA_STONE" }); return; }
+      // [101] ACTIVE LURKING: sounds busy, names nobody
+      if (!thisRound && this.roll(`lurk:${s.round}`) < this.rate("lurk")) { say({ t: "react", emoji: this.roll(`lk:${s.round}`) < 0.5 ? "doubt" : "shock" }); return; }
+      // [84] a thief's cheer when a likely villager goes out
+      if (this.lastOut !== null && this.outAt >= rs && !this.saidSince(s, this.outAt) && !(this.known[this.lastOut] && sideOf(this.known[this.lastOut]) === "T") && this.roll(`emo:${this.outAt}`) < this.rate("emoji")) { say({ t: "react", emoji: "cheer" }); return; }
+    } else if (!thisRound && s.round > 1 && this.roll(`rv:${s.round}`) < this.rate("revouch")) {
+      // [109] speak for the players I trust AGAIN (tables forget yesterday's good word)
+      const tr = live.filter((x) => this.trusts(s, x));
+      if (tr.length) { say({ t: "vouch", target: tr[Math.floor(this.roll(`rvx:${s.round}`) * tr.length)] }); return; }
+      if ((this.pointed[this.seat] ?? 0) >= 1) { say(this.selfLine(s)); return; }
+    }
+  }
+
   /** HUNCHES (owner): said once when one forms; at a big moment (Faisla, final vote, Teer Kaman aim) the top hunch resurfaces */
   hunch(s: State, r: R, bigMoment: number | null) {
     const p = this.p(s), mine = this.side(s);
     const live = living(s).filter((q) => q.seat !== this.seat).map((q) => q.seat);
     if (!live.length) return;
+    this.habitTalk(s, r, live, p, mine);
+    if (!this.me(s).alive) return;
     const prior = this.K / Math.max(1, this.n - 1);
     const score = (x: number) => (mine === "V" ? p[x] : (1 - p[x]) * (1 + (this.stone[x] ?? 0) + (this.accusedMe[x] ?? 0)) * 0.5);
     const top = live.reduce((a, b) => (score(b) > score(a) ? b : a), live[0]);
@@ -556,7 +759,12 @@ const argmax = (xs: number[], f: (x: number) => number) => xs.reduce((a, b) => (
 /** how much I want x gone: villagers hunt thieves; thieves hunt villagers (most of all Stone-holders and accusers) */
 function threat(b: Brain, s: State, p: number[], x: number) {
   if (b.side(s) === "V") return p[x] + (b.stone[x] ?? 0) * p[x];
-  return (1 - p[x]) * (0.5 + (b.stone[x] ?? 0) + 0.5 * (b.accusedMe[x] ?? 0));
+  // [133] what makes a villager dangerous to thieves: the obvious villager, the persuader, the one hunting us (votes for
+  // us), the quiet unreadable one — a skilled thief aims Teer Kaman, Hera Pheri and Faisla there
+  const said = Object.values(b.said), avg = said.length ? said.reduce((a, c) => a + c, 0) / said.length : 1;
+  const danger = Math.min(1, (b.vouched[x] ?? 0) / 2) * 0.3 + Math.min(1, (b.said[x] ?? 0) / Math.max(1, 2 * avg)) * 0.4
+    + Math.min(1, (b.hunter[x] ?? 0) / 2) * 0.3 + (!(b.said[x] ?? 0) && b.turns > b.n ? 0.2 : 0);
+  return (1 - p[x]) * (0.5 + (b.stone[x] ?? 0) + 0.5 * (b.accusedMe[x] ?? 0) + b.rate("target") * danger);
 }
 
 function keepScore(b: Brain, s: State, c: Card, hand: Card[]) {
@@ -586,7 +794,8 @@ function choosePass(b: Brain, s: State, keep: number, r: R): Card[] {
     else if (!isStone(c) && count(hand, c) < 2) v += friend ? (strong(c) ? -0.5 : 0.3) : foe ? (strong(c) ? 0.5 : -0.3) : 0;
     return v;
   };
-  const ranked = hand.map((c) => ({ c, v: score(c) + next(r) * 0.3 })).sort((x, y) => y.v - x.v);
+  const careless = next(r) < b.rate("careless"); // [21] no plan: keep the Stones and pairs, the rest is luck
+  const ranked = hand.map((c) => ({ c, v: careless ? keepScore(b, s, c, hand) + next(r) * 2.5 : score(c) + next(r) * 0.3 })).sort((x, y) => y.v - x.v);
   return ranked.slice(keep).slice(0, Math.min(3, hand.length - keep)).map((x) => x.c);
 }
 function dbTargets(b: Brain, s: State, p: number[]): number[] {
@@ -599,7 +808,9 @@ function chooseTurn(b: Brain, s: State, r: R): Move {
   const late = s.round >= s.rounds;
   const pair = (a: Action) => count(hand, a) >= 2;
   const heat = Object.values(b.accusedMe).reduce((a, c) => a + c, 0);
-  if (canDalBadal(s, b.seat) && (heat >= (TRY.includes("d") ? 1 : 2) || (late && !hand.some(isStone) && next(r) < 0.5))) return { kind: "dal_badal", targets: dbTargets(b, s, p) };
+  // [17] beginners forget Dal Badal, or fire it too early
+  const dbForgot = b.roll("dbmiss") < b.rate("dbMiss");
+  if (canDalBadal(s, b.seat) && !dbForgot && (heat >= (TRY.includes("d") ? 1 : 2) || (late && !hand.some(isStone) && next(r) < 0.5) || (s.round === 1 && next(r) < b.rate("dbMiss") * 0.3))) return { kind: "dal_badal", targets: dbTargets(b, s, p) };
   const sure = o.find((x) => b.known[x] && sideOf(b.known[x]) !== mine);
   if (pair("TEER_KAMAN") && sure !== undefined) return { kind: "teer_kaman", target: sure };
   // [2.4] playing a pair means passing ALL 3 cards left — a Stone too. (owner 2026-11-22) "villagers and thieves both
@@ -609,7 +820,8 @@ function chooseTurn(b: Brain, s: State, r: R): Move {
     const nx = nextLiving(s, b.seat);
     const trusted = b.known[nx] ? sideOf(b.known[nx]) === mine : mine === "V" ? p[nx] < b.trust(0.15) : false;
     const informed = Object.keys(b.known).length > 1 || b.pressure(s) > 0.5;
-    if (!informed || !trusted) return { kind: "pass" };
+    // [9] a beginner sometimes plays its pair anyway — and its Stone goes left with the 3 cards
+    if ((!informed || !trusted) && next(r) >= b.rate("stoneSlip")) return { kind: "pass" };
   }
   if (pair("HERA_PHERI")) {
     const bar = (EXP.includes("X") && mine === "V") || (TRY.includes("h") && mine === "T") ? 0.3 : 0.5;
@@ -621,7 +833,9 @@ function chooseTurn(b: Brain, s: State, r: R): Move {
   const press = EXP.includes("P") ? b.pressure(s) : 0; // (owner 2026-11-22) losing → take risks
   const confident = mine === "V" ? p[top] > Math.max(0.6 - 0.2 * press, prior * (2 - press)) : threat(b, s, p, top) > 1 - 0.4 * press;
   const stoneThief = mine === "V" && EXP.includes("X") && o.some((x) => (b.known[x] ? sideOf(b.known[x]) === "T" : p[x] > 0.55) && (b.stone[x] ?? 0) > 0.4);
-  if (pair("FAISLA") && (confident || stoneThief || (late && next(r) < 0.5 + 0.4 * press))) return { kind: "play", card: "FAISLA" };
+  // [16] a beginner sits on a weapon pair all game · [13] or calls a Faisla on one hunch
+  const sits = (c: Action) => !late && b.roll(`sit:${c}`) < b.rate("sit");
+  if (pair("FAISLA") && !sits("FAISLA") && (confident || stoneThief || (late && next(r) < 0.5 + 0.4 * press) || next(r) < b.rate("faislaEarly"))) return { kind: "play", card: "FAISLA" };
   const qw = (x: number) => (EXP.includes("X") ? (b.quiet[x] ?? 0) * 0.08 : 0); // the quiet-pass tell
   if (pair("KUNDLI")) { const unk = o.filter((x) => !b.known[x]); if (unk.length) return { kind: "play", card: "KUNDLI", target: argmax(unk, (x) => p[x] * (1 - p[x]) + qw(x) + next(r) * 0.05) }; }
   if (pair("TALASHI")) { const unk = o.filter((x) => b.stone[x] === undefined || (b.stone[x]! > 0 && b.stone[x]! < 1)); if (unk.length) return { kind: "play", card: "TALASHI", target: argmax(unk, (x) => (mine === "V" ? p[x] : 1 - p[x]) + qw(x) + next(r) * 0.2) }; }
@@ -630,10 +844,19 @@ function chooseTurn(b: Brain, s: State, r: R): Move {
   if (pair("TEER_KAMAN") && EXP.includes("T")) {
     const best = argmax(o, (x) => tkOdds(b, s, p, x));
     // villagers need better odds than thieves (tuned on scripts/ab-brain.mts to keep the 46-53% balance)
-    const bar = (mine === "V" ? (late ? 0.4 : 0.6) : (late ? 0.25 : 0.4) - (TRY.includes("j") ? 0.1 : 0)) - 0.15 * press;
-    if (tkOdds(b, s, p, best) >= bar) return { kind: "teer_kaman", target: best };
+    const bar = (mine === "V" ? (late ? 0.4 : 0.6) : (late ? 0.25 : 0.4) - (TRY.includes("j") ? 0.1 : 0)) - 0.15 * press - 0.3 * b.rate("tkGut"); // [14]
+    if (!sits("TEER_KAMAN") && tkOdds(b, s, p, best) >= bar) return { kind: "teer_kaman", target: best };
   }
   if (pair("BHUKAMP") && next(r) < 0.25) return { kind: "play", card: "BHUKAMP" };
+  // [7] a pair played "just to do something", on whoever
+  if (next(r) < b.rate("pairAct")) {
+    const held = (["FAISLA", "KUNDLI", "TALASHI", "HERA_PHERI", "TEER_KAMAN", "BHUKAMP"] as Action[]).filter(pair);
+    if (held.length && o.length) {
+      const c = held[Math.floor(next(r) * held.length)], x = o[Math.floor(next(r) * o.length)];
+      if (c === "TEER_KAMAN") return { kind: "teer_kaman", target: x };
+      return c === "FAISLA" || c === "BHUKAMP" ? { kind: "play", card: c } : { kind: "play", card: c, target: x };
+    }
+  }
   return { kind: "pass" };
 }
 
@@ -662,6 +885,7 @@ function chooseShoot(b: Brain, s: State, target: number, r: R): Move {
   const k = tkRoles(s);
   const want = b.known[target] ? [b.known[target]] : b.told[target] && (b.side(s) === "T" ? sideOf(b.told[target].role) === "V" : sideOf(b.told[target].role) === "T") ? [b.told[target].role] : [];
   const other = b.side(s) === "V" ? "T" : "V";
+  if (want.length && next(r) < b.rate("tkWrong")) want.shift(); // [15]
   if (other === "V" && b.claims[target] && sideOf(b.claims[target]) === "V" && !want.length) want.push(b.claims[target]); // a villager's claim is usually true
   const taken = new Set(Object.entries(b.known).filter(([seat]) => Number(seat) !== target).map(([, x]) => x));
   const pool = s.rolesInPlay.filter((x) => !want.includes(x) && sideOf(x) === other && !taken.has(x) && b.claims[target] !== x).sort(() => next(r) - 0.5);
@@ -669,8 +893,52 @@ function chooseShoot(b: Brain, s: State, target: number, r: R): Move {
   return { kind: "shoot", roles: [...new Set([...want, ...pool, ...rest])].slice(0, k) };
 }
 
+/** the live count of an open vote (the first ballot weighs `anchor` for a beginner: the first vote pulls the rest) */
+function liveCount(b: Brain, s: State) {
+  const ph = s.phase as Extract<State["phase"], { kind: "vote" }>;
+  const ballots = ph.ballots as Record<number, Ballot>;
+  const first = s.events.find((e) => e.n > ph.opened && e.type === "ballot" && (e.data as { for?: number | null }).for != null);
+  const firstFor = first ? (first.data as { for: number }).for : null;
+  const c: Record<number, number> = {};
+  for (const [v, x] of Object.entries(ballots)) if (Number(v) !== b.seat && x.for !== null) c[x.for] = (c[x.for] ?? 0) + 1;
+  if (firstFor !== null && c[firstFor]) c[firstFor] += b.rate("anchor") - 1;
+  const L = Object.keys(c).map(Number).sort((x, y) => c[y] - c[x])[0];
+  // [51] one loud "no": someone else vouched for the leader since the vote opened — the pile-on stalls
+  const dissent = L !== undefined && s.events.some((e) => e.n > ph.opened && e.type === "say" && (e.data as { seat?: number; talk?: Talk }).talk?.t === "vouch" && ((e.data as { talk: { target: number } }).talk.target === L) && (e.data as { seat: number }).seat !== L);
+  return { ph, ballots, c, L, top: L === undefined ? 0 : c[L], dissent };
+}
+
+/** HUMAN VOTING HABITS (owner 2026-11-23), before the reasoned vote: revenge, the caught liar, going with the group,
+ *  a thief's bus, a thief waiting to join in the middle. null = no habit fired, vote by reason. */
+function habitVote(b: Brain, s: State, final: boolean): Move | null {
+  const { ph, c, L, top, dissent } = liveCount(b, s);
+  const o = others(s, b.seat), mine = b.side(s), key = `${ph.opened}`;
+  const partner = (x: number) => !!b.known[x] && sideOf(b.known[x]) === "T";
+  if (mine === "V" && o.some((x) => b.known[x] && sideOf(b.known[x]) === "T")) return null; // I KNOW a thief: no habits
+  // [53] revenge: vote whoever accused me
+  const acc = o.filter((x) => (b.accusedMe[x] ?? 0) > 0 && !b.trusts(s, x));
+  if (acc.length && b.roll(`rev:${key}`) < b.rate("revenge")) return { kind: "vote", for: argmax(acc, (x) => b.accusedMe[x]), extra: s.extraVote === b.seat && final };
+  // [82] always vote a caught liar
+  const liars = o.filter((x) => b.liars.has(x) && !b.trusts(s, x) && !(mine === "T" && partner(x)));
+  if (mine === "V" && liars.length && b.roll(`liar:${key}`) < b.rate("liar")) return { kind: "vote", for: liars[0], extra: s.extraVote === b.seat && final };
+  if (L !== undefined && L !== b.seat) {
+    const living_ = living(s).length;
+    // [58+115] a thief votes out a partner who is going anyway (to look clean) — beginners more than skilled
+    if (mine === "T" && partner(L) && top >= Math.floor(living_ / 2) && b.roll(`bus:${key}`) < b.rate("bus")) return { kind: "vote", for: L, extra: false };
+    // [49+50] go with the group: a beginner follows one vote, others two (the first ballot weighs more for beginners)
+    if (!b.trusts(s, L) && !(mine === "T" && partner(L)) && top >= 2 - (b.rate("anchor") > 1.4 ? 1 : 0) && b.roll(`herd:${key}`) < b.rate("herd") * (dissent ? 0.15 : 1))
+      return { kind: "vote", for: L, extra: s.extraVote === b.seat && final };
+  }
+  // [92] a skilled thief never starts a pile-on: it waits, then joins in the middle (see reconsider)
+  if (mine === "T" && !final && !Object.keys(c).length && b.roll(`mid0:${key}`) < b.rate("middle")) return { kind: "vote", for: null };
+  return null;
+}
+
 function chooseVote(b: Brain, s: State, final: boolean, r: R): Move {
+  const habit = habitVote(b, s, final);
+  if (habit) return habit;
   const o = others(s, b.seat), p = b.p(s), mine = b.side(s);
+  const gut = b.rate("gut"), tunnel = (x: number) => (x === b.firstHunch ? 0.3 * b.rate("tunnel") : 0); // [54] [35]
   // the table's mood: real tables gang up on the most-pointed-at player (a split vote is a tie, and a tie does nothing)
   const mood = (x: number) => Math.min(3, b.pointed[x] ?? 0) * 0.08;
   const known = (x: number) => (b.known[x] ? (sideOf(b.known[x]) === mine ? -2 : 2) : 0);
@@ -678,14 +946,14 @@ function chooseVote(b: Brain, s: State, final: boolean, r: R): Move {
     // [6.2] the final vote moves the out player's Stones to the OTHER team: a thief out with a Stone = a Stone for us,
     // a villager out with a Stone = a Stone for them. So weigh who holds a Stone, both ways.
     const swing = (x: number) => ((final || EXP.includes("X")) && EXP.includes("F") ? (b.stone[x] ?? 0) * (2 * p[x] - 1) * (TRY.includes("o") ? 1.2 : 0.6) : 0);
-    const top = argmax(o, (x) => p[x] + mood(x) * (TRY.includes("c") ? 3 : 1) + known(x) + swing(x) + next(r) * 0.02);
+    const top = argmax(o, (x) => p[x] + mood(x) * (TRY.includes("c") ? 3 : 1) + known(x) + swing(x) + tunnel(x) + next(r) * (0.02 + 0.6 * gut));
     const prior = b.K / Math.max(1, b.n - 1);
-    // the FINAL vote: everyone votes (nothing to save the vote for); a Faisla: only when the case is real
-    if (!final && p[top] + mood(top) < prior * 1.5 && known(top) <= 0) return { kind: "vote", for: null };
+    // the FINAL vote: everyone votes (nothing to save the vote for); a Faisla: only when the case is real (a gut voter votes anyway)
+    if (!final && p[top] + mood(top) < prior * 1.5 && known(top) <= 0 && next(r) >= gut) return { kind: "vote", for: null };
     return { kind: "vote", for: top, extra: s.extraVote === b.seat && (final || p[top] > 0.8) };
   }
   // a thief: never votes for a partner it knows; rides the table's mood onto a villager, most of all a Stone-holder
-  const top = argmax(o, (x) => threat(b, s, p, x) + mood(x) * 2 + known(x) + (final ? (b.stone[x] ?? 0) * 0.5 : 0) + next(r) * 0.05);
+  const top = argmax(o, (x) => threat(b, s, p, x) + mood(x) * 2 + known(x) + (final ? (b.stone[x] ?? 0) * 0.5 : 0) + next(r) * (0.05 + 0.5 * gut));
   if (!final && threat(b, s, p, top) < 0.6) return { kind: "vote", for: null };
   return { kind: "vote", for: top, extra: s.extraVote === b.seat && final };
 }
@@ -714,6 +982,12 @@ export function reconsider(b: Brain, s: State): Move | null {
   if (top === 0) return null;
   const friendOf = (x: number) => x === b.seat || (b.known[x] !== undefined && sideOf(b.known[x]) === side);
   const vote = (x: number | null): Move | null => (mine.for === x ? null : { kind: "vote", for: x, extra: mine.extra });
+  const key = `${ph.opened}`, { dissent } = liveCount(b, s);
+  const allIn = living(s).every((q) => ballots[q.seat] !== undefined);
+  // [92] a skilled thief that waited joins the pile-on in the middle, once it has started
+  if (side === "T" && mine.for === null && L !== b.seat && !friendOf(L) && top >= 1 && b.roll(`mid:${key}`) < b.rate("middle")) return vote(L);
+  // [52] the LAST-SECOND SWITCH: everyone has voted and the table leans another way
+  if (allIn && mine.for !== L && L !== b.seat && !friendOf(L) && !b.trusts(s, L) && !dissent && b.roll(`sw:${key}`) < b.rate("switchy")) return vote(L);
   // who would be out if I voted for x
   const outIf = (x: number | null) => {
     const t = { ...counts }; if (x !== null) t[x] = (t[x] ?? 0) + myW;
@@ -724,7 +998,13 @@ export function reconsider(b: Brain, s: State): Move | null {
   if (friendOf(L) && outIf(mine.for) !== null && friendOf(outIf(mine.for)!)) {
     const tries = o.filter((x) => !friendOf(x)).sort((x, y) => c(y) - c(x));
     for (const x of tries) { const w = outIf(x); if (w === null || !friendOf(w)) return vote(x); }
+    // [58] can't be saved: a thief may bus its partner
+    if (side === "T" && L !== b.seat && b.roll(`bus2:${key}`) < b.rate("bus")) return vote(L);
     return null;
+  }
+  // [111] a villager FIGHTS for a player it trusts: a vote that makes a tie
+  if (side === "V" && L !== b.seat && b.trusts(s, L) && outIf(mine.for) === L && b.roll(`fightv:${key}`) < b.rate("fight")) {
+    for (const x of o.filter((y) => !b.trusts(s, y) && y !== L).sort((x, y) => c(y) - c(x))) { const w = outIf(x); if (w === null || w !== L) return vote(x); }
   }
   // PILE ON: a villager joins a leading real suspect so the vote isn't wasted on a split
   if (side === "V" && mine.for !== L && L !== b.seat && !friendOf(L)) {
@@ -756,10 +1036,11 @@ export function decide(b: Brain, s: State, r: R): Move {
 // ---------------------------------------------------------------- one whole game
 export interface GameStats { players: number; winner: Side; reason: string; turns: number; dalBadal: number; tkHit: number; tkMiss: number; faislaOut: number; says: number; talkKinds: Record<string, number>; end: string[] }
 
-export function playGame(n: number, seed: number, skill: Skill, probe?: (s: State, bots: Brain[]) => void, done?: (s: State) => void): GameStats {
-  let s = newGame(Array.from({ length: n }, (_, i) => `B${i}`), seed);
+export function playGame(n: number, seed: number, skill: Skill | ((seat: number) => Skill), probe?: (s: State, bots: Brain[]) => void, done?: (s: State) => void): GameStats {
+  // names differ per game, so personalities do too; a bot's talkiness comes from its name exactly as on the server
+  let s = newGame(Array.from({ length: n }, (_, i) => `B${i}.${seed % 9973}`), seed);
   const r: R = { rng: (seed * 2654435761) >>> 0 };
-  const bots = s.players.map((p) => new Brain(p.seat, skill, 0.45 + next(r) * 0.45, s));
+  const bots = s.players.map((p) => new Brain(p.seat, typeof skill === "function" ? skill(p.seat) : skill, talkyOf(p.name), s));
   for (const b of bots) {
     b.read(s, r);
     if (next(r) < 0.3) s = move(s, b.seat, { kind: "say", talk: b.selfLine() });

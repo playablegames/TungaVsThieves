@@ -2,19 +2,14 @@
 // from a stored game. A server call has no memory between requests, so each call rebuilds every bot's brain from the
 // game's own log: it reads the OLD events quietly (beliefs only, no talk), then the NEW ones out loud (it may answer).
 // What a bot already said is read back from the log, so a rebuilt bot never says the same hunch twice.
-import { Brain, decide, reconsider, SKILLS, type SkillName } from "@/rules/brain";
+import { Brain, decide, reconsider, SKILLS, talkyOf, type SkillName } from "@/rules/brain";
 import { next } from "@/rules/rng";
 import { ask, move, tell, type Move, type State, type Talk } from "@/rules/game";
 
 /** how many lines one bot may say in one go — nobody blabbers (SITUATIONS.md) */
 const MAX_LINES = 2;
 
-/** a small stable number per name: how talkative that bot is (0.45-0.9, like playGame) */
-export function talkyOf(name: string): number {
-  let h = 2166136261;
-  for (const ch of name) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
-  return 0.45 + (h % 1000) / 1000 * 0.45;
-}
+export { talkyOf } from "@/rules/brain"; // a bot's personality comes from its name, in the sims and on the server alike
 
 export interface BotSeat { seat: number; name: string; skill: SkillName }
 
