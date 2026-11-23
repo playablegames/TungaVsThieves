@@ -401,7 +401,9 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
 
 /** printed faces are 600×513; one card raised = 112 wide, two = 100 each, three = 84 each (owner 2026-11-23: smaller). Tap one to drop it back. */
 function RaisedCards({ cards, onDrop, onClose }: { cards: Card[]; onDrop: ((k: number) => void) | null; onClose: (() => void) | null }) {
-  const w = cards.length === 1 ? 112 : cards.length === 2 ? 100 : 84, gap = cards.length === 3 ? 8 : 10;
+  // (owner 2026-11-23: "whenever I play a pair, what people played is hidden") the raised cards covered the two seats
+  // nearest your hand — their names and what they played. Now seat-sized, sitting just above your hand, below the seats.
+  const w = cards.length === 1 ? 72 : cards.length === 2 ? 64 : 58, gap = 8;
   const h = Math.round(w * (513 / 600));
   const total = cards.length * w + (cards.length - 1) * gap;
   const top = HAND_TOP - h - 6;

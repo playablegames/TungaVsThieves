@@ -78,7 +78,7 @@ export function CardPanel({ card, view, myTurn, thief, shooting, picked, setPick
     // [3.7] the exact role — every role in play is a choice (a Dal Badal may have moved them; the app checks now)
     const all = [...new Set(view.rolesInPlay)].sort();
     const toggle = (r: string) => setRoles(step.count === 1 ? [r]
-      : roles.includes(r) ? roles.filter((x) => x !== r) : roles.length < step.count ? [...roles, r] : roles);
+      : roles.includes(r) ? roles.filter((x) => x !== r) : roles.length < step.count ? [...roles, r] : [...roles.slice(1), r]); // (2026-11-23) a 3rd tap swaps out the oldest, never a dead tap
     options = all.map((r) => ({ key: r, label: r, on: roles.includes(r), tap: () => toggle(r) }));
     question = step.count === 1 ? `Name ${name(step.target)}'s role` : `Name 2 roles for ${name(step.target)}`;
     if (roles.length === step.count) action = { label: `Shoot: ${roles.join(" or ")}`, move: { kind: "shoot", roles } };
@@ -96,17 +96,19 @@ export function CardPanel({ card, view, myTurn, thief, shooting, picked, setPick
     <>
       {/* the whole bottom area asks ONE thing */}
       <div className="absolute inset-x-0 bottom-0 z-[3]" style={{ top: HAND_TOP }} role="group" aria-label={question}>
-        <p className="absolute inset-x-[76px] top-[18px] truncate text-center text-[15px] font-semibold text-[#ffe7a6]">{question}</p>
-        <div className="absolute inset-x-4 top-[62px] grid gap-2" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+        {/* (owner 2026-11-23: "roles were untappable, merging with the bottom part") 3 rows of 4 must end ABOVE the gold
+            button: question at 12, buttons from 40, rows 40 + gap 6 → the 3rd row ends at 172; the button sits 180-220 */}
+        <p className="absolute inset-x-[64px] top-[12px] truncate text-center text-[15px] font-semibold text-[#ffe7a6]">{question}</p>
+        <div className="absolute inset-x-4 top-[40px] grid gap-1.5" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
           {options.map((o) => (
             <button key={o.key} onClick={o.tap} aria-pressed={o.on}
-              className={`h-11 truncate rounded-xl px-2 font-semibold transition-transform active:scale-95 ${cols === 4 ? "text-[13.5px]" : "text-[15px]"}`}
+              className={`h-10 truncate rounded-xl px-2 font-semibold transition-transform active:scale-95 ${cols === 4 ? "text-[13.5px]" : "text-[15px]"}`}
               style={btn(o.on)}>
               {o.label}
             </button>
           ))}
         </div>
-        <div className="absolute inset-x-4 bottom-[12px] grid h-[46px] place-items-center">
+        <div className={`absolute inset-x-4 bottom-[14px] grid h-10 place-items-center ${action ? "" : "pointer-events-none"}`}>
           {action ? (
             <button key={action.label} onClick={() => onMove(action.move)}
               className="tt-pop size-full truncate rounded-2xl bg-gradient-to-b from-[#f7c94a] to-[#e0a020] px-4 text-[16px] font-bold text-[#2a1404] shadow-[inset_0_1px_0_#ffe7a6,0_4px_0_#8a5a08] active:translate-y-0.5">

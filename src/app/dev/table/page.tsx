@@ -17,6 +17,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Table } from "@/components/table/Table";
 import { EndSheet } from "@/components/table/EndSheet";
 import { move, newGame, tell, view, type Card, type State } from "@/rules/game";
+import { playGame, SKILLS } from "@/rules/brain";
 import type { TableView } from "@/server/game";
 
 const NAMES = ["Moon", "Pappu", "Babu Rao", "Shyam", "Raju", "Munna", "Neha", "Kabir", "Meera", "Arjun", "Zoya", "Dev"];
@@ -64,6 +65,18 @@ export default function DevTable() {
       s.players[(o.you + 2) % n].alive = false; s.players[(o.you + 2) % n].hand = [];
       s.phase = { kind: "over", winner: village ? "V" : "T", reason: village ? "Villagers protected the Stones." : `${thief.role} got away with the Bhadra Stone.` };
       return { s, you: o.you };
+    }
+    if (phase === "played") {
+      // ?phase=played: bots play real turns; you are the first player whose turn comes with a pair after 3+ plays this round
+      let found: { s: State; you: number } | null = null;
+      for (let seed = 1; !found && seed < 60; seed++) playGame(n, seed, SKILLS.average, (s) => {
+        if (found || s.phase.kind !== "turn") return;
+        const seat = s.phase.seat, at = s.events.findLastIndex((e) => e.type === "round");
+        const plays = s.events.slice(at + 1).filter((e) => e.type === "play" || e.type === "teer_kaman").length;
+        const hand = s.players[seat].hand;
+        if (plays >= 3 && hand.some((c, i) => !c.endsWith("STONE") && c !== "DAL_BADAL" && hand.indexOf(c) !== i)) found = { s: structuredClone(s), you: seat };
+      });
+      if (found) return found;
     }
     if (!voting) return opening(n, onTurn, (q.get("pair") as Card | null) ?? "KUNDLI");
     // the player before you plays Faisla; three others vote, one of them for you
