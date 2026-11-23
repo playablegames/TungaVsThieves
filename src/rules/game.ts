@@ -18,7 +18,7 @@ const isAction = (c: Card): c is Action => (ACTIONS as Card[]).includes(c);
 export const TABLE: Record<number, [number, number, number]> = {
   // (owner 2026-11-22: smarter bots made the village too strong → one more thief where it was over ~55%, Aawara as 5th;
   // "villagers must be more than thieves, not equal" → 4 and 6 keep 3+1 and 4+2)
-  4: [3, 1, 2], 5: [4, 1, 2], 6: [4, 2, 3], 7: [5, 2, 3], 8: [5, 3, 3], 9: [6, 3, 3], 10: [6, 4, 4], 11: [7, 4, 4], 12: [7, 5, 4], // 11 back to 7+4 (owner 2026-11-22: "moved a lot")
+  4: [3, 1, 2], 5: [4, 1, 2], 6: [4, 2, 3], 7: [5, 2, 3], 8: [5, 3, 3], 9: [6, 3, 3], 10: [6, 4, 4], 11: [7, 4, 4], 12: [8, 4, 4], // 11 back to 7+4 (owner 2026-11-22: "moved a lot"); 12 = 8+4 (owner 2026-11-23: only 4 thieves)
 };
 /** [1.4] */
 export const VILLAGERS = ["Kisaan", "Sarpanch", "Baba", "Teacher", "Police", "Doctor", "NRI", "Deewani"];

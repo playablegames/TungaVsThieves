@@ -38,6 +38,7 @@ export const SKILLS: Record<SkillName, Skill> = {
   sharp: { name: "sharp", memory: 0.97, bigSlower: 0.3, catchesLies: true, mixUp: 0, lies: 0.95 },
 };
 
+
 /** behaviour model (from deduce.ts MODEL) */
 // feature switches for scripts/ab-brain.mts: K Kundli always spoken · S scheme (leverage + trust) · T Teer Kaman fired ·
 // V live vote · P pressure · C passing on purpose · A asking for cards (owner 2026-11-21/22)
@@ -122,6 +123,9 @@ export class Brain {
     this.big = new Float64Array(this.H.length);
   }
   isT(h: number, x: number) { return (h >> x) & 1; }
+  /** (kept 2026-11-23, off with BRAIN_TRY=-R) "below x is someone I trust" was tuned at 5 players (an unknown seat = 25% thief). At 12 players an
+   *  unknown seat is 45% thief, so nobody ever got under 0.2 and villagers never trusted, told or traded. Scale the bar. */
+  trust(x: number) { const prior = this.K / Math.max(1, this.n - 1); return !TRY.includes("-R") ? Math.min(x * prior / 0.25, prior * 0.9) : x; }
   me(s: State) { return s.players[this.seat]; }
   side(s: State) { return this.me(s).side; }
   /** my side as far as the events read so far go — what a weight must use, so reading the log later gives the same */
@@ -216,15 +220,21 @@ export class Brain {
           if (d.ask && d.to === this.seat && typeof actor === "number") this.askedBy[actor] = d.ask as Card;
           if (actor === this.seat && d.ask) this.played.add(`ask:${this.atRound}`);
           // a TOLD secret (a role, a Kundli seen): mine already sent, or one to me — heard like talk, from someone who chose me
-          if (d.talk && actor === this.seat) this.played.add(`tell:${d.to}:${tellKey(d.talk as Talk)}`);
+          if (d.talk && actor === this.seat) { this.played.add(`tell:${d.to}:${tellKey(d.talk as Talk)}`); if ((d.talk as Talk).t === "claim") this.played.add(`tell:${d.to}:fake`); }
           else if (d.talk && d.to === this.seat && typeof actor === "number") {
             const k = d.talk as Talk;
             this.hearingPrivate = true;
             this.hear(s, actor, k, "target" in k ? k.target : undefined, e.n, r);
             this.hearingPrivate = false;
             if (k.t === "stone" && k.has && k.target === actor && this.side(s) === "V" && !TRY.includes("s")) {
-              const trusted = this.known[actor] ? sideOf(this.known[actor]) === "V" : this.p(s)[actor] < 0.25;
+              const trusted = this.known[actor] ? sideOf(this.known[actor]) === "V" : this.p(s)[actor] < this.trust(0.25);
               if (trusted && !this.played.has(`cover:${actor}`)) { this.played.add(`cover:${actor}`); this.out.push({ t: "vouch", target: actor }); }
+            }
+            // experiment v: a villager told a neighbour's role in a whisper speaks for that neighbour out loud ("with the
+            // village") when it trusts them — trust spreads round a big table instead of staying between two seats
+            if (TRY.includes("v") && k.t === "claim" && sideOf(k.role) === "V" && this.side(s) === "V" && !this.played.has(`cover:${actor}`)) {
+              const trusted = this.known[actor] ? sideOf(this.known[actor]) === "V" : this.p(s)[actor] < this.trust(0.3);
+              if (trusted) { this.played.add(`cover:${actor}`); this.out.push({ t: "vouch", target: actor }); }
             }
           }
           break;
@@ -431,9 +441,14 @@ export class Brain {
       const live = besideMe(s.players, this.seat); // whispers go left or right only
       // trust = clearly less suspect than an unknown seat (the prior), not near-certainty: villagers rarely get below 0.3
       const prior = this.K / Math.max(1, this.n - 1);
-      const bar = TRY.includes("t") ? prior * 0.75 : 0.2; void prior;
+      const bar = TRY.includes("t") ? prior * 0.75 : this.trust(0.2); void prior;
       const friend = (x: number) => (this.known[x] ? sideOf(this.known[x]) === mine : mine === "V" && p[x] < bar);
       const friends = live.filter(friend);
+      // experiment w: a thief with no partner found whispers a false villager role to a neighbour, to be trusted back
+      if (TRY.includes("w") && mine === "T" && !friends.length && live.length && s.round > 1) {
+        const to = live[0], fake: Talk = { t: "claim", role: this.fakeRole(s) }, key = `tell:${to}:fake`;
+        if (!this.played.has(key) && this.tells.length < 2) { this.played.add(key); this.tells.push({ to, talk: fake }); }
+      }
       if (friends.length) {
         const secrets: Talk[] = [{ t: "claim", role: me.role }];
         // (owner 2026-11-22: "a thief holding a Stone is a play — the village must read it") a villager on a Stone tells a
@@ -459,7 +474,7 @@ export class Brain {
       const single = want.find((c) => me.hand.filter((x) => x === c).length === 1);
       const live = living(s).map((q) => q.seat);
       const prev = live[(live.indexOf(this.seat) - 1 + live.length) % live.length];
-      const trusted = prev !== this.seat && (this.known[prev] ? sideOf(this.known[prev]) === mine : mine === "V" && p[prev] < 0.2);
+      const trusted = prev !== this.seat && (this.known[prev] ? sideOf(this.known[prev]) === mine : mine === "V" && p[prev] < this.trust(0.2));
       if (single && trusted && next(r) < 0.3 + 0.6 * press) { this.played.add(`ask:${s.round}`); this.asks.push({ to: prev, card: single }); }
     }
     this.claimsAndAsks(s, r, press, once);
@@ -526,10 +541,10 @@ export class Brain {
     const prior = this.K / Math.max(1, this.n - 1);
     const score = (x: number) => (mine === "V" ? p[x] : (1 - p[x]) * (1 + (this.stone[x] ?? 0) + (this.accusedMe[x] ?? 0)) * 0.5);
     const top = live.reduce((a, b) => (score(b) > score(a) ? b : a), live[0]);
-    const strong = mine === "V" ? p[top] > Math.max(0.55, prior * 1.8) : score(top) > 0.6 && next(r) < this.skill.lies;
+    const strong = mine === "V" ? p[top] > (TRY.includes("a") ? prior + 0.4 * (1 - prior) : Math.max(0.55, prior * 1.8)) : score(top) > 0.6 && next(r) < this.skill.lies;
     if (!strong) return;
-    if (!this.hunched.has(top) && this.hunchRound !== s.round && this.hunched.size < 2 && next(r) < this.talky * 0.5) { this.hunched.add(top); this.hunchRound = s.round; this.out.push({ t: "accuse", target: top }); return; }
-    if (bigMoment !== null && this.resurfaced !== bigMoment && this.hunched.has(top) && next(r) < this.talky * 0.3) { this.resurfaced = bigMoment; this.out.push({ t: "accuse", target: top }); }
+    if (!this.hunched.has(top) && this.hunchRound !== s.round && this.hunched.size < (TRY.includes("x") && mine === "V" ? 2 + Math.floor(this.K / 2) : 2) && next(r) < this.talky * 0.5) { this.hunched.add(top); this.hunchRound = s.round; this.out.push({ t: "accuse", target: top }); return; }
+    if (bigMoment !== null && this.resurfaced !== bigMoment && this.hunched.has(top) && next(r) < this.talky * (TRY.includes("x") && mine === "V" ? 0.7 : 0.3)) { this.resurfaced = bigMoment; this.out.push({ t: "accuse", target: top }); }
   }
 }
 
@@ -556,7 +571,7 @@ function keepScore(b: Brain, s: State, c: Card, hand: Card[]) {
 function choosePass(b: Brain, s: State, keep: number, r: R): Card[] {
   const hand = [...b.me(s).hand], mine = b.side(s), p = b.p(s);
   const nx = nextLiving(s, b.seat);
-  const friend = b.known[nx] ? sideOf(b.known[nx]) === mine : mine === "V" ? p[nx] < 0.15 : false;
+  const friend = b.known[nx] ? sideOf(b.known[nx]) === mine : mine === "V" ? p[nx] < b.trust(0.15) : false;
   const foe = b.known[nx] ? sideOf(b.known[nx]) !== mine : mine === "V" ? p[nx] > 0.5 : false;
   const danger = (b.accusedMe ? Object.values(b.accusedMe).reduce((a, c) => a + c, 0) : 0) + (b.pointed[b.seat] ?? 0) >= 2 && b.pressure(s) > 0.5;
   const lastTurn = s.round >= s.rounds && living(s).every((q) => s.played.includes(q.seat));
@@ -584,7 +599,7 @@ function chooseTurn(b: Brain, s: State, r: R): Move {
   const late = s.round >= s.rounds;
   const pair = (a: Action) => count(hand, a) >= 2;
   const heat = Object.values(b.accusedMe).reduce((a, c) => a + c, 0);
-  if (canDalBadal(s, b.seat) && (heat >= 2 || (late && !hand.some(isStone) && next(r) < 0.5))) return { kind: "dal_badal", targets: dbTargets(b, s, p) };
+  if (canDalBadal(s, b.seat) && (heat >= (TRY.includes("d") ? 1 : 2) || (late && !hand.some(isStone) && next(r) < 0.5))) return { kind: "dal_badal", targets: dbTargets(b, s, p) };
   const sure = o.find((x) => b.known[x] && sideOf(b.known[x]) !== mine);
   if (pair("TEER_KAMAN") && sure !== undefined) return { kind: "teer_kaman", target: sure };
   // [2.4] playing a pair means passing ALL 3 cards left — a Stone too. (owner 2026-11-22) "villagers and thieves both
@@ -592,12 +607,12 @@ function chooseTurn(b: Brain, s: State, r: R): Move {
   // the call to pass the Stone or keep it." Early: hold. Later: play only when the next player is someone I trust.
   if ((EXP.includes("H") || (EXP.includes("h") && mine === "V")) && hand.some(isStone)) {
     const nx = nextLiving(s, b.seat);
-    const trusted = b.known[nx] ? sideOf(b.known[nx]) === mine : mine === "V" ? p[nx] < 0.15 : false;
+    const trusted = b.known[nx] ? sideOf(b.known[nx]) === mine : mine === "V" ? p[nx] < b.trust(0.15) : false;
     const informed = Object.keys(b.known).length > 1 || b.pressure(s) > 0.5;
     if (!informed || !trusted) return { kind: "pass" };
   }
   if (pair("HERA_PHERI")) {
-    const bar = EXP.includes("X") && mine === "V" ? 0.3 : 0.5;
+    const bar = (EXP.includes("X") && mine === "V") || (TRY.includes("h") && mine === "T") ? 0.3 : 0.5;
     const rich = o.filter((x) => (b.stone[x] ?? 0) > bar && (mine === "V" ? p[x] > 0.4 : p[x] < 0.6));
     if (rich.length) return { kind: "play", card: "HERA_PHERI", target: argmax(rich, (x) => b.stone[x]!) };
   }
@@ -615,7 +630,7 @@ function chooseTurn(b: Brain, s: State, r: R): Move {
   if (pair("TEER_KAMAN") && EXP.includes("T")) {
     const best = argmax(o, (x) => tkOdds(b, s, p, x));
     // villagers need better odds than thieves (tuned on scripts/ab-brain.mts to keep the 46-53% balance)
-    const bar = (mine === "V" ? (late ? 0.4 : 0.6) : (late ? 0.25 : 0.4)) - 0.15 * press;
+    const bar = (mine === "V" ? (late ? 0.4 : 0.6) : (late ? 0.25 : 0.4) - (TRY.includes("j") ? 0.1 : 0)) - 0.15 * press;
     if (tkOdds(b, s, p, best) >= bar) return { kind: "teer_kaman", target: best };
   }
   if (pair("BHUKAMP") && next(r) < 0.25) return { kind: "play", card: "BHUKAMP" };
@@ -631,7 +646,7 @@ function tkOdds(b: Brain, s: State, p: number[], x: number): number {
   // roles x cannot have: mine, and every role I know someone else holds
   const taken = new Set(Object.entries(b.known).filter(([seat]) => Number(seat) !== x).map(([, r]) => r));
   // + what players I trust told me: roles they saw on others, and their own claims (a trusted villager's claim is true)
-  const trust = (y: number) => (mine === "V" ? p[y] < 0.3 : false);
+  const trust = (y: number) => (mine === "V" ? p[y] < b.trust(0.3) : false);
   for (const [seat, t] of Object.entries(b.told)) if (Number(seat) !== x && trust(t.from)) taken.add(t.role);
   for (const [seat, r] of Object.entries(b.claims)) if (Number(seat) !== x && trust(Number(seat))) taken.add(r);
   if (b.told[x] && trust(b.told[x].from)) return sideOf(b.told[x].role) === other ? theirSide * 0.9 + 0.1 : 0;
@@ -662,7 +677,7 @@ function chooseVote(b: Brain, s: State, final: boolean, r: R): Move {
   if (mine === "V") {
     // [6.2] the final vote moves the out player's Stones to the OTHER team: a thief out with a Stone = a Stone for us,
     // a villager out with a Stone = a Stone for them. So weigh who holds a Stone, both ways.
-    const swing = (x: number) => ((final || EXP.includes("X")) && EXP.includes("F") ? (b.stone[x] ?? 0) * (2 * p[x] - 1) * 0.6 : 0);
+    const swing = (x: number) => ((final || EXP.includes("X")) && EXP.includes("F") ? (b.stone[x] ?? 0) * (2 * p[x] - 1) * (TRY.includes("o") ? 1.2 : 0.6) : 0);
     const top = argmax(o, (x) => p[x] + mood(x) * (TRY.includes("c") ? 3 : 1) + known(x) + swing(x) + next(r) * 0.02);
     const prior = b.K / Math.max(1, b.n - 1);
     // the FINAL vote: everyone votes (nothing to save the vote for); a Faisla: only when the case is real
@@ -741,7 +756,7 @@ export function decide(b: Brain, s: State, r: R): Move {
 // ---------------------------------------------------------------- one whole game
 export interface GameStats { players: number; winner: Side; reason: string; turns: number; dalBadal: number; tkHit: number; tkMiss: number; faislaOut: number; says: number; talkKinds: Record<string, number>; end: string[] }
 
-export function playGame(n: number, seed: number, skill: Skill, probe?: (s: State, bots: Brain[]) => void): GameStats {
+export function playGame(n: number, seed: number, skill: Skill, probe?: (s: State, bots: Brain[]) => void, done?: (s: State) => void): GameStats {
   let s = newGame(Array.from({ length: n }, (_, i) => `B${i}`), seed);
   const r: R = { rng: (seed * 2654435761) >>> 0 };
   const bots = s.players.map((p) => new Brain(p.seat, skill, 0.45 + next(r) * 0.45, s));
@@ -784,6 +799,7 @@ export function playGame(n: number, seed: number, skill: Skill, probe?: (s: Stat
     if (probe) probe(s, bots);
     s = move(s, who, decide(bots[who], s, r));
   }
+  done?.(s);
   const ev = s.events;
   const over = s.phase.kind === "over" ? s.phase : { winner: "T" as Side, reason: "stuck" };
   return {
