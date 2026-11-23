@@ -10,12 +10,13 @@
 //   ?phase=out      you are out, watching
 //   ?phase=over     the end screen (a thief holds a Stone, one player is out); ?win=V for a village win
 //   ?box=3        open the tap-a-player box on seat 3 (Chat + tags)
+//   ?ask=role     the player after you asks your role out loud (&priv=1 by whisper; ask=stone: your Stones)
 //   ?phone=1      show it inside a true 442×884 phone frame (headless Chrome can't make a window that narrow)
 import { notFound, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Table } from "@/components/table/Table";
 import { EndSheet } from "@/components/table/EndSheet";
-import { move, newGame, view, type Card, type State } from "@/rules/game";
+import { move, newGame, tell, view, type Card, type State } from "@/rules/game";
 import type { TableView } from "@/server/game";
 
 const NAMES = ["Moon", "Pappu", "Babu Rao", "Shyam", "Raju", "Munna", "Neha", "Kabir", "Meera", "Arjun", "Zoya", "Dev"];
@@ -75,7 +76,13 @@ export default function DevTable() {
     s = move(s, c, { kind: "vote", for: b });
     return { s, you: o.you };
   }, [n, onTurn, voting, q, phase]);
-  const [s, setS] = useState(start.s);
+  // ?ask=role|stone (&priv=1): the player beside you asks you, out loud or by whisper (the answer panel)
+  const askQ = q.get("ask") as "role" | "stone" | null, askPriv = q.get("priv") === "1";
+  const [s, setS] = useState(() => {
+    if (!askQ) return start.s;
+    const from = (start.you + 1) % n;
+    return askPriv ? tell(start.s, from, start.you, { t: "ask", target: start.you, what: askQ }) : move(start.s, from, { kind: "say", talk: { t: "ask", target: start.you, what: askQ } });
+  });
   const [deadline] = useState(() => Date.now() + 14000);
   const now = useCallback(() => Date.now(), []);
   const demo = q.get("vote");
@@ -104,7 +111,7 @@ export default function DevTable() {
   return (
     <>
     <Table view={tally ? { ...(view(s, start.you) as TableView), events: [...(view(s, start.you) as TableView).events, tally] } : view(s, start.you) as TableView} deadline={deadline} now={now} initialOpen={open} initialBox={q.get("box") ? Number(q.get("box")) : null}
-      onWhisper={async () => true}
+      onWhisper={async () => true} onTell={async (to, talk) => { try { setS((x) => tell(x, start.you, to, talk)); } catch (e) { alert((e as Error).message); } return true; }}
       onMove={(m) => { try { setS(move(s, start.you, m)); } catch (e) { alert((e as Error).message); } }} />
     {end}
     </>

@@ -2,7 +2,7 @@
 // Phone-side API + live updates. The phone only ever holds its own token and its own redacted view.
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createClient } from "@supabase/supabase-js";
-import type { Move } from "@/rules/game";
+import type { Move, Talk } from "@/rules/game";
 import type { ClientState } from "@/server/game";
 import type { ChatMessage } from "@/server/store";
 import { gamesPlayed } from "./experience";
@@ -50,6 +50,9 @@ export const api = {
     call(`/api/games/${code}/mute`, { method: "POST", token, body: JSON.stringify({ seat, muted }) }),
   whisper: (code: string, token: string, to: number, text: string) =>
     call(`/api/games/${code}/whisper`, { method: "POST", token, body: JSON.stringify({ to, text }) }),
+  /** (2026-11-23) a ready-made whisper — a role or your Stones — to the player beside you, bots included */
+  tell: (code: string, token: string, to: number, talk: Talk) =>
+    call(`/api/games/${code}/whisper`, { method: "POST", token, body: JSON.stringify({ to, talk }) }),
   chat: (code: string, token: string, text: string) =>
     call(`/api/games/${code}/chat`, { method: "POST", token, body: JSON.stringify({ text }) }),
   state: (code: string, token: string, since: number) => call<ClientState>(`/api/games/${code}/state?since=${since}`, { token }),
@@ -138,6 +141,11 @@ export function useGame(code: string) {
     try { await api.whisper(code, token, to, text); await refresh(); return true; } catch (e) { setError((e as Error).message); return false; }
   }, [code, token, refresh]);
 
+  const tellTo = useCallback(async (to: number, talk: Talk) => {
+    if (!token) return false;
+    try { await api.tell(code, token, to, talk); await refresh(); return true; } catch (e) { setError((e as Error).message); return false; }
+  }, [code, token, refresh]);
+
   const now = () => Date.now() + skew.current;
-  return { hydrated, token, state, messages, error, setError, act, say, whisper, reclaim, refresh, now };
+  return { hydrated, token, state, messages, error, setError, act, say, whisper, tellTo, reclaim, refresh, now };
 }

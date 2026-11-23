@@ -7,7 +7,7 @@
 // No separate Pass button. Stones rise only on your own turn. One fixed design size (layout.ts) scaled to the phone.
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { play } from "@/lib/sfx";
-import type { Card, Move } from "@/rules/game";
+import type { Card, Move, Talk } from "@/rules/game";
 import type { TableView } from "@/server/game";
 import { Centre } from "./Centre";
 import { RolesSheet } from "./RolesSheet";
@@ -16,6 +16,7 @@ import { notes as knownNotes, publicTags, type Claim } from "./knowledge";
 import { SecretLayer } from "./SecretLayer";
 import { GearButton, SettingsSheet } from "./SettingsSheet";
 import { ProfileBox, WhisperPanel } from "./ProfileBox";
+import { AnswerPanel } from "./AnswerPanel";
 import { CardFace, LINE } from "./CardSheet";
 import { CARD, isStoneCard } from "@/lib/cards";
 
@@ -57,7 +58,7 @@ const RING = 2 * Math.PI * 19;
 /** when this phone first saw each talk line (by event n + text): its bubble shows for 7 s from then */
 const HEARD = new Map<string, number>();
 
-export function Table({ view, deadline, now, total = 20, onMove, initialOpen = null, voice = null, bots = [], onWhisper, initialBox = null }: {
+export function Table({ view, deadline, now, total = 20, onMove, initialOpen = null, voice = null, bots = [], onWhisper, onTell, initialBox = null }: {
   view: TableView; deadline: number | null; now: () => number; total?: number; onMove: (m: Move) => void;
   /** the bots' seats (they get tags, not chat) */
   bots?: number[];
@@ -65,6 +66,8 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
   initialBox?: number | null;
   /** send a private chat line to one player (owner 2026-11-22) */
   onWhisper?: (to: number, text: string) => Promise<boolean>;
+  /** (2026-11-23) a ready-made whisper (a role, your Stones) to the player beside you — bots read these */
+  onTell?: (to: number, talk: Talk) => Promise<boolean>;
   /** table voice (TableScreen owns the call): the mic button + who is talking */
   voice?: VoiceControls | null;
   /** dev preview only: start with this card's screen open */
@@ -100,6 +103,9 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
   // TAP A PLAYER (owner 2026-11-22): the box (Chat + tags), the chat itself, what you have read
   const [box, setBox] = useState<number | null>(initialBox);
   const [chatWith, setChatWith] = useState<number | null>(null);
+  // (owner 2026-11-23) answering a question put to you, or whispering a fact to the bot beside you
+  const [skipped, setSkipped] = useState<number[]>([]);
+  const [tellTo, setTellTo] = useState<number | null>(null);
   const lastN = view.events.at(-1)?.n ?? 0;
   const [readTo, setReadTo] = useState<Record<number, number>>({});
   const [openedAt] = useState(lastN);
@@ -185,8 +191,8 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
     const k = `${e.n}:${e.msg}`;
     if (!HEARD.has(k) && t !== null) HEARD.set(k, t);
     const at = HEARD.get(k) ?? 0;
-    if (t !== null && t - at < 7000) saying[seat] = { text: e.msg.slice(e.msg.indexOf(":") + 1).trim(), key: e.n };
-  }
+    if (t !== null && t - at < 4000) { for (const k of Object.keys(saying)) delete saying[+k]; saying[seat] = { text: e.msg.slice(e.msg.indexOf(":") + 1).trim(), key: e.n }; }
+  } // (owner 2026-11-23) ONE bubble at a time — only the latest speaker — for 4 s (was every speaker for 7 s)
   // whispers: who whispered in the last 5 s (everyone sees that), and what you haven't read
   const whispering: number[] = [];
   const unread: Record<number, number> = {};
@@ -206,18 +212,36 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
   const mine = (seat: number) => (Object.entries(said[seat] ?? {}) as [Claim, number[]][]).filter(([, who]) => who.includes(you)).map(([c]) => c);
   const tag = (seat: number, c: Claim) => {
     const on = mine(seat).includes(c);
+    // (owner 2026-11-23: "no way to inform that a player doesn't have stone")
+    if (c === "No Stone") { onMove({ kind: "say", talk: on ? { t: "retract", target: seat, what: "stone" } : { t: "stone", target: seat, has: false } }); return; }
     if (c === "Villager" || c === "Thief") {
       onMove({ kind: "say", talk: on ? { t: "retract", target: seat } : c === "Villager" ? { t: "vouch", target: seat } : { t: "accuse", target: seat } });
       return;
     }
     onMove({ kind: "say", talk: { t: "stone", target: seat, has: !on, which: c === "Tunga" ? "TUNGA_STONE" : "BHADRA_STONE" } });
   };
+  // A QUESTION PUT TO YOU (owner 2026-11-23): the latest "what is your role?" / "do you have a Stone?" this round that you
+  // haven't answered (said or whispered a role or a Stone after it) or closed
+  const asked = (() => {
+    if (!me?.alive || view.phase.kind === "over") return null;
+    const roundAt = [...view.events].reverse().find((e) => e.type === "round")?.n ?? 0;
+    let q: { n: number; from: number; what: "role" | "stone"; priv: boolean } | null = null;
+    for (const e of view.events) {
+      if (e.n < roundAt) continue;
+      const d = (e.data ?? {}) as { seat?: number; to?: number; talk?: Talk };
+      const k = d.talk;
+      if (k?.t === "ask" && k.target === you && typeof d.seat === "number" && d.seat !== you && (e.type === "say" || (e.type === "whisper" && d.to === you)))
+        q = { n: e.n, from: d.seat, what: k.what, priv: e.type === "whisper" };
+      else if (q && d.seat === you && (e.type === "say" || e.type === "whisper") && (k?.t === "claim" || k?.t === "stone")) q = null;
+    }
+    return q && !skipped.includes(q.n) ? q : null;
+  })();
   useTableSounds(view, left);
 
   // your cards in their printed near-square shape: big when you hold 2, smaller and overlapping when you hold 5
   const rest = hand.map((c, i) => ({ c, i })).filter(({ i }) => !selIdx.includes(i));
   const n = rest.length;
-  const cw = n <= 2 ? 150 : n === 3 ? 124 : 100;
+  const cw = n <= 2 ? 118 : n === 3 ? 108 : 92; // (owner 2026-11-23: smaller; was 150/124/100)
   const step = n > 1 ? Math.min(cw + 16, (W - 24 - cw) / (n - 1)) : 0;
   const x0 = (W - (cw + step * (n - 1))) / 2;
 
@@ -258,7 +282,7 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
         <div className="absolute inset-x-0 bottom-0 z-[1]" style={{ top: HAND_TOP }}>
           <div className="absolute inset-0 shadow-[0_-10px_24px_rgba(0,0,0,.5)]" style={{ background: "linear-gradient(rgba(2,10,30,.35), rgba(2,8,24,.9)), repeating-linear-gradient(90deg, rgba(255,231,166,.035) 0 1px, transparent 1px 12px), repeating-linear-gradient(0deg, #0e1a3c 0 6px, #0a1532 6px 12px)" }} />
           {!voting && !open && !giving && view.phase.kind !== "over" && (
-            <p className="absolute inset-x-0 top-10 text-center text-[12px] text-[#ffe7a6d9]">
+            <p className="absolute inset-x-0 top-[22px] text-center text-[12px] text-[#ffe7a6d9]">
               {note && t !== null && t < note.until ? note.text
                 : quaking ? `Bhukamp · 1 card goes to ${nextName}`
                 : quakeDone ? "Waiting for the others"
@@ -266,7 +290,7 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
                 : myTurn || passing ? "Your turn" : "Your cards"}
             </p>
           )}
-          <div className="absolute inset-x-0 top-[74px]" style={{ height: cw, visibility: voting || open || view.phase.kind === "over" ? "hidden" : undefined }}>
+          <div className="absolute inset-x-0 top-[44px]" style={{ height: cw, visibility: voting || open || view.phase.kind === "over" ? "hidden" : undefined }}>
             {rest.map(({ c, i }, k) => {
               const off = k - (n - 1) / 2;
               return (
@@ -279,10 +303,10 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
             })}
           </div>
           {!open && choices.length > 0 && (
-            <div className="absolute inset-x-4 bottom-[18px] grid grid-cols-2 gap-2">
+            <div className="absolute inset-x-4 bottom-[12px] grid grid-cols-2 gap-2">
               {choices.map((o) => (
                 <button key={o.key} onClick={() => { play("tap"); o.tap(); }} aria-pressed={o.on}
-                  className={`${choices.length > 2 ? "h-11 text-[14px]" : "h-[52px] text-[15px]"} truncate rounded-2xl px-2 font-bold transition-transform active:scale-95 ${choices.length % 2 && o.key === "pass" ? "col-span-2" : ""}`}
+                  className={`${choices.length > 2 ? "h-10 text-[14px]" : "h-[46px] text-[15px]"} truncate rounded-2xl px-2 font-bold transition-transform active:scale-95 ${choices.length % 2 && o.key === "pass" ? "col-span-2" : ""}`}
                   style={o.on
                     ? { background: "linear-gradient(#3a2a08, #241804)", color: "#ffe7a6", boxShadow: "inset 0 0 0 2px #f7bb1f, 0 0 14px rgba(247,187,31,.45)" }
                     : { background: "linear-gradient(#0d1f4a, #061538)", color: "#ffe7a6", boxShadow: "inset 0 0 0 1.5px rgba(247,187,31,.6)" }}>
@@ -292,7 +316,7 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
             </div>
           )}
           {quaking && up.length === 1 && (
-            <div className="absolute inset-x-4 bottom-[18px] h-[52px]">
+            <div className="absolute inset-x-4 bottom-[12px] h-[46px]">
               <button key="quake"
                 className="tt-pop size-full truncate rounded-2xl bg-gradient-to-b from-[#f7c94a] to-[#e0a020] px-4 text-[16px] font-bold text-[#2a1404] shadow-[inset_0_1px_0_#ffe7a6,0_4px_0_#8a5a08] active:translate-y-0.5"
                 onClick={() => { play("tap"); const card = up[0]; setUp([]); onMove({ kind: "bhukamp", card }); }}>
@@ -301,7 +325,7 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
             </div>
           )}
           {!open && (passReady || playReady) && (
-            <div className="absolute inset-x-4 bottom-[18px] h-[52px]">
+            <div className="absolute inset-x-4 bottom-[12px] h-[46px]">
               <button key={passReady ? "pass" : up[0]}
                 className="tt-pop size-full truncate rounded-2xl bg-gradient-to-b from-[#f7c94a] to-[#e0a020] px-4 text-[16px] font-bold text-[#2a1404] shadow-[inset_0_1px_0_#ffe7a6,0_4px_0_#8a5a08] active:translate-y-0.5"
                 onClick={() => {
@@ -332,10 +356,22 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
         {who !== null && voice && <PlayerSheet key={who} name={view.players[who]?.name ?? ""} muted={voice.muted.includes(who)}
           onMute={(on) => voice.mute(who, on)} onReport={(reason) => voice.report(who, reason)} onClose={() => setWho(null)} />}
         {box !== null && (
-          <ProfileBox view={view} seat={box} self={box === you} bot={box !== you && (bots.includes(box) || !onWhisper)} unread={box === you ? 0 : unread[box] ?? 0}
+          <ProfileBox view={view} seat={box} self={box === you} bot={box !== you && bots.includes(box)} canTell={Boolean(onTell)} unread={box === you ? 0 : unread[box] ?? 0}
             tags={mine(box)} onTag={(x) => tag(box, x)} onClose={() => setBox(null)}
-            onChat={() => { openChat(box); setBox(null); }}
+            onChat={() => { if (bots.includes(box)) { if (onTell) setTellTo(box); } else openChat(box); setBox(null); }}
             onMore={voice && box !== you && !bots.includes(box) ? () => { setWho(box); setBox(null); } : null} />
+        )}
+        {asked && !open && !voting && !giving && tellTo === null && box === null && (
+          <AnswerPanel key={asked.n} you={you} roles={view.rolesInPlay} mode={asked.what}
+            title={`${view.players[asked.from]?.name ?? ""} ${asked.priv ? "whispers" : "asks"}: ${asked.what === "role" ? "what is your role?" : "do you have a Stone?"}`}
+            sub={asked.priv ? "Your answer is whispered back · the table only sees that you whispered" : "Your answer is said out loud · you may bluff"}
+            onSend={async (talks) => { for (const t of talks) { if (asked.priv) await onTell?.(asked.from, t); else onMove({ kind: "say", talk: t }); } }}
+            onClose={() => setSkipped((x) => [...x, asked.n])} />
+        )}
+        {tellTo !== null && onTell && (
+          <AnswerPanel you={you} roles={view.rolesInPlay} mode="both" title={`Whisper to ${view.players[tellTo]?.name ?? ""}`}
+            sub="Only they read it · the table sees that you whispered · you may bluff"
+            onSend={async (talks) => { for (const t of talks) await onTell(tellTo, t); }} onClose={() => setTellTo(null)} />
         )}
         {chatWith !== null && onWhisper && <WhisperPanel view={view} seat={chatWith} onSend={(x) => onWhisper(chatWith, x)} onClose={() => openChat(null)} />}
         {giving && <GiftPanel view={view} picked={picked} setPicked={setPicked} onMove={(m) => { play("tap"); onMove(m); }} />}
@@ -352,9 +388,9 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
   );
 }
 
-/** printed faces are 600×513; one card raised = 140 wide, two = 128 each, three = 104 each. Tap one to drop it back. */
+/** printed faces are 600×513; one card raised = 112 wide, two = 100 each, three = 84 each (owner 2026-11-23: smaller). Tap one to drop it back. */
 function RaisedCards({ cards, onDrop, onClose }: { cards: Card[]; onDrop: ((k: number) => void) | null; onClose: (() => void) | null }) {
-  const w = cards.length === 1 ? 140 : cards.length === 2 ? 128 : 104, gap = cards.length === 3 ? 8 : 12;
+  const w = cards.length === 1 ? 112 : cards.length === 2 ? 100 : 84, gap = cards.length === 3 ? 8 : 10;
   const h = Math.round(w * (513 / 600));
   const total = cards.length * w + (cards.length - 1) * gap;
   const top = HAND_TOP - h - 6;
@@ -403,7 +439,7 @@ function GiftPanel({ view, picked, setPicked, onMove }: {
           );
         })}
       </div>
-      <div className="absolute inset-x-4 bottom-[18px] grid h-[52px] place-items-center">
+      <div className="absolute inset-x-4 bottom-[12px] grid h-[46px] place-items-center">
         {to !== undefined ? (
           <button key={to} onClick={() => onMove({ kind: "gift", to })}
             className="tt-pop size-full truncate rounded-2xl bg-gradient-to-b from-[#f7c94a] to-[#e0a020] px-4 text-[16px] font-bold text-[#2a1404] shadow-[inset_0_1px_0_#ffe7a6,0_4px_0_#8a5a08] active:translate-y-0.5">
@@ -487,7 +523,7 @@ function PlayerSheet({ name, muted, onMute, onReport, onClose }: {
                 className="h-11 truncate rounded-xl px-2 text-[13px] font-semibold active:scale-95" style={pill(reason === r)}>{r}</button>
             ))}
           </div>
-          <div className="absolute inset-x-4 bottom-[18px] grid h-[52px] place-items-center">
+          <div className="absolute inset-x-4 bottom-[12px] grid h-[46px] place-items-center">
             {reason ? (
               <button disabled={busy} onClick={async () => { play("tap"); setBusy(true); await onReport(reason); onMute(true); setStep("sent"); }}
                 className="tt-pop size-full truncate rounded-2xl bg-gradient-to-b from-[#f7c94a] to-[#e0a020] px-4 text-[16px] font-bold text-[#2a1404] shadow-[inset_0_1px_0_#ffe7a6,0_4px_0_#8a5a08] active:translate-y-0.5 disabled:opacity-60">

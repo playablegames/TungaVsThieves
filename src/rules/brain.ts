@@ -1052,13 +1052,22 @@ export function playGame(n: number, seed: number, skill: Skill | ((seat: number)
     const big = ph.kind === "vote" || ph.kind === "aim" ? s.events.length : null;
     const fresh = big !== null && lastBig === -1 ? big : null;
     if (big !== null && lastBig === -1) lastBig = big; if (big === null) lastBig = -1;
+    // ONE VOICE AT A TIME, exactly as the server (owner 2026-11-23): one line out loud and at most one whisper per move
+    const said: { seat: number; talk: Talk; prio: number }[] = [];
+    const priv: (() => State)[] = [];
     for (const b of bots) {
       b.read(s, r);
       b.hunch(s, r, fresh);
       if (EXP.includes("S")) b.scheme(s, r);
-      for (const a of b.asks.splice(0)) if (s.phase.kind !== "over") s = ask(s, b.seat, a.to, a.card);
-      for (const w of b.tells.splice(0)) if (s.phase.kind !== "over") s = tell(s, b.seat, w.to, w.talk);
-      for (const t of b.out.splice(0)) { if (s.phase.kind === "over") break; s = move(s, b.seat, { kind: "say", talk: t }); }
+      for (const a of b.asks.splice(0)) { const at = s; priv.push(() => ask(at, b.seat, a.to, a.card)); }
+      for (const w of b.tells.splice(0)) { const at = s; priv.push(() => tell(at, b.seat, w.to, w.talk)); }
+      for (const t of b.out.splice(0).slice(0, 2)) said.push({ seat: b.seat, talk: t, prio: talkPriority(s, b.seat, t) });
+    }
+    if (priv.length) { try { s = priv[Math.floor(next(r) * priv.length)](); } catch { /* seats moved */ } }
+    if (said.length && (s.phase as { kind: string }).kind !== "over") {
+      const top = Math.max(...said.map((l) => l.prio)), best = said.filter((l) => l.prio === top);
+      const l = best[Math.floor(next(r) * best.length)];
+      s = move(s, l.seat, { kind: "say", talk: l.talk });
     }
     if (s.phase.kind === "over") break;
     if (s.phase.kind === "aim") {
@@ -1116,3 +1125,18 @@ function endNotes(s: State): string[] {
 
 /** for scripts/teams.mts: the team table the bots' games use (tsx may load game.ts twice — this is the bots' copy) */
 export { TABLE as BOT_TABLE } from "./game";
+
+/** who gets the one line (owner 2026-11-23): answering about yourself 3 · hitting back at whoever accused you 2 ·
+ *  news about someone else 1 · a reaction 0 */
+export function talkPriority(s: State, seat: number, t: Talk): number {
+  if (t.t === "claim" || (t.t === "stone" && t.target === seat)) return 3;
+  if (t.t === "react") return 0;
+  if (t.t === "accuse") {
+    const back = s.events.slice(-30).some((e) => {
+      const d = e.data as { seat?: number; talk?: Talk } | undefined;
+      return e.type === "say" && d?.talk?.t === "accuse" && d.talk.target === seat && d.seat === t.target;
+    });
+    if (back) return 2;
+  }
+  return 1;
+}

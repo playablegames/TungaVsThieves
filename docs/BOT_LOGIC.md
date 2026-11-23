@@ -272,3 +272,13 @@ how human it feels, how often it happens — and 48 were built (`Habits` in `src
 - **Checks:** `src/server/bots.test.ts` (a rebuilt bot = the live bot), `src/server/secrets.test.ts` (a bot with every
   secret wiped believes and decides the same — a planted cheat makes it fail), `scripts/habits.mts` (habit counts and
   balance; `BRAIN_HABITS=0` = the clean bots, `BRAIN_OFF=herd,gut` = single habits off).
+
+## 13. One voice at a time (owner 2026-11-23: "every bot chats at once — too messy")
+
+After each move only ONE bot says ONE line out loud, and at most one whisper goes (`BotTable.talk`, mirrored in
+`playGame`). Who speaks (`talkPriority`): answering about yourself 3 · hitting back at whoever accused you 2 · news
+about someone else 1 · a reaction 0; ties by coin. The phone shows one bubble (the latest) for 4 s. People can answer a
+bot's question (AnswerPanel: role buttons, Stone buttons, "Not telling") and whisper a role or their Stones to the bot
+beside them (`tellPlayer` → the rules' `tell`, left/right only); bots read these exactly like another bot's whisper.
+Balance after this + the own-3-cards rule (200 games each): 4p 69 · 5p 71 · 6p 49 · 7p 54 · 8p 49 · 9p 50 · 10p 41 ·
+11p 50 · 12p 48.

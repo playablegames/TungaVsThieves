@@ -104,7 +104,7 @@ export function CardPanel({ card, view, myTurn, thief, shooting, picked, setPick
             </button>
           ))}
         </div>
-        <div className="absolute inset-x-4 bottom-[18px] grid h-[52px] place-items-center">
+        <div className="absolute inset-x-4 bottom-[12px] grid h-[46px] place-items-center">
           {action ? (
             <button key={action.label} onClick={() => onMove(action.move)}
               className="tt-pop size-full truncate rounded-2xl bg-gradient-to-b from-[#f7c94a] to-[#e0a020] px-4 text-[16px] font-bold text-[#2a1404] shadow-[inset_0_1px_0_#ffe7a6,0_4px_0_#8a5a08] active:translate-y-0.5">

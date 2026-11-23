@@ -11,7 +11,7 @@ import { BotTable, talkyOf, type BotSeat } from "./bots";
 import { ping, store, type ChatMessage, type GameRow, type Timers } from "./store";
 import { NAME_MAX } from "@/lib/names";
 import { filmFor } from "@/components/table/films";
-import { ACTIONS, besideMe, closeVoteNow, move, newGame, RuleError, TABLE, timeoutMove, view, waitingOn, type Move, type State } from "@/rules/game";
+import { ACTIONS, besideMe, closeVoteNow, move, newGame, RuleError, TABLE, tell, timeoutMove, view, waitingOn, type Move, type State } from "@/rules/game";
 
 export class HttpError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -327,7 +327,7 @@ const talk = z.discriminatedUnion("t", [
   z.object({ t: z.literal("saw_cards"), target: seat, cards: z.array(card).max(3) }),
   z.object({ t: z.literal("saw_role"), target: seat, role: z.string().max(20) }),
   z.object({ t: z.literal("ask"), target: seat, what: z.enum(["role", "stone"]) }),
-  z.object({ t: z.literal("retract"), target: seat }),
+  z.object({ t: z.literal("retract"), target: seat, what: z.literal("stone").optional() }),
   z.object({ t: z.literal("react"), emoji: z.enum(["cry", "cheer", "shock", "doubt", "angry", "shh"]) }),
 ]);
 /** the shape of a move from a phone; the rules then check whether it is legal */
@@ -563,6 +563,31 @@ export async function whisper(code: string, token: string | null, to: unknown, t
     if (!besideMe(s.players, at).includes(seat)) throw new HttpError(422, "Whisper only to the player on your left or right");
     s.events.push({ n: s.events.length, to: [at, seat], type: "whisper", msg: t, data: { seat: at, to: seat } });
     s.events.push({ n: s.events.length, to: "all", type: "whisper_seen", msg: `${row.lobby[at].name} whispers to ${row.lobby[seat].name}.`, data: { seat: at, to: seat } });
+    return row;
+  });
+}
+
+/** WHISPER A FACT (owner 2026-11-23: "how do I as a player pass role info to bots"): a ready-made whisper — "I am Kisaan",
+ *  "I have the Tunga Stone", "I have no Stone" — to the player on your left or right, bots included (bots can't read typed
+ *  chat, but they read these exactly like another bot's whisper). Also answers a bot that asked you by whisper. */
+const tellable = z.discriminatedUnion("t", [
+  z.object({ t: z.literal("claim"), role: z.string().max(20) }),
+  z.object({ t: z.literal("stone"), target: seat, has: z.boolean(), which: z.enum(["TUNGA_STONE", "BHADRA_STONE"]).optional() }),
+]);
+export async function tellPlayer(code: string, token: string | null, to: unknown, what: unknown) {
+  const parsed = tellable.safeParse(what);
+  if (!parsed.success) throw new HttpError(400, "Pick something to whisper");
+  await mutate(code, (row) => {
+    const s = row.state;
+    if (!s || s.phase.kind === "over") throw new HttpError(409, "The game isn't on");
+    const at = seatOf(row, token), seatTo = Number(to);
+    const key = `${row.code}:${at}`, now = Date.now();
+    if (now - (lastChat.get(key) ?? 0) < chatLimit.gapMs / 2) throw new HttpError(429, "Slow down");
+    lastChat.set(key, now);
+    const t = parsed.data;
+    if (t.t === "claim" && !s.rolesInPlay.includes(t.role)) throw new HttpError(400, "That role isn't in this game");
+    if (t.t === "stone" && t.target !== at) throw new HttpError(400, "Whisper about yourself");
+    try { row.state = tell(s, at, seatTo, t); } catch (e) { if (e instanceof RuleError) throw new HttpError(422, e.message); throw e; }
     return row;
   });
 }

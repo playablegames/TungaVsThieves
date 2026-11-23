@@ -8,7 +8,7 @@ import { tagColour } from "./ProfileBox";
 import type { Claim } from "./knowledge";
 import { W, seatSpot } from "./layout";
 
-export interface SeatInfo { seat: number; name: string; alive: boolean; cards?: number; role?: string | null }
+export interface SeatInfo { seat: number; name: string; alive: boolean; cards?: number; role?: string | null; hand?: string[] | null }
 
 export function Seats({ players, you, myRole, active, reveal = false, votes = {}, picked = [], hideYou = false, talking = [], muted = [], onSeat, doing = {}, saying = {}, notes = {}, whispering = [], unread = {}, says = {} }: {
   players: SeatInfo[]; you: number; myRole: string | null; active: number[];
@@ -81,6 +81,18 @@ export function Seats({ players, you, myRole, active, reveal = false, votes = {}
                   style={isThiefRole(notes[p.seat].role!) ? { background: "#3a0d10f0", color: "#ff8a7a", boxShadow: "inset 0 0 0 1px #ff8a7a" } : { background: "#2a1d04f0", color: "#f7bb1f", boxShadow: "inset 0 0 0 1px #f7bb1f" }}
                   aria-label={`You know ${p.name} is ${notes[p.seat].role}`}>{notes[p.seat].role}</span>
               )}
+              {reveal && (p.hand ?? []).some((c) => c === "TUNGA_STONE" || c === "BHADRA_STONE") && (
+                // THE END (owner 2026-11-23: "I was instinctively searching where the Stone was"): the Stones they held, above their card
+                <span className="absolute -top-[30px] left-1/2 flex -translate-x-1/2 gap-0.5" aria-label={`${p.name} held ${(p.hand ?? []).filter((c) => c.endsWith("_STONE")).map((c) => (c === "TUNGA_STONE" ? "the Tunga Stone" : "the Bhadra Stone")).join(" and ")}`}>
+                  {(p.hand ?? []).filter((c) => c === "TUNGA_STONE" || c === "BHADRA_STONE").map((c) => (
+                    <img key={c} src={c === "TUNGA_STONE" ? "/art/v2/stone_tunga-art.webp" : "/art/v2/stone_bhadra-art.webp"} alt="" className="size-[30px] object-contain drop-shadow-[0_2px_4px_rgba(0,0,0,.7)]" />
+                  ))}
+                </span>
+              )}
+              {doing[p.seat] && !me && (
+                // what they did this round, ON their own card (owner 2026-11-23: under the name it ran into the seat below)
+                <span className="absolute inset-x-[-6px] top-[4px] truncate rounded-md bg-[#0c2c6bf0] px-1 py-[1px] text-center text-[10.5px] font-semibold text-[#ffe7a6] shadow-[inset_0_0_0_1px_rgba(247,187,31,.45)]">{doing[p.seat]}</span>
+              )}
               {(votes[p.seat] ?? 0) > 0 && (
                 <span key={votes[p.seat]} className="tt-pop absolute -right-[9px] -top-2 grid h-[22px] min-w-[22px] place-items-center rounded-full bg-[#e8434b] px-1 text-[12px] font-bold text-white shadow-[0_0_0_2px_#021230]"
                   aria-label={`${votes[p.seat]} votes`}>{votes[p.seat]}</span>
@@ -111,9 +123,7 @@ export function Seats({ players, you, myRole, active, reveal = false, votes = {}
             {notes[p.seat]?.cards && !me && (
               <div className="mt-0.5 max-w-[124px] truncate rounded-md bg-[#2a1d04e6] px-2 py-[1px] text-[10.5px] font-semibold text-[#f7bb1f] shadow-[inset_0_0_0_1px_rgba(247,187,31,.5)]">{notes[p.seat].cards}</div>
             )}
-            {doing[p.seat] && !me && (
-              <div className="mt-0.5 max-w-[120px] truncate rounded-md bg-[#0c2c6be6] px-2 py-[1px] text-[11px] font-semibold text-[#ffe7a6]">{doing[p.seat]}</div>
-            )}
+
           </div>
         );
       })}

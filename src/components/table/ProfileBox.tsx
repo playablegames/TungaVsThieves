@@ -10,18 +10,20 @@ import { besideMe } from "@/rules/game";
 import type { TableView } from "@/server/game";
 import { H, HAND_TOP, W, seatSpot } from "./layout";
 
-export type Tag = "Villager" | "Thief" | "Tunga" | "Bhadra";
-export const TAGS: Tag[] = ["Villager", "Thief", "Tunga", "Bhadra"];
+export type Tag = "Villager" | "Thief" | "Tunga" | "Bhadra" | "No Stone";
+export const TAGS: Tag[] = ["Villager", "Thief", "Tunga", "Bhadra", "No Stone"]; // No Stone: owner 2026-11-23
 
-export const tagColour = (t: Tag) => (t === "Thief" ? "#ff8a7a" : t === "Villager" ? "#7ee0a1" : "#f7bb1f");
+export const tagColour = (t: Tag) => (t === "Thief" ? "#ff8a7a" : t === "Villager" ? "#7ee0a1" : t === "No Stone" ? "#b9c4dd" : "#f7bb1f");
 
 const pill = (on: boolean, c: string) => on
   ? { background: `${c}26`, color: c, boxShadow: `inset 0 0 0 2px ${c}` }
   : { background: "linear-gradient(#0d1f4a, #061538)", color: "#ffe7a6", boxShadow: "inset 0 0 0 1px rgba(247,187,31,.45)" };
 
 /** the box, opening from the seat you tapped (above it, or below it for the seats at the top of the table) */
-export function ProfileBox({ view, seat, bot, tags, onTag, onChat, onMore, onClose, unread, self = false }: {
+export function ProfileBox({ view, seat, bot, tags, onTag, onChat, onMore, onClose, unread, self = false, canTell = false }: {
   view: TableView; seat: number; bot: boolean; tags: Tag[]; unread: number;
+  /** (2026-11-23) bots beside you take a ready-made whisper (a role, your Stones) */
+  canTell?: boolean;
   /** YOUR own profile (owner 2026-11-22): Chat = say it to everyone; tags = what you claim out loud */
   self?: boolean;
   onTag: (t: Tag) => void; onChat: () => void; onMore: (() => void) | null; onClose: () => void;
@@ -41,9 +43,9 @@ export function ProfileBox({ view, seat, bot, tags, onTag, onChat, onMore, onClo
         style={{ width: BW, left, ...(below ? { top: y + 66 } : { bottom: H - (y - 50) }),
           background: "linear-gradient(rgba(12,44,107,.98), rgba(2,18,48,.98))", transformOrigin: below ? "50% 0" : "50% 100%" }}>
         <p className="truncate text-center font-[family-name:var(--font-cinzel)] text-[14px] font-bold tracking-[1.5px] text-[#f7bb1f]">{self ? "YOU" : name.toUpperCase()}</p>
-        {!self && <button disabled={bot || !near} onClick={() => { play("tap"); onChat(); }}
+        {!self && <button disabled={!near || (bot && !canTell)} onClick={() => { play("tap"); onChat(); }}
           className="relative mt-2.5 h-12 w-full rounded-2xl bg-gradient-to-b from-[#f7c94a] to-[#e0a020] text-[16px] font-bold text-[#2a1404] shadow-[inset_0_1px_0_#ffe7a6,0_4px_0_#8a5a08] transition-transform active:translate-y-0.5 disabled:from-[#3a3f55] disabled:to-[#2a2f44] disabled:text-[#ffe7a680] disabled:shadow-none">
-          {bot ? "Bots don't chat" : near ? "Chat" : "Whisper left or right only"}
+          {!near ? "Whisper left or right only" : bot ? "Whisper" : "Chat"}
           {unread > 0 && <span className="absolute -right-1.5 -top-1.5 grid h-[22px] min-w-[22px] place-items-center rounded-full bg-[#e8434b] px-1 text-[12px] font-bold text-white shadow-[0_0_0_2px_#021230]">{unread}</span>}
         </button>}
         <p className="mt-2 text-center text-[11px] text-[#ffe7a68c]">{self ? "Tell everyone about you" : `Tell everyone about ${name}`}</p>
@@ -52,7 +54,7 @@ export function ProfileBox({ view, seat, bot, tags, onTag, onChat, onMore, onClo
             const on = tags.includes(t);
             return (
               <button key={t} onClick={() => { play("tap"); onTag(t); }} aria-pressed={on}
-                className="h-10 rounded-xl text-[14px] font-semibold transition-transform active:scale-95" style={pill(on, tagColour(t))}>{t}</button>
+                className={`${t === "No Stone" ? "col-span-2" : ""} h-10 rounded-xl text-[14px] font-semibold transition-transform active:scale-95`} style={pill(on, tagColour(t))}>{t}</button>
             );
           })}
         </div>

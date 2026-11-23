@@ -36,7 +36,7 @@ export function VoteSheet({ view, onMove }: { view: TableView; onMove: (m: Move)
   return (
     // a PANEL over your cards (owner 2026-11-20: keep the table in view) — the courtyard above stays live: red bubbles on
     // the seats, the latest vote in the centre, the clock top right
-    <div className="absolute inset-x-0 bottom-0 z-[4] flex flex-col px-3 pb-4 pt-6" style={{ top: HAND_TOP + 14 }} role="group" aria-label={ph.final ? "Final vote" : "Faisla vote"}>
+    <div className="absolute inset-x-0 bottom-0 z-[4] flex flex-col px-3 pb-3 pt-3" style={{ top: HAND_TOP + 6 }} role="group" aria-label={ph.final ? "Final vote" : "Faisla vote"}>
       <div className="flex items-baseline justify-center gap-2">
         <h3 className="text-[17px] font-bold text-white">{ph.final ? "Final vote — who goes out?" : "Who goes out?"}</h3>
         {/* you have no button (no self vote), so the votes on YOU show here */}
@@ -44,7 +44,7 @@ export function VoteSheet({ view, onMove }: { view: TableView; onMove: (m: Move)
           {(count[you] ?? 0) > 0 ? `· ${count[you]} on you` : ""}
         </span>
       </div>
-      <div className="mt-3 grid grid-cols-3 gap-2">
+      <div className={`mt-2 grid gap-1.5 ${others.length > 8 ? "grid-cols-4" : "grid-cols-3"}`}>
         {others.map((p) => {
           const on = mine?.for === p.seat;
           const n = count[p.seat] ?? 0;
@@ -52,7 +52,7 @@ export function VoteSheet({ view, onMove }: { view: TableView; onMove: (m: Move)
           return (
             <button key={p.seat} onClick={() => cast(p.seat)} aria-pressed={on}
               aria-label={`${p.name}, ${n} vote${n === 1 ? "" : "s"}${on ? ", your vote" : ""}${voted ? ", has voted" : ""}`}
-              className="relative flex h-11 items-center justify-center gap-1 rounded-xl px-2 text-[14px] font-semibold transition-transform active:scale-95"
+              className="relative flex h-10 items-center justify-center gap-1 rounded-xl px-1.5 text-[13.5px] font-semibold transition-transform active:scale-95"
               style={on
                 ? { background: "linear-gradient(#3a2a08, #241804)", color: "#ffe7a6", boxShadow: "inset 0 0 0 2px #f7bb1f, 0 0 16px rgba(247,187,31,.45)" }
                 : { background: "linear-gradient(#0d1f4a, #061538)", color: "#fff", boxShadow: "inset 0 0 0 1px rgba(247,187,31,.5)" }}>
@@ -65,7 +65,7 @@ export function VoteSheet({ view, onMove }: { view: TableView; onMove: (m: Move)
           );
         })}
         <button onClick={() => cast(null)} aria-pressed={mine?.for === null}
-          className="h-11 rounded-xl border-2 border-dashed text-[12.5px] font-semibold uppercase tracking-wide"
+          className="h-10 rounded-xl border-2 border-dashed text-[12px] font-semibold uppercase tracking-wide"
           style={mine?.for === null ? { borderColor: "#f7bb1f", color: "#ffe7a6" } : { borderColor: "rgba(247,187,31,.45)", color: "#ffe7a6b3" }}>
           No vote
         </button>

@@ -2,7 +2,7 @@
 // from a stored game. A server call has no memory between requests, so each call rebuilds every bot's brain from the
 // game's own log: it reads the OLD events quietly (beliefs only, no talk), then the NEW ones out loud (it may answer).
 // What a bot already said is read back from the log, so a rebuilt bot never says the same hunch twice.
-import { Brain, decide, reconsider, SKILLS, talkyOf, type SkillName } from "@/rules/brain";
+import { Brain, decide, reconsider, SKILLS, talkPriority, talkyOf, type SkillName } from "@/rules/brain";
 import { next } from "@/rules/rng";
 import { ask, move, tell, type Move, type State, type Talk } from "@/rules/game";
 
@@ -56,24 +56,31 @@ export class BotTable {
     return decide(this.brain(seat, s), s, this.r);
   }
 
-  /** every bot reads what just happened and may say up to MAX_LINES; run twice so a bot can answer another bot */
+  /** ONE VOICE AT A TIME (owner 2026-11-23: "every bot chats at once — too messy and off putting"): every bot reads what
+   *  just happened, but after each move only ONE bot says ONE thing out loud, and at most one whisper goes. Who speaks:
+   *  a bot answering a question or defending itself first, then whoever has the most to say; the rest stay quiet. */
   talk(s: State): State {
-    for (let pass = 0; pass < 2; pass++) {
-      let said = false;
-      for (const bot of this.bots) {
-        if (s.phase.kind === "over") return s;
-        const b = this.brain(bot.seat, s);
-        b.hunch(s, this.r, bigMoment(s));
-        b.scheme(s, this.r);
-        for (const a of b.asks.splice(0)) { if (s.phase.kind === "over") return s; s = ask(s, bot.seat, a.to, a.card); said = true; }
-        for (const w of b.tells.splice(0)) { if (s.phase.kind === "over") return s; s = tell(s, bot.seat, w.to, w.talk); said = true; }
-        for (const t of b.out.splice(0).slice(0, MAX_LINES)) {
-          if (s.phase.kind === "over") return s;
-          s = move(s, bot.seat, { kind: "say", talk: t });
-          said = true;
-        }
-      }
-      if (!said) break;
+    type Line = { seat: number; talk: Talk; prio: number };
+    const said: Line[] = [];
+    const priv: (() => State)[] = [];
+    for (const bot of this.bots) {
+      if (s.phase.kind === "over") return s;
+      const b = this.brain(bot.seat, s);
+      b.hunch(s, this.r, bigMoment(s));
+      b.scheme(s, this.r);
+      for (const a of b.asks.splice(0)) { const at = s; priv.push(() => ask(at, bot.seat, a.to, a.card)); }
+      for (const w of b.tells.splice(0)) { const at = s; priv.push(() => tell(at, bot.seat, w.to, w.talk)); }
+      for (const t of b.out.splice(0).slice(0, MAX_LINES)) said.push({ seat: bot.seat, talk: t, prio: talkPriority(s, bot.seat, t) });
+    }
+    if (priv.length && s.phase.kind !== "over") {
+      const pick = priv[Math.floor(next(this.r) * priv.length)];
+      try { s = pick(); } catch { /* the seats moved since: skip it */ }
+    }
+    if (said.length && s.phase.kind !== "over") {
+      const top = Math.max(...said.map((l) => l.prio));
+      const best = said.filter((l) => l.prio === top);
+      const l = best[Math.floor(next(this.r) * best.length)];
+      s = move(s, l.seat, { kind: "say", talk: l.talk });
     }
     return s;
   }
@@ -162,3 +169,4 @@ function remember(b: Brain, s: State) {
     if (moment >= 0) b.resurfaced = moment;
   }
 }
+
