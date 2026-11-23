@@ -91,7 +91,8 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
   });
   const [picked, setPicked] = useState<number[]>([]);
   const [note, setNote] = useState<{ text: string; until: number } | null>(null);
-  // [1.4c] roles in play: shown once when a game opens (before anyone has passed), and on tapping the round chip
+  // [1.4c] roles in play: shown once when a game opens (before anyone has passed), and on tapping ROUND in the middle.
+  // (owner 2026-11-23: "let both be there, be safe") kept as well as the roles face up in the lobby
   const [rolesOpen, setRolesOpen] = useState(() => {
     if (initialBox !== null || view.phase.kind === "over") return false; // dev preview of the player box · the game already ended
     // once per game per phone (a game = its players + roles); round 1 only
@@ -128,8 +129,10 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
   const thief = me?.side === "T";
   const playable = (c: Card) => !isStoneCard(c) && c !== "DAL_BADAL";
   const pair = up.length === 2 && up[0] === up[1] && playable(up[0]);
-  const dalAlone = up.length === 1 && up[0] === "DAL_BADAL" && thief;
-  const playReady = myTurn && (pair || dalAlone);
+  // (owner 2026-11-23) Dal Badal is played holding 2 cards: Dal Badal + the one you keep; the other 3 go on by themselves
+  const dalPick = up.length === 1 && up[0] === "DAL_BADAL" && thief && myTurn;
+  const dalReady = up.length === 2 && up[0] === "DAL_BADAL" && thief;
+  const playReady = myTurn && (pair || dalReady);
   // the card whose screen fills the bottom area (CardPanel), if any
   const open: Card | null = voting ? null : shooting ? "TEER_KAMAN"
     : playReady && armed === moment && !NO_NAMES.has(up[0]) ? up[0]
@@ -149,6 +152,7 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
         const twin = hand.findIndex((c, j) => j !== i && c === hand[i]);
         if (twin >= 0) { setUp([i, twin]); return; } // the FIRST card you tap brings its pair up with it
       }
+      if (myTurn && thief && selIdx.length === 1 && hand[selIdx[0]] === "DAL_BADAL" && passMode !== moment) { setUp([...selIdx, i], true); return; } // + the card you keep
       if (selIdx.length < Math.max(passN, myTurn ? 1 : 0)) setUp([...selIdx, i]);
       return;
     }
@@ -165,7 +169,7 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
       if (idx.length === 2) choices.push({ key: c, label: `Play ${CARD[c].name}`, on: false, tap: () => { setPassMode(null); setUp(idx, !NO_NAMES.has(c)); } });
     }
     const db = hand.indexOf("DAL_BADAL");
-    if (thief && db >= 0) choices.push({ key: "DAL_BADAL", label: "Play Dal Badal", on: false, tap: () => { setPassMode(null); setUp([db], true); } });
+    if (thief && db >= 0) choices.push({ key: "DAL_BADAL", label: "Play Dal Badal", on: false, tap: () => { setPassMode(null); setUp([db]); } });
     if (passN > 0) choices.push({ key: "pass", label: `Pass ${passN} cards`, on: passMode === moment, tap: () => setPassMode(moment) });
   }
   const drop = (i: number) => { play("tap"); setUp(selIdx.filter((x) => x !== i)); };
@@ -291,6 +295,7 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
                 : quaking ? `Bhukamp · 1 card goes to ${nextName}`
                 : quakeDone ? "Waiting for the others"
                 : out ? "You're out · you can still talk"
+                : dalPick ? "Tap the card you keep with Dal Badal"
                 : myTurn || passing ? "Your turn" : "Your cards"}
             </p>
           )}
@@ -350,7 +355,7 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
         )}
         {shooting && up.length === 0 && <RaisedCards cards={["TEER_KAMAN", "TEER_KAMAN"]} onDrop={null} onClose={null} />}
         {open && (
-          <CardPanel key={open} card={open} view={view} myTurn={myTurn} thief={thief} shooting={shooting}
+          <CardPanel key={open} card={open} view={view} myTurn={myTurn} thief={thief} shooting={shooting} keep={open === "DAL_BADAL" && dalReady ? up[1] : undefined}
             picked={picked} setPicked={setPicked}
             onMove={(m) => { play("tap"); if (m.kind !== "teer_kaman") setUp([]); onMove(m); }} />
         )}

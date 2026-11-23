@@ -337,7 +337,7 @@ export const MoveSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("teer_kaman"), target: seat }),
   z.object({ kind: z.literal("shoot"), roles: z.array(z.string().max(20)).min(1).max(2) }),
   z.object({ kind: z.literal("say"), talk }),
-  z.object({ kind: z.literal("dal_badal"), targets: z.array(seat).max(3) }),
+  z.object({ kind: z.literal("dal_badal"), targets: z.array(seat).max(3), keep: card.optional() }),
   z.object({ kind: z.literal("pass") }),
   z.object({ kind: z.literal("give"), cards: z.array(card).max(3) }),
   z.object({ kind: z.literal("vote"), for: seat.nullable(), extra: z.boolean().optional() }),

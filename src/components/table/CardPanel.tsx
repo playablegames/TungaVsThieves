@@ -43,8 +43,10 @@ const btn = (on: boolean) => on
   : { background: "linear-gradient(#0d1f4a, #061538)", color: "#fff", boxShadow: "inset 0 0 0 1px rgba(247,187,31,.5)" };
 
 /** the players you have picked so far (the table makes them glow too) — kept by Table so seats can show it */
-export function CardPanel({ card, view, myTurn, thief, shooting, picked, setPicked, onMove }: {
+export function CardPanel({ card, view, myTurn, thief, shooting, picked, setPicked, onMove, keep }: {
   card: Card; view: TableView; myTurn: boolean; thief: boolean; shooting: boolean;
+  /** Dal Badal: the card raised with it, which you keep */
+  keep?: Card;
   picked: number[]; setPicked: (p: number[]) => void; onMove: (m: Move) => void;
 }) {
   const [roles, setRoles] = useState<string[]>([]);
@@ -62,7 +64,7 @@ export function CardPanel({ card, view, myTurn, thief, shooting, picked, setPick
     options = others.map((p) => ({ key: String(p.seat), label: p.name, on: picked.includes(p.seat), tap: () => toggle(p.seat) }));
     if (card === "DAL_BADAL") {
       question = `Dal Badal: pick ${step.count} (${picked.length} of ${step.count})`;
-      if (picked.length === step.count) action = { label: "Play Dal Badal", move: { kind: "dal_badal", targets: picked } };
+      if (picked.length === step.count) action = { label: "Play Dal Badal", move: { kind: "dal_badal", targets: picked, ...(keep ? { keep } : {}) } };
       else hint = `Tap ${step.count - picked.length} more`;
     } else {
       question = QUESTION[card] ?? "On who?";

@@ -70,7 +70,7 @@ export type Move =
   | { kind: "teer_kaman"; target: number }        // aim [3.7]
   | { kind: "shoot"; roles: string[] }            // name the role(s) [3.7]
   | { kind: "say"; talk: Talk }                   // TALK — anyone, any time, never checked for truth (SITUATIONS.md §0)
-  | { kind: "dal_badal"; targets: number[] }
+  | { kind: "dal_badal"; targets: number[]; keep?: Card } // keep: the one card you hold on to (owner 2026-11-23)
   | { kind: "pass" }                              // [2.5] play nothing
   | { kind: "give"; cards: Card[] }               // the 3 cards to pass — on your turn it is also PASS in one move (owner 2026-11-21)
   | { kind: "vote"; for: number | null; extra?: boolean }
@@ -338,7 +338,7 @@ export function apply(state: State, seat: number, m: Move): State {
 
   if (m.kind === "dal_badal") {
     if (!canDalBadal(s, seat)) throw new RuleError("You can't play Dal Badal now");
-    return dalBadal(s, seat, m.targets);
+    return dalBadal(s, seat, m.targets, m.keep);
   }
   // [3.4] OPEN VOTE (owner 2026-11-20): any living player may vote or CHANGE their vote until the vote closes
   if (!waitingOn(s).includes(seat) && ph.kind !== "vote") throw new RuleError("Not your move");
@@ -453,12 +453,13 @@ export function gift(state: State, seat: number, to: number): State {
 }
 
 /** [4.1] [4.2] [4.4] Dal Badal: the thief shows their role; thief + up to 3 others shuffle role cards */
-function dalBadal(s: State, seat: number, targets: number[]): State {
+function dalBadal(s: State, seat: number, targets: number[], keep?: Card): State {
   const me = P(s, seat);
   const others = living(s).filter((p) => p.seat !== seat).map((p) => p.seat);
   const need = Math.min(3, others.length);
   const picked = [...new Set(targets)];
   if (picked.length !== need || !picked.every((t) => others.includes(t))) throw new RuleError(`Pick ${need} other living players`);
+  if (keep !== undefined && !me.hand.filter((c, i) => i !== me.hand.indexOf("DAL_BADAL")).includes(keep)) throw new RuleError("Keep a card you hold");
   take(me.hand, ["DAL_BADAL"]);
   s.discard.push("DAL_BADAL");
   emit(s, "all", "dal_badal", `${me.name} plays Dal Badal — ${me.name} is ${me.role}! Roles shuffle.`, { seat, role: me.role, targets: picked });
@@ -470,7 +471,12 @@ function dalBadal(s: State, seat: number, targets: number[]): State {
   });
   if (winByWipe(s)) return s; // [5.7] counted after the shuffle
   const ph = s.phase;
-  if (ph.kind === "turn" && ph.seat === seat) { s.phase = { kind: "pass", seat, keep: 1, draw: 1 }; return s; } // [4.3]
+  if (ph.kind === "turn" && ph.seat === seat) { // [4.3]
+    // (owner 2026-11-23, "B") Dal Badal goes with ONE card you keep: the other 3 go on by themselves, then you draw 1
+    const hand = me.hand, k = keep !== undefined ? hand.indexOf(keep) : -1;
+    if (k >= 0 && hand.length === 4) return give(s, seat, hand.filter((_, i) => i !== k), 1, 1, true), s;
+    s.phase = { kind: "pass", seat, keep: 1, draw: 1 }; return s; // no keep named (bots, old phones): choose the 3
+  }
   draw(s, seat, 1); // (B) out of turn: back to 2 at once
   return s;
 }

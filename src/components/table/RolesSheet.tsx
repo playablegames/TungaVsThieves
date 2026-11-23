@@ -30,7 +30,7 @@ export function RolesSheet({ roles, onClose }: { roles: string[]; onClose: () =>
       {row(village, false)}
       <div className="h-px w-2/3 bg-[#f7bb1f40]" />
       {row(thieves, true)}
-      <p className="text-[12px] text-[#ffe7a699]">Tap ROUND at the top to see this again</p>
+      <p className="text-[12px] text-[#ffe7a699]">Tap ROUND in the middle of the table to see this again</p>
       <button onClick={(e) => { e.stopPropagation(); play("tap"); onClose(); }}
         className="h-[52px] w-full max-w-[320px] rounded-2xl text-[16px] font-bold text-[#2a1404] active:translate-y-0.5"
         style={{ background: "linear-gradient(#f7c94a, #e0a020)", boxShadow: "inset 0 1px 0 #ffe7a6, 0 4px 0 #8a5a08" }}>

@@ -55,7 +55,7 @@ Sources: **[P]** = the owner's 10 How-to-play pages (approved 2026-11-17) · **[
 |---|---|---|
 | 4.1 | Only a thief can use it, on their turn. The thief shows their role to everyone and picks 3 other living players. Those players swap role cards and play on with the new roles. | [P] |
 | 4.2 | **The thief's own role card is in the shuffle: thief + 3 = 4 role cards**, shuffled and dealt back face down, one each. The thief may become a villager; a villager may become a thief. Each sees only their new card. | owner Q15 |
-| 4.3 | **Dal Badal is that turn's play** — no pair the same turn. A thief holding it chooses PLAY A PAIR / PLAY DAL BADAL / PASS. After Dal Badal they hold 4: pass 3, keep 1, draw 1 at the end of the turn. | owner Q5 + Q16 |
+| 4.3 | **Dal Badal is that turn's play** — no pair the same turn. A thief holding it chooses PLAY A PAIR / PLAY DAL BADAL / PASS. After Dal Badal they hold 4: pass 3, keep 1, draw 1 at the end of the turn. **On screen (owner 2026-11-23): Dal Badal is played holding 2 cards — Dal Badal + the one you keep; the other 3 go on by themselves and the draw of 1 is automatic.** | owner Q5 + Q16 + 2026-11-23 |
 | 4.4 | Fewer than 3 others alive: **the thief picks all of them** (e.g. 2 others left → 3 role cards shuffled). | owner |
 | 4.5 | A villager holding it can never use it; it is passed like any card. | [P] |
 
