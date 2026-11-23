@@ -5,6 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 import type { Move } from "@/rules/game";
 import type { ClientState } from "@/server/game";
 import type { ChatMessage } from "@/server/store";
+import { gamesPlayed } from "./experience";
 
 const KEY = (code: string) => `tunga:${code.toUpperCase()}`;
 // per-tab copy first (so several test tabs in one browser can each be a different player), then the phone-wide copy
@@ -27,13 +28,13 @@ async function call<T>(path: string, init: RequestInit & { token?: string | null
 }
 
 export const api = {
-  create: (name: string) => call<{ code: string; token: string }>("/api/games", { method: "POST", body: JSON.stringify({ name }) }),
+  create: (name: string) => call<{ code: string; token: string }>("/api/games", { method: "POST", body: JSON.stringify({ name, games: gamesPlayed() }) }),
   /** Play with bots: you + `bots` bots, dealt and started, in one call (2026-10-14) */
-  createWithBots: (name: string, bots: number) => call<{ code: string; token: string }>("/api/games", { method: "POST", body: JSON.stringify({ name, bots }) }),
+  createWithBots: (name: string, bots: number) => call<{ code: string; token: string }>("/api/games", { method: "POST", body: JSON.stringify({ name, bots, games: gamesPlayed() }) }),
   /** (2026-11-18) what a code leads to, before you type a name */
   peek: (code: string) => call<{ code: string; open: boolean; players: number; max: number; reason: string | null }>(`/api/games/${code}/peek`),
   join: (code: string, name: string) =>
-    call<{ code: string; token: string }>(`/api/games/${code}/join`, { method: "POST", body: JSON.stringify({ name }) }),
+    call<{ code: string; token: string }>(`/api/games/${code}/join`, { method: "POST", body: JSON.stringify({ name, games: gamesPlayed() }) }),
   start: (code: string, token: string) => call(`/api/games/${code}/start`, { method: "POST", token }),
   act: (code: string, token: string, m: Move) => call(`/api/games/${code}/act`, { method: "POST", token, body: JSON.stringify(m) }),
   addBot: (code: string, token: string, count = 1) => call(`/api/games/${code}/bots`, { method: "POST", token, body: JSON.stringify({ count }) }),

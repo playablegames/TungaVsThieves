@@ -22,7 +22,7 @@ export const TABLE: Record<number, [number, number, number]> = {
 };
 /** [1.4] */
 export const VILLAGERS = ["Kisaan", "Sarpanch", "Baba", "Teacher", "Police", "Doctor", "NRI", "Deewani"];
-export const THIEVES = ["Chor", "Lootera", "Gunda", "Daku", "Aawara"]; // Aawara = 5th thief, ONLINE ONLY (owner 2026-11-22)
+export const THIEVES = ["Chor", "Lootera", "Gunda", "Daku"]; // 4 thieves at most (Aawara removed, owner 2026-11-23)
 
 
 export interface Player { seat: number; name: string; role: string; side: Side; alive: boolean; hand: Card[] }

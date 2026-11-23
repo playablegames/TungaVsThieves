@@ -156,8 +156,27 @@ function settle(row: GameRow, s: State, from: number, bots = new BotTable(botSea
   return row;
 }
 
+/** THE BOTS' SKILLS, set at the deal (owner 2026-11-23, steps 4+5). Skills go to SEATS before the roles are dealt, so
+ *  neither side is helped. The share of skilled bots comes from the table size (measured on human-habit bots: a skilled
+ *  table pulls 7p from 59% to 52% village, a beginner table pulls 8p from 42% to 47% and 6p from 45% to 48%), then
+ *  moves with the least experienced person at the table: their first 3 games gentler, 10+ games tougher. */
+export function skilledShare(players: number, games: number | undefined): number {
+  const base = players === 7 ? 0.85 : players === 6 || players === 8 ? 0.15 : 0.5;
+  const shift = games === undefined ? 0 : games < 3 ? -0.3 : games >= 10 ? 0.3 : 0;
+  return Math.max(0, Math.min(1, base + shift));
+}
+function seatBotSkills(row: GameRow) {
+  const bots = row.lobby.filter((p) => p.bot);
+  const known = row.lobby.filter((p) => !p.bot && p.games !== undefined).map((p) => p.games!);
+  const sharp = Math.round(skilledShare(row.lobby.length, known.length ? Math.min(...known) : undefined) * bots.length);
+  // which bot seats get skill: a fair shuffle, so it isn't always the same names
+  const order = bots.map((b, i) => ({ b, k: randomInt(1000) + i / 1000 })).sort((x, y) => x.k - y.k).map((x) => x.b);
+  order.forEach((b, i) => { b.skill = i < sharp ? "sharp" : "casual"; });
+}
+
 /** deal a new game for this lobby and open it */
 function deal(row: GameRow): GameRow {
+  seatBotSkills(row);
   let s = newGame(row.lobby.map((p) => p.name), randomInt(2 ** 31));
   const bots = new BotTable(botSeats(row), 0, s);
   s = bots.opening(s);
@@ -167,11 +186,14 @@ function deal(row: GameRow): GameRow {
 }
 
 // ------------------------------------------------------------------ lobby
-export async function createRoom(name: unknown) {
+/** a person's games played, as sent by their phone (a number 0-999, else unknown) */
+const gamesOf = (g: unknown) => { const n = Math.floor(Number(g)); return Number.isFinite(n) && n >= 0 ? Math.min(999, n) : undefined; };
+
+export async function createRoom(name: unknown, games?: unknown) {
   const token = newToken();
   for (let i = 0; i < 10; i++) {
     const row: GameRow = {
-      code: newCode(), version: 1, status: "lobby", hostToken: token, lobby: [{ name: cleanName(name), token }],
+      code: newCode(), version: 1, status: "lobby", hostToken: token, lobby: [{ name: cleanName(name), token, games: gamesOf(games) }],
       state: null, deadline: null, timers: DEFAULT_TIMERS, createdAt: new Date().toISOString(),
     };
     if (await store.create(row)) return { code: row.code, token };
@@ -180,10 +202,10 @@ export async function createRoom(name: unknown) {
 }
 
 /** PLAY WITH BOTS in one call: you and the bots seated, dealt and started in a single write */
-export async function createBotGame(name: unknown, count: unknown) {
+export async function createBotGame(name: unknown, count: unknown, games?: unknown) {
   const token = newToken();
   const k = Math.max(MIN_PLAYERS - 1, Math.min(MAX_PLAYERS - 1, Math.floor(Number(count) || MIN_PLAYERS - 1)));
-  const lobby: GameRow["lobby"] = [{ name: cleanName(name), token }];
+  const lobby: GameRow["lobby"] = [{ name: cleanName(name), token, games: gamesOf(games) }];
   for (let i = 0; i < k; i++) lobby.push({ name: botName(lobby), token: newToken(), bot: true, skill: BOT_SKILLS[i % BOT_SKILLS.length] });
   shuffleSeats(lobby);
   for (let attempt = 0; attempt < 10; attempt++) {
@@ -201,11 +223,11 @@ function shuffleSeats(lobby: GameRow["lobby"]) {
   for (let i = lobby.length - 1; i > 0; i--) { const j = randomInt(i + 1); [lobby[i], lobby[j]] = [lobby[j], lobby[i]]; }
 }
 
-export async function joinRoom(code: string, name: unknown, hops = 0): Promise<{ code: string; token: string }> {
+export async function joinRoom(code: string, name: unknown, hops = 0, games?: unknown): Promise<{ code: string; token: string }> {
   const n = cleanName(name);
   const row = await load(code);
   // an old code after PLAY AGAIN leads on to the new table
-  if (row.status === "over" && row.next && hops < 5) return joinRoom(row.next, name, hops + 1);
+  if (row.status === "over" && row.next && hops < 5) return joinRoom(row.next, name, hops + 1, games);
   // YOUR NAME IS YOUR SEAT: a player already here (new phone, cleared browser) gets their seat back by typing the same name
   const mine = row.lobby.find((p) => !p.bot && p.name.toLowerCase() === n.toLowerCase());
   if (mine) return { code: row.code, token: mine.token };
@@ -214,7 +236,7 @@ export async function joinRoom(code: string, name: unknown, hops = 0): Promise<{
     if (r.status !== "lobby") throw new HttpError(409, r.status === "over" ? "This game is over — ask the host for the new table's code" : "This game has already started — join with the name you played under to take your seat back");
     if (r.lobby.length >= MAX_PLAYERS) throw new HttpError(409, `The table is full (${MAX_PLAYERS})`);
     if (r.lobby.some((p) => p.name.toLowerCase() === n.toLowerCase())) throw new HttpError(409, "That name belongs to a bot here — pick another");
-    r.lobby.push({ name: n, token });
+    r.lobby.push({ name: n, token, games: gamesOf(games) });
     return r;
   });
   return { code: row.code, token };
@@ -281,7 +303,7 @@ export async function rematch(code: string, token: string | null): Promise<{ cod
   for (let i = 0; i < 10; i++) {
     const fresh: GameRow = {
       code: newCode(), version: 1, status: "lobby", hostToken: row.hostToken,
-      lobby: row.lobby.map((p) => ({ name: p.name, token: p.token, ...(p.bot ? { bot: true, skill: p.skill ?? "average" } : {}), ...(p.push ? { push: p.push } : {}) })),
+      lobby: row.lobby.map((p) => ({ name: p.name, token: p.token, ...(p.bot ? { bot: true, skill: p.skill ?? "average" } : {}), ...(p.push ? { push: p.push } : {}), ...(p.games !== undefined ? { games: p.games + 1 } : {}) })),
       state: null, deadline: null, timers: row.timers, createdAt: new Date().toISOString(),
     };
     if (!(await store.create(fresh))) continue;

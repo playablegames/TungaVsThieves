@@ -9,7 +9,7 @@ import { CARD } from "@/lib/cards";
 import type { TableView } from "@/server/game";
 
 type Ev = TableView["events"][number];
-const THIEF_ROLES = new Set(["Chor", "Lootera", "Gunda", "Daku", "Aawara"]);
+const THIEF_ROLES = new Set(["Chor", "Lootera", "Gunda", "Daku"]);
 export const isThiefRole = (r: string) => THIEF_ROLES.has(r);
 const STONES = new Set<Card>(["TUNGA_STONE", "BHADRA_STONE"]);
 

@@ -244,3 +244,31 @@ debate, and as a shield when shot at, read or voted out).
 
 **Balance, live bots, 2,000 games each** (village %): 5p 47.2 (4 rounds) · 6p 47.1 · 7p 53.3 · 8p 48.6 (4 rounds) ·
 9p 49.6 · 10p 46.5 (4 rounds) · 11p 47.0 · 12p 51.8.
+
+## 12. Human habits, the skill mix and each bot's pace (owner 2026-11-23)
+
+Bots now make the mistakes and moves real players make. The list came from research (Asch conformity, information
+cascades, the "babble" studies, Bond & DePaulo on lie detection, a measured Mafia study of "flailing", and the Mafia,
+Werewolf, Blood on the Clocktower and Among Us communities), then 133 behaviours were weighed for Tunga — who wins,
+how human it feels, how often it happens — and 48 were built (`Habits` in `src/rules/brain.ts`).
+
+- **Skill = how many habits.** casual = a beginner (goes with the group 70%, revenge-votes 35%, catches a provable lie
+  55%, blurts a Talashi 70%, plays a pair just to act 40% …); sharp = a skilled player (35% / 10% / 95% / 25% / 10% …,
+  plus thief tricks: joins a pile-on in the middle, buddies one villager, fakes "I have the Stone", aims at the
+  persuader, the obvious villager and whoever votes for it). average sits between.
+- **Personality = the name.** Each habit is scaled 0.6-1.4x by the bot's name, so the same name plays the same way
+  every game (Raju always follows the group, Meena always counter-accuses).
+- **Talk is said once** per vote / round / game and read back from the log, so a bot rebuilt by the server never
+  repeats itself; habit coins are fixed per decision (`roll`), so a rebuilt bot believes exactly what the live one did.
+- **Pace.** Each bot takes its own time on its turn (3-5.5 s around the 4 s); thieves a little longer — a tell a
+  person can learn. (Bots can't READ timing: events carry no clock.)
+- **Not built:** reads that need a role shown when a player goes out — roles stay secret until the end (rule 5.9).
+- **The skill mix** (`seatBotSkills`, server): skills go to SEATS before the roles are dealt, so neither side is
+  helped. Share of skilled bots: 7p 85%, 6p and 8p 15%, other sizes 50%; then the least experienced person at the
+  table moves it: first 3 games −30 points (gentler), 10+ games +30 (tougher). The phone counts finished games.
+- **Balance on a normal table** (human-habit bots, 200-300 games): 4p 68 · 5p 70 · 6p 48 · 7p 52 · 8p 47 · 9p 48 ·
+  10p 41 · 11p 50 · 12p 54 (village %). 4p/5p lean village (a lone thief has nobody to cover it) and 10p leans thief
+  (4 in 10 is the most thief-heavy table); with the rules fixed, nothing in the bots moved these more than 1-3 points.
+- **Checks:** `src/server/bots.test.ts` (a rebuilt bot = the live bot), `src/server/secrets.test.ts` (a bot with every
+  secret wiped believes and decides the same — a planted cheat makes it fail), `scripts/habits.mts` (habit counts and
+  balance; `BRAIN_HABITS=0` = the clean bots, `BRAIN_OFF=herd,gut` = single habits off).

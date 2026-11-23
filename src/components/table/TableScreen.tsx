@@ -13,6 +13,7 @@ import { Table, type VoiceControls } from "./Table";
 import { WaitingRoom } from "./WaitingRoom";
 import { EndSheet } from "./EndSheet";
 import { useFilmPlaying } from "./FilmLayer";
+import { countGame } from "@/lib/experience";
 
 export function TableScreen({ code }: { code: string }) {
   const { hydrated, token, state, act, now, error, reclaim, refresh, whisper } = useGame(code);
@@ -92,6 +93,7 @@ function EndScreen({ code, token, state }: { code: string; token: string; state:
   // the winner film plays first: wait a moment for the films to queue, then until none is on screen
   const film = useFilmPlaying();
   const [settled, setSettled] = useState(false);
+  useEffect(() => { countGame(code.toUpperCase()); }, [code]); // one more finished game on this phone (step 5)
   useEffect(() => { const t = setTimeout(() => setSettled(true), 800); return () => clearTimeout(t); }, []);
   async function again() {
     setBusy(true); setErr(null);

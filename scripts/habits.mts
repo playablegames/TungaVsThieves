@@ -5,11 +5,17 @@
 import { playGame, SKILLS, type Skill } from "../src/rules/brain";
 import type { State } from "../src/rules/game";
 const n = Number(process.argv[2]), G = Number(process.argv[3] ?? 200), table = process.argv[4] ?? "average";
-const skill: Skill | ((seat: number) => Skill) = table === "mixed" ? (seat: number) => (seat % 2 ? SKILLS.sharp : SKILLS.casual) : SKILLS[table as "average"];
+// "s0.85" = that share of skilled bots, the rest beginners, by seat before the deal (like the server's seatBotSkills)
+let game = 0;
+const frac = (x: number) => x - Math.floor(x);
+const skill: Skill | ((seat: number) => Skill) = table === "mixed" ? (seat: number) => (seat % 2 ? SKILLS.sharp : SKILLS.casual)
+  : table.startsWith("s") ? (seat: number) => { const order = Array.from({ length: n }, (_, i) => i).sort((x, y) => frac(Math.sin(x * 12.99 + game * 78.23) * 43758) - frac(Math.sin(y * 12.99 + game * 78.23) * 43758)); return order.indexOf(seat) < Math.round(Number(table.slice(1)) * n) ? SKILLS.sharp : SKILLS.casual; }
+  : SKILLS[table as "average"];
 let v = 0, last: State | null = null;
 const c: Record<string, number> = {};
 const add = (k: string, x = 1) => { c[k] = (c[k] ?? 0) + x; };
 for (let g = 0; g < G; g++) {
+  game = g;
   const st = playGame(n, 1000003 * n + g * 7919, skill, undefined, (s) => { last = s; });
   if (st.winner === "V") v++;
   const s = last!;

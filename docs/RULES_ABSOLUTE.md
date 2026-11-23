@@ -11,9 +11,9 @@ Sources: **[P]** = the owner's 10 How-to-play pages (approved 2026-11-17) · **[
 | # | Rule | Source |
 |---|---|---|
 | 1.1 | 4 to 12 players. | [P] box |
-| 1.2 | Teams by player count (villagers + thieves) — **owner 2026-11-22, one more thief to balance the smarter bots, villagers ALWAYS more than thieves (never equal): 4→3+1 · 5→3+2 · 6→4+2 · 7→4+3 · 8→5+3 · 9→5+4 · 10→6+4 · 11→7+4 (6+5 moved too far) · 12→7+5.** Earlier: 4→3+1 · 5→4+1 · 6→4+2 · 7→5+2 · 8→5+3 (owner 2026-11-22: back to 5+3) · 9→6+3 · 10→6+4 (owner 2026-11-17: 5 and 8 were 3+2, 5+3; 10 tried 7+3, back to 6+4) · 11→7+4 · 12→8+4. | [C] |
+| 1.2 | Teams by player count (villagers + thieves), as the code plays them (checked 2026-11-23): **4→3+1 · 5→4+1 · 6→4+2 · 7→5+2 · 8→5+3 · 9→6+3 · 10→6+4 · 11→7+4 · 12→8+4.** Rounds: 4-5 players 2 · 6-9 players 3 · 10-12 players 4. Owner 2026-11-23: 12 = 8+4 (only 4 thieves); **no further rule changes** — balance comes from the bots (habits + skill mix). Tried and rejected 2026-11-23: 5→3+2, 7→4+3, 8→6+2, 10→7+3 (each overshot ~20 points); other rounds (owner: no). History: 2026-11-22 tried 5→3+2 · 7→4+3 · 9→5+4 · 12→7+5; 2026-11-17 5 and 8 were 3+2, 5+3; 10 tried 7+3. | [C] |
 | 1.3 | Rounds: 2 at 4–5 players · 3 at 6–9 · 4 at 10–12. | [P] |
-| 1.4 | Role names: villagers Kisaan, Sarpanch, Baba, Teacher, Police, Doctor, NRI, Deewani · thieves Chor, Lootera, Gunda, Daku, **Aawara (5th thief, ONLINE ONLY — owner 2026-11-22; no printed card yet)**. Taken in that order up to the team size, then shuffled and dealt one each. | [C] |
+| 1.4 | Role names: villagers Kisaan, Sarpanch, Baba, Teacher, Police, Doctor, NRI, Deewani · thieves Chor, Lootera, Gunda, Daku (4 thieves at most; Aawara removed 2026-11-23). Taken in that order up to the team size, then shuffled and dealt one each. | [C] |
 | 1.4b | **Thieves do NOT know each other.** Each player knows only their own role. | owner |
 | 1.4c | **Everyone is told at the start which roles are in play** (e.g. "Kisaan, Sarpanch, Baba, Teacher · Chor, Lootera"), so everyone knows how many villagers and thieves there are and which role names exist. | owner |
 | 1.4d | **Everyone knows a Stone is never in the draw pile** — a Stone is always either with a player or in the Procession Pile. | owner |

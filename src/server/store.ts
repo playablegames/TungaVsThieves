@@ -16,6 +16,8 @@ export interface GameRow {
   lobby: { name: string; token: string; bot?: boolean; away?: boolean; strikes?: number;
     /** (2026-10-12) a bot's skill — casual (a beginner: gambles), average, sharp (holds, times Dal Badal) */
     skill?: "casual" | "average" | "sharp";
+    /** a person's finished games on their phone (step 5: the bots around a beginner are gentler) */
+    games?: number;
     /** TURN ALERTS: this phone's web-push subscription, and whether it has switched away from the game right now */
     push?: { endpoint: string; keys: { p256dh: string; auth: string } } | null; hidden?: boolean;
     /** (designer 2026-10-14) the host muted this player's voice: mic held shut (messages stay open) */

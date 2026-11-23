@@ -14,7 +14,7 @@ import {
   type State, type Talk, tkRoles, waitingOn, ask, tell, besideMe,
 } from "./game";
 
-const THIEF_ROLES = ["Chor", "Lootera", "Gunda", "Daku", "Aawara"];
+const THIEF_ROLES = ["Chor", "Lootera", "Gunda", "Daku"];
 const sideOf = (role: string): Side => (THIEF_ROLES.includes(role) ? "T" : "V");
 type R = { rng: number };
 
