@@ -18,7 +18,7 @@ export default function Terms() {
         ]} />
       </Part>
       <Part title="What is not allowed">
-        <p>In your name, in messages, in voice notes and when you talk at a table:</p>
+        <p>In your name, in messages and when you talk at a table:</p>
         <Points items={[
           "Bullying, threats or harassment of any player.",
           "Hate or abuse about religion, caste, gender, sexuality, disability, region or language.",
@@ -39,7 +39,7 @@ export default function Terms() {
         ]} />
       </Part>
       <Part title="Voice and messages">
-        <p>Voice at a table goes live between the phones and is not recorded by us. Text messages and short voice notes you send are kept with that game. See <A href="/privacy">Privacy</A>.</p>
+        <p>Voice at a table goes live between the phones and is not recorded by us. Messages you send are kept with that game. See <A href="/privacy">Privacy</A>.</p>
       </Part>
       <Part title="It is a free game">
         <p>There is no money in this game: no entry fee, no prizes, no bets, nothing to buy inside it. The printed card game is sold separately at <A href={COMPANY.site}>playablegames.in</A>.</p>

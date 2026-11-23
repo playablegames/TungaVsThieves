@@ -14,6 +14,6 @@ export const COMPANY = {
 
 /** bump when the Terms of use or Privacy change in a way players must agree to again */
 export const TERMS_VERSION = 1;
-export const UPDATED = "16 November 2026";
+export const UPDATED = "23 November 2026";
 /** India's data law (DPDP Act 2023) treats anyone under 18 as a child */
 export const ADULT_AGE = 18;

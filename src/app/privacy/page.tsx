@@ -1,4 +1,4 @@
-// PRIVACY (first written 2026-10-14; redone 2026-11-16 for the Play Store and India's DPDP Act 2023): what the game
+// PRIVACY (first written 2026-10-14; redone 2026-11-16 for the Play Store and India's DPDP Act 2023; checked against the app 2026-11-23): what the game
 // keeps, in plain words. Who we are and where to write come from lib/legal.ts.
 import type { Metadata } from "next";
 import { A, LegalPage, Part, Points } from "@/components/LegalPage";
@@ -10,11 +10,12 @@ export const metadata: Metadata = { title: "Privacy — Tunga vs Thieves" };
 const ROWS: [string, string, string][] = [
   ["The name you type", "Shown to your table and kept with the game.", "No account, no email, no phone number."],
   ["The game itself: moves, votes, accusations, chat lines", "Kept on our server with the game.", "Used to fix bugs and to make the computer players play more like people."],
-  ["Messages you send to one player (text, or a voice note of up to 10 seconds)", "Kept with the game. Only the player you sent it to gets it.", "Nobody else at the table."],
-  ["Voice at the table", "Goes live between the phones. We never record it.", "The highlight clips on the end screen stay on your phone and vanish when you leave."],
+  ["Messages you whisper to the player beside you", "Kept with the game. Only that player gets it.", "The table sees that you whispered, never what."],
+  ["Voice, in the waiting room and at the table", "Goes live between the phones. We never record it.", "Your mic starts off; you can mute anyone for yourself."],
   ["Turn alerts, only if you switch them on", "Your phone's push address, kept with the game.", "Used only to tell you it is your move."],
-  ["A crash, or a problem or player you report", "Kept with the game.", "The text and the table code."],
-  ["On this phone", "Your seat key, a few settings, and whether you are 18 or over.", "Clearing the browser or the app's data removes them."],
+  ["A crash, or a problem or player you report", "Kept with the game, and a report is emailed to us.", "The text and the table code."],
+  ["How many games you have finished", "Counted on this phone and sent when you sit down at a table.", "Only to choose how skilled the computer players are: gentler for new players."],
+  ["On this phone", "Your seat key, a few settings, your games count, and whether you are 18 or over.", "Clearing the browser or the app's data removes them."],
 ];
 
 export default function Privacy() {
@@ -40,10 +41,10 @@ export default function Privacy() {
         <p>The game asks when you were born before your first game. The date is not stored or sent to us: the phone remembers only whether you are {ADULT_AGE} or over. Players under {ADULT_AGE} play against the computer players with a nickname from a list. For them there is no chat, no voice, no typed name and no turn alerts.</p>
       </Part>
       <Part title="Who helps us run it">
-        <p>The game runs on hosting from Vercel and a database from Supabase, and voice may pass through a relay service so phones can reach each other. They handle the data only to run the game for us. Their servers may be outside India.</p>
+        <p>The game runs on hosting from Vercel and a database from Supabase, voice may pass through a relay service so phones can reach each other, and reports reach us through our Google Workspace email. They handle the data only to run the game for us. Their servers may be outside India.</p>
       </Part>
       <Part title="How long it is kept">
-        <p>A game and what was sent in it are kept until we clear out old games or you ask us to delete yours, whichever comes first.</p>
+        <p>A game and everything sent in it, reports included, is deleted 90 days after its last move, or sooner if you ask us to delete it. What is kept on your phone stays until you clear the browser or the app&apos;s data.</p>
       </Part>
       <Part title="Your choices">
         <Points items={[
