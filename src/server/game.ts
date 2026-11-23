@@ -207,13 +207,14 @@ export async function createBotGame(name: unknown, count: unknown, games?: unkno
   const k = Math.max(MIN_PLAYERS - 1, Math.min(MAX_PLAYERS - 1, Math.floor(Number(count) || MIN_PLAYERS - 1)));
   const lobby: GameRow["lobby"] = [{ name: cleanName(name), token, games: gamesOf(games) }];
   for (let i = 0; i < k; i++) lobby.push({ name: botName(lobby), token: newToken(), bot: true, skill: BOT_SKILLS[i % BOT_SKILLS.length] });
-  shuffleSeats(lobby);
+  // (owner 2026-11-23: "bots didn't have the same lobby as players") the table opens in the lobby like any other;
+  // the host starts it from there (seats are shuffled and skills set at the start)
   for (let attempt = 0; attempt < 10; attempt++) {
     const row: GameRow = {
       code: newCode(), version: 1, status: "lobby", hostToken: token, lobby: structuredClone(lobby),
       state: null, deadline: null, timers: DEFAULT_TIMERS, createdAt: new Date().toISOString(),
     };
-    if (await store.create(deal(row))) return { code: row.code, token };
+    if (await store.create(row)) return { code: row.code, token };
   }
   throw new HttpError(500, "Could not allocate a room code");
 }

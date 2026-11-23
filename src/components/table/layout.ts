@@ -3,11 +3,11 @@
 export const W = 442;
 export const H = 884;
 /** centre of the courtyard circle and its radius */
-export const CY = 352; // (owner 2026-11-23 "make the table bigger": was 330)
+export const CY = 338; // (owner 2026-11-23 "make the table bigger", then "use the top space too": was 330, 352)
 export const R = 148;
 /** the ellipse the players stand on */
 export const RX = 180;
-export const RY = 222; // was 196
+export const RY = 236; // was 196, 222
 /** where your area (the mat with your cards) begins */
 export const HAND_TOP = 650; // (owner 2026-11-23 "cards and buttons smaller, table bigger": was 588)
 

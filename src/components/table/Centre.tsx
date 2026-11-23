@@ -67,16 +67,19 @@ function EndCentre({ view }: { view: View }) {
   );
 }
 
-export function Centre({ view }: { view: View }) {
+export function Centre({ view, onRoles }: { view: View; onRoles?: () => void }) {
   if (view.phase.kind === "over") return <EndCentre view={view} />;
   const names = view.players.map((p) => p.name);
   const last = [...view.events].reverse().find((e) => ANNOUNCE.has(e.type)) ?? null;
   return (
     <div className="absolute z-[2] w-[196px] -translate-x-1/2 -translate-y-1/2 rounded-[14px] px-3 pb-3 pt-[11px] text-center shadow-[inset_0_0_0_1px_rgba(247,187,31,.55),0_10px_24px_rgba(0,0,0,.55)]"
-      style={{ left: W / 2, top: CY, background: "linear-gradient(rgba(12,44,107,.94), rgba(2,18,48,.96))" }} role="status" aria-live="polite">
+      style={{ left: W / 2, top: CY, background: "linear-gradient(rgba(12,44,107,.94), rgba(2,18,48,.96))" }} role="status" aria-live="polite"
+      onClick={onRoles}>
       <span className="absolute -top-[5px] left-1/2 size-2.5 -translate-x-1/2 rotate-45 bg-[#f7bb1f]" aria-hidden />
       <span className="absolute -bottom-[5px] left-1/2 size-2.5 -translate-x-1/2 rotate-45 bg-[#f7bb1f]" aria-hidden />
-      <p className="text-[12px] text-[#ffe7a6e6]">{waiting(view)}</p>
+      {/* (owner 2026-11-23: the round pill at the top clashed with the top seat's bubble) the round lives here; tap = roles */}
+      <p className="font-[family-name:var(--font-cinzel)] text-[11px] font-bold tracking-[1.5px] text-[#f7bb1f]">ROUND {view.round} OF {view.rounds} <span className="font-[family-name:var(--font-poppins)] text-[10px] font-semibold tracking-normal text-[#ffe7a6b3]">· roles</span></p>
+      <p className="mt-0.5 text-[12px] text-[#ffe7a6e6]">{waiting(view)}</p>
       {last && (
         <p key={last.n} className="tt-pop font-display mt-[7px] rounded-lg bg-[#021230bf] px-2 py-[7px] text-[16px] font-black leading-tight text-white shadow-[inset_0_0_0_1px_rgba(247,187,31,.3)]">
           {said(last, names)}

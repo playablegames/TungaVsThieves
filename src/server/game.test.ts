@@ -97,7 +97,7 @@ describe("the lobby", () => {
 describe("whole games", () => {
   let talked = 0;
   for (const n of [4, 5, 6, 7, 8, 9, 10, 11, 12]) it(`one person and ${n - 1} bots, to the end (${n} players)`, async () => {
-    const { code } = await createBotGame("Asha", n - 1);
+    const { code, token: hostTok } = await createBotGame("Asha", n - 1); await startGame(code, hostTok); // bot tables open in the lobby (owner 2026-11-23)
     const r = await playOut(code, { talk: 0.1 });
     expect(r.state!.phase.kind).toBe("over");
     expect(r.deadline).toBeNull();
@@ -118,7 +118,7 @@ describe("whole games", () => {
   });
 
   it("a table of only stand-ins still finishes, with the server's clock alone (sweep)", async () => {
-    const { code } = await createBotGame("Asha", 5);
+    const { code, token: hostTok } = await createBotGame("Asha", 5); await startGame(code, hostTok); // bot tables open in the lobby (owner 2026-11-23)
     for (let i = 0; i < 3000 && (await row(code)).status !== "over"; i++) {
       vi.setSystemTime(Math.max(Date.now(), (await row(code)).deadline!) + 1);
       await sweep();
@@ -133,7 +133,7 @@ describe("whole games", () => {
 
 describe("moves from a phone", () => {
   it("a broken move is refused before the rules see it; an illegal one gets the rule's reason", async () => {
-    const { code, token } = await createBotGame("Asha", 4);
+    const { code, token } = await createBotGame("Asha", 4); await startGame(code, token); // bot tables open in the lobby (owner 2026-11-23)
     await fails(act(code, token, { kind: "hack" }), 422);
     await fails(act(code, token, { kind: "give", cards: "all" }), 422);
     await fails(act(code, "nobody", { kind: "pass" }), 403);
@@ -143,7 +143,7 @@ describe("moves from a phone", () => {
   });
 
   it("talk is anyone's, any time, and never moves the clock", async () => {
-    const { code, token } = await createBotGame("Asha", 4);
+    const { code, token } = await createBotGame("Asha", 4); await startGame(code, token); // bot tables open in the lobby (owner 2026-11-23)
     const before = await row(code);
     await act(code, token, { kind: "say", talk: { t: "react", emoji: "shock" } });
     const after = await row(code);
@@ -154,7 +154,7 @@ describe("moves from a phone", () => {
   it("a Faisla: the bots vote at once, the clock waits only for people", async () => {
     // keep dealing until the person starts with a Faisla pair on their own turn
     for (let tries = 0; tries < 400; tries++) {
-      const { code, token } = await createBotGame("Asha", 5);
+      const { code, token } = await createBotGame("Asha", 5); await startGame(code, token); // bot tables open in the lobby (owner 2026-11-23)
       const r = await row(code);
       const me = r.lobby.findIndex((p) => p.token === token);
       const s = r.state!;
@@ -172,7 +172,7 @@ describe("moves from a phone", () => {
 describe("the clock and stand-ins", () => {
   it("a turn timed out passes for you; two in a row and a stand-in plays; I'm back takes the seat again", async () => {
     for (let tries = 0; tries < 50; tries++) {
-      const { code, token } = await createBotGame("Asha", 3);
+      const { code, token } = await createBotGame("Asha", 3); await startGame(code, token); // bot tables open in the lobby (owner 2026-11-23)
       const me = (await row(code)).lobby.findIndex((p) => p.token === token);
       let strikes = 0;
       for (let i = 0; i < 400 && strikes < 2 && !(await row(code)).lobby[me].away; i++) {
@@ -201,14 +201,14 @@ describe("the clock and stand-ins", () => {
   });
 
   it("a tick before the deadline does nothing", async () => {
-    const { code } = await createBotGame("Asha", 4);
+    const { code, token: hostTok } = await createBotGame("Asha", 4); await startGame(code, hostTok); // bot tables open in the lobby (owner 2026-11-23)
     expect((await tick(code)).applied).toBe(false);
   });
 });
 
 describe("after the game", () => {
   it("play again: same group, new table; the old code leads there", async () => {
-    const { code, token } = await createBotGame("Asha", 4);
+    const { code, token } = await createBotGame("Asha", 4); await startGame(code, token); // bot tables open in the lobby (owner 2026-11-23)
     await playOut(code);
     await fails(rematch(code, "nobody"), 403);
     const { code: fresh } = await rematch(code, token);
@@ -222,7 +222,7 @@ describe("after the game", () => {
   });
 
   it("a table from the old version is refused, not crashed on", async () => {
-    const { code, token } = await createBotGame("Asha", 4);
+    const { code, token } = await createBotGame("Asha", 4); await startGame(code, token); // bot tables open in the lobby (owner 2026-11-23)
     const r = await row(code);
     await memoryStore.update({ ...r, version: r.version + 1, state: { seed: 1, phase: { kind: "turn", seat: 0 } } as never }, r.version);
     await fails(getState(code, token, 0), 410);
@@ -231,7 +231,7 @@ describe("after the game", () => {
 
 describe("chat", () => {
   it("anyone seated may chat, 50 characters, one message every 2 seconds", async () => {
-    const { code, token } = await createBotGame("Asha", 4);
+    const { code, token } = await createBotGame("Asha", 4); await startGame(code, token); // bot tables open in the lobby (owner 2026-11-23)
     chatLimit.gapMs = 2000;
     await chat(code, token, "x".repeat(80));
     await fails(chat(code, token, "again"), 429);

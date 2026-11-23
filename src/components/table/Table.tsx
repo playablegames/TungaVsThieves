@@ -33,7 +33,7 @@ import "./table.css";
 
 const subscribe = (cb: () => void) => { window.addEventListener("resize", cb); return () => window.removeEventListener("resize", cb); };
 const fit = () => Math.min(window.innerWidth / W, window.innerHeight / H);
-function useScale() { return useSyncExternalStore(subscribe, fit, () => 1); }
+export function useScale() { return useSyncExternalStore(subscribe, fit, () => 1); }
 
 /** the clock starts after the first paint, so the server's render and the phone's first render agree */
 function useClock(now: () => number) {
@@ -255,10 +255,6 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
             {voice && <MicButton voice={voice} />}
             <GearButton onTap={() => setSettings(true)} />
           </div>
-          <button onClick={() => { play("tap"); setRolesOpen(true); }} aria-label="Roles in play"
-            className="rounded-xl bg-[#021230d1] px-3.5 py-[7px] font-[family-name:var(--font-cinzel)] text-[12.5px] font-bold tracking-[2px] text-[#f7bb1f] shadow-[inset_0_0_0_1.5px_rgba(247,187,31,.6)] active:scale-95">
-            ROUND {view.round} OF {view.rounds} <span className="ml-1 font-[family-name:var(--font-poppins)] text-[11px] font-semibold tracking-normal text-[#ffe7a6]">· roles</span>
-          </button>
           <div className="relative grid size-11 place-items-center font-[family-name:var(--font-cinzel)] text-[19px] font-bold text-[#f7bb1f]" aria-label={left !== null ? `${Math.ceil(left)} seconds left` : undefined}>
             {left !== null && (
               <>
@@ -273,7 +269,7 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
           </div>
         </div>
 
-        <Centre view={view} />
+        <Centre view={view} onRoles={() => { play("tap"); setRolesOpen(true); }} />
         <Seats players={view.players} you={you} myRole={me?.role ?? null} active={activeSeats(view)} reveal={view.phase.kind === "over"} picked={open || giving ? picked : []} talking={voice?.talking} muted={voice?.muted} doing={doing} saying={saying} notes={knownNotes(view.events, you)} whispering={whispering} unread={unread} says={said}
           onSeat={!open && !voting && !giving && up.length === 0 ? (s) => { play("tap"); setBox(s); } : undefined} hideYou={(!voting && up.length > 0) || shooting}
           votes={view.phase.kind === "vote" ? liveCount(view.phase, view.extraVote) : undefined} />

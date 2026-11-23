@@ -1,19 +1,26 @@
 "use client";
-// THE LOBBY IS THE TABLE (owner 2026-11-23): people sit round the table as they join, empty seats show "+" (tap to
-// invite), and the roles in play sit face up below — each new seat adds the next role [1.4c: the roles in play are
-// public]. Voice works here too, with safety: your mic starts OFF when you sit down, tap a person to mute them for
-// yourself or report them, and the host can remove a person (they can't sit down again under that name).
-import Link from "next/link";
+// THE LOBBY IS THE GAME TABLE (owner 2026-11-23: "the lobby looks like a different table, not the same table"; "roles
+// must be mentioned below as buttons not cards"; "no music in the lobby"; bot tables use this lobby too). The same
+// night village, courtyard, seats and garland as the game: people sit in their real seats as they join, empty seats
+// show "+" (tap to invite), the centre shows who is seated. Where your cards will be: the roles in play as buttons
+// (each new seat adds the next role [1.4c: the roles in play are public]) and Invite · + Bot · Start.
+// Voice safety: your mic starts OFF; tap a person to mute them for yourself, report them, or (host) remove them.
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/client";
-import { play } from "@/lib/sfx";
-import { roleArt, CARD_BACK } from "@/components/CardIcon";
+import { play, unlockOnFirstTap } from "@/lib/sfx";
+import { setMood, startMusicOnFirstTap, stopMusic } from "@/lib/music";
 import { THIEVES, VILLAGERS } from "@/rules/game";
 import type { ClientState } from "@/server/game";
-import { MicButton, REPORT_REASONS, type VoiceControls } from "./Table";
+import { CY, HAND_TOP, W, H, seatSpot } from "./layout";
+import { MatEdge, VillageScene } from "./VillageScene";
+import { Seats } from "./Seats";
+import { GearButton, SettingsSheet } from "./SettingsSheet";
+import { MicButton, REPORT_REASONS, useScale, type VoiceControls } from "./Table";
 
 const gold = "inset 0 0 0 1.5px rgba(247,187,31,.6)";
-const goldBtn = { background: "linear-gradient(#f7c94a, #e0a020)", boxShadow: "inset 0 1px 0 #ffe7a6, 0 3px 0 #8a5a08" };
+const goldBtn = "rounded-2xl bg-gradient-to-b from-[#f7c94a] to-[#e0a020] font-bold text-[#2a1404] shadow-[inset_0_1px_0_#ffe7a6,0_4px_0_#8a5a08] active:translate-y-0.5 disabled:opacity-45";
+const lineBtn = "rounded-2xl bg-gradient-to-b from-[#0d1f4a] to-[#061538] font-semibold text-[#ffe7a6] shadow-[inset_0_0_0_1.5px_rgba(247,187,31,.6)] active:scale-95 disabled:opacity-40";
 
 /** the roles in play at a table of `n` (below the minimum: what the smallest table plays) */
 function rolesAt(table: Record<number, [number, number, number]>, n: number, min: number) {
@@ -23,10 +30,15 @@ function rolesAt(table: Record<number, [number, number, number]>, n: number, min
 
 export function WaitingRoom({ state, token, onStarted, voice }: { state: ClientState; token: string; onStarted: () => void; voice: VoiceControls | null }) {
   const lobby = state.lobby;
+  const router = useRouter();
+  const scale = useScale();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [open, setOpen] = useState<number | null>(null);
+  const [settings, setSettings] = useState(false);
+  // MUSIC (owner 2026-11-23): the table's score plays in the lobby too (after the first tap, as browsers require)
+  useEffect(() => { unlockOnFirstTap(); startMusicOnFirstTap(); setMood("calm"); }, []);
   // SAFETY: the mic starts OFF in the lobby — nobody is heard until they choose to talk
   const quieted = useRef(false);
   useEffect(() => {
@@ -37,12 +49,14 @@ export function WaitingRoom({ state, token, onStarted, voice }: { state: ClientS
   if (!lobby) return null;
   const n = lobby.names.length;
   const host = state.you.host;
+  const me = state.you.seat;
   const link = typeof location === "undefined" ? "" : `${location.origin}/?code=${state.code}`;
   const now = rolesAt(lobby.table, n, lobby.min);
   const after = n < lobby.max && n >= lobby.min ? rolesAt(lobby.table, n + 1, lobby.min) : null;
   const adds = after ? [...after.v.filter((r) => !now.v.includes(r)), ...after.t.filter((r) => !now.t.includes(r))][0] : null;
   // the seats round the table: everyone here, then a few empty ones (at least up to the smallest table)
   const seats = Math.min(lobby.max, Math.max(lobby.min, n + (n < 8 ? 2 : 1)));
+  const players = lobby.names.map((name, seat) => ({ seat, name, alive: true }));
 
   async function run(f: () => Promise<unknown>) {
     play("tap"); setBusy(true); setErr(null);
@@ -59,98 +73,80 @@ export function WaitingRoom({ state, token, onStarted, voice }: { state: ClientS
   async function copy() {
     try { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { setErr(link); }
   }
-
-  // you at the bottom, the others clockwise in seat order, empty seats after the last person
-  const me = state.you.seat;
-  const spot = (k: number) => {
-    const rel = (k - me + seats) % seats;
-    const a = Math.PI / 2 + (rel * 2 * Math.PI) / seats;
-    return { left: `${50 + 41 * Math.cos(a)}%`, top: `${50 + 41 * Math.sin(a)}%` };
-  };
   const sel = open !== null && open < n ? open : null;
+  const pill = (thief: boolean) => `rounded-full bg-[#021230d9] px-2.5 py-[5px] text-[12.5px] font-semibold ${thief ? "text-[#ff8a7a] shadow-[inset_0_0_0_1.5px_rgba(255,138,122,.7)]" : "text-[#ffe7a6] shadow-[inset_0_0_0_1.5px_rgba(247,187,31,.6)]"}`;
 
   return (
-    <main className="relative flex min-h-dvh flex-col items-center px-4 pb-[max(16px,env(safe-area-inset-bottom))] pt-[max(16px,env(safe-area-inset-top))] text-[#ffe7a6]"
-      style={{ fontFamily: "var(--font-poppins), Poppins, sans-serif", background: "radial-gradient(120% 70% at 50% 30%, #2a2236 0%, #1b1628 55%, #110e1c 100%)" }}>
-      <div className="flex w-full max-w-[420px] flex-1 flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <Link href="/" aria-label="Leave" className="grid size-11 place-items-center rounded-xl text-[#f7bb1f]" style={{ boxShadow: gold, background: "#021230d1" }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M15 5l-7 7 7 7" /></svg>
-          </Link>
-          <div className="text-center">
-            <p className="text-[11px] tracking-[2px] opacity-75">TABLE</p>
-            <p className="font-[family-name:var(--font-cinzel)] text-[26px] font-bold leading-none tracking-[6px] text-[#f7bb1f]">{state.code}</p>
+    <div className="fixed inset-0 overflow-hidden bg-[#15142c]">
+      <div className="absolute left-1/2 top-1/2 origin-center" style={{ width: W, height: H, transform: `translate(-50%,-50%) scale(${scale})`, fontFamily: "var(--font-poppins), Poppins, sans-serif" }}>
+        <VillageScene />
+
+        {/* the same top bar as the game: voice + settings · the table code (tap = copy the link) · leave */}
+        <div className="absolute inset-x-3.5 top-3 z-10 flex h-[46px] items-center justify-between">
+          <div className="flex gap-2">
+            {voice && <MicButton voice={voice} />}
+            <GearButton onTap={() => setSettings(true)} />
           </div>
-          {voice ? <MicButton voice={voice} /> : <span className="size-11" />}
-        </div>
-        <div className="grid grid-cols-[1fr_auto] gap-2">
-          <button onClick={invite} className="h-11 rounded-xl text-[15px] font-bold text-[#2a1404] active:translate-y-0.5" style={goldBtn}>Invite friends</button>
-          <button onClick={() => { play("tap"); copy(); }} className="h-11 rounded-xl px-4 text-[14px] font-semibold active:scale-95" style={{ boxShadow: gold }}>
-            {copied ? "Copied ✓" : "Copy link"}
+          <button onClick={() => { play("tap"); stopMusic(); router.push("/"); }} aria-label="Leave the table"
+            className="grid size-11 place-items-center rounded-xl bg-[#021230d1] text-[#f7bb1f]" style={{ boxShadow: gold }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M15 5l-7 7 7 7" /></svg>
           </button>
         </div>
 
-        {/* THE TABLE */}
-        <div className="relative mx-auto aspect-square w-full max-w-[380px]">
-          <div className="absolute inset-[25%] grid place-items-center rounded-full text-center"
-            style={{ background: "radial-gradient(circle, #3a2c18 0%, #241a10 70%, #160f08 100%)", boxShadow: "inset 0 0 0 2px rgba(247,187,31,.45), 0 0 40px rgba(0,0,0,.5)" }}>
-            <div>
-              <p className="font-[family-name:var(--font-cinzel)] text-[13px] font-bold tracking-[2px] text-[#f7bb1f]">THE VILLAGE</p>
-              <p className="mt-1 text-[13px] opacity-85">{n} seated</p>
-              {n < lobby.min && <p className="mt-0.5 text-[12px] opacity-70">{lobby.min - n} more to play</p>}
-            </div>
-          </div>
-          {Array.from({ length: seats }, (_, k) => {
-            const pos = spot(k);
-            if (k >= n) return (
-              <button key={`e${k}`} onClick={invite} aria-label="Empty seat: invite a friend"
-                className="absolute grid size-[46px] -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full text-[22px] text-[#f7bb1f] active:scale-95"
-                style={{ ...pos, boxShadow: "inset 0 0 0 1.5px rgba(247,187,31,.45)", background: "#02123080", borderStyle: "dashed" }}>+</button>
-            );
-            const name = lobby.names[k], bot = lobby.bots[k], you = k === me, isHost = k === state.host;
-            const talk = Boolean(voice?.talking.includes(k)), muted = Boolean(voice?.muted.includes(k));
-            return (
-              <button key={`${k}:${name}`} onClick={() => { play("tap"); setOpen(you ? null : k); }} aria-label={you ? `${name} (you)` : name}
-                className="absolute flex w-[72px] -translate-x-1/2 -translate-y-1/2 flex-col items-center active:scale-95" style={{ ...pos, marginTop: 8 }}>
-                {/* eslint-disable-next-line @next/next/no-img-element -- static art */}
-                <img src={CARD_BACK} alt="" className="h-[46px] w-[38px] rounded-[5px] object-cover"
-                  style={{ boxShadow: talk ? "0 0 0 3px #7ee0a1, 0 0 12px rgba(126,224,161,.7)" : you ? "0 0 0 2px #f7bb1f" : "0 0 0 1px rgba(247,187,31,.4)" }} />
-                <span className="mt-0.5 max-w-full truncate text-[12px] font-semibold leading-tight">{you ? "You" : name}</span>
-                <span className="text-[10px] leading-tight opacity-75">{isHost ? "★ host" : muted && !bot ? "🔇 muted" : ""}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* THE ROLES IN PLAY — face up, growing with the table */}
-        <div className="rounded-2xl px-3 py-3" style={{ background: "#021230d1", boxShadow: gold }}>
-          <p className="text-center text-[12px] tracking-[1.5px] opacity-85">
-            IN THIS GAME · {Math.max(n, lobby.min)} players · {now.rounds} rounds{n < lobby.min ? ` (at ${lobby.min})` : ""}
+        {/* the centre: the same panel as the game's */}
+        <div className="absolute z-[2] w-[196px] -translate-x-1/2 -translate-y-1/2 rounded-[14px] px-3 pb-3 pt-[11px] text-center shadow-[inset_0_0_0_1px_rgba(247,187,31,.55),0_10px_24px_rgba(0,0,0,.55)]"
+          style={{ left: W / 2, top: CY, background: "linear-gradient(rgba(12,44,107,.94), rgba(2,18,48,.96))" }} role="status" aria-live="polite">
+          <span className="absolute -top-[5px] left-1/2 size-2.5 -translate-x-1/2 rotate-45 bg-[#f7bb1f]" aria-hidden />
+          <span className="absolute -bottom-[5px] left-1/2 size-2.5 -translate-x-1/2 rotate-45 bg-[#f7bb1f]" aria-hidden />
+          <button onClick={() => { play("tap"); copy(); }} aria-label="Copy the table link" className="font-[family-name:var(--font-cinzel)] text-[12px] font-bold tracking-[2px] text-[#f7bb1f]">
+            {copied ? "LINK COPIED ✓" : `TABLE ${state.code}`}
+          </button>
+          <p className="text-[12px] text-[#ffe7a6e6]">{n} seated{n < lobby.min ? ` · ${lobby.min - n} more to play` : ""}</p>
+          <p className="font-display mt-[7px] rounded-lg bg-[#021230bf] px-2 py-[7px] text-[16px] font-black leading-tight text-white shadow-[inset_0_0_0_1px_rgba(247,187,31,.3)]">
+            {host ? (n < lobby.min ? "Invite or add bots" : "Ready when you are") : `Waiting for ${lobby.names[state.host] ?? "the host"}`}
           </p>
-          <div className="mt-2 flex items-end justify-center gap-3">
-            <RoleRow roles={now.v} label={`${now.v.length} villagers`} />
-            <span className="mb-6 h-12 w-px bg-[#f7bb1f55]" />
-            <RoleRow roles={now.t} label={`${now.t.length} ${now.t.length === 1 ? "thief" : "thieves"}`} />
-          </div>
-          {adds && <p className="mt-1.5 text-center text-[12.5px]">Next seat adds: <b className="text-[#f7bb1f]">{adds}</b></p>}
-          {n >= lobby.max && <p className="mt-1.5 text-center text-[12.5px] opacity-80">The table is full</p>}
         </div>
 
-        <div className="mt-auto flex flex-col gap-2">
-          {err && <p role="alert" className="rounded-xl bg-[#5a1010e6] px-3 py-2 text-center text-[13px] text-white">{err}</p>}
-          {host ? (
-            <div className="grid grid-cols-[auto_1fr] gap-2">
-              <button disabled={busy || n >= lobby.max} onClick={() => run(() => api.addBot(state.code, token))}
-                className="h-[52px] rounded-2xl px-4 text-[15px] font-semibold active:scale-95 disabled:opacity-40" style={{ boxShadow: gold }}>+ Bot</button>
-              <button disabled={busy || n < lobby.min} onClick={() => run(() => api.start(state.code, token))}
-                className="h-[52px] rounded-2xl text-[16px] font-bold text-[#2a1404] active:translate-y-0.5 disabled:opacity-45" style={goldBtn}>
-                {n < lobby.min ? `${lobby.min - n} more to start` : busy ? "One moment…" : "Start the game"}
-              </button>
+        <Seats players={players} you={me} myRole={null} active={[]} total={seats} talking={voice?.talking} muted={voice?.muted}
+          onSeat={(s) => { play("tap"); setOpen(s === me ? null : s); }} />
+        {/* the empty seats: tap to invite */}
+        {Array.from({ length: seats - n }, (_, k) => {
+          const { x, y } = seatSpot(n + k, me, seats);
+          return (
+            <button key={`e${k}`} onClick={invite} aria-label="Empty seat: invite a friend"
+              className="absolute z-[2] grid h-[86px] w-[60px] -translate-x-1/2 -translate-y-1/2 place-items-center rounded-[6px] border-[1.5px] border-dashed border-[#f7bb1f99] bg-[#02123080] text-[26px] text-[#f7bb1f] active:scale-95"
+              style={{ left: x, top: y }}>+</button>
+          );
+        })}
+
+        {/* where your cards will be: the roles in play as buttons, then Invite · + Bot · Start */}
+        <div className="absolute inset-x-0 bottom-0 z-[1]" style={{ top: HAND_TOP }}>
+          <div className="absolute inset-0 shadow-[0_-10px_24px_rgba(0,0,0,.5)]" style={{ background: "linear-gradient(rgba(2,10,30,.35), rgba(2,8,24,.9)), repeating-linear-gradient(90deg, rgba(255,231,166,.035) 0 1px, transparent 1px 12px), repeating-linear-gradient(0deg, #0e1a3c 0 6px, #0a1532 6px 12px)" }} />
+          <div className="absolute inset-x-3 top-[22px] bottom-[12px] flex flex-col">
+            <p className="text-center text-[12px] text-[#ffe7a6d9]">
+              In this game · {Math.max(n, lobby.min)} players · {now.rounds} rounds{n < lobby.min ? ` (at ${lobby.min})` : ""}
+            </p>
+            <div className="mt-2 flex flex-wrap justify-center gap-1.5">
+              {now.v.map((r) => <span key={r} className={pill(false)}>{r}</span>)}
+              {now.t.map((r) => <span key={r} className={pill(true)}>{r}</span>)}
             </div>
-          ) : (
-            <p className="py-3 text-center text-[14px] opacity-80">Waiting for {lobby.names[state.host] ?? "the host"} to start…</p>
-          )}
+            <p className="mt-1.5 text-center text-[12px] text-[#ffe7a6b3]">
+              {now.v.length} villagers · {now.t.length} {now.t.length === 1 ? "thief" : "thieves"}
+              {adds ? <> · next seat adds <b className="text-[#f7bb1f]">{adds}</b></> : n >= lobby.max ? " · the table is full" : ""}
+            </p>
+            {err && <p role="alert" className="mt-1 truncate rounded-lg bg-[#5a1010e6] px-2 py-1 text-center text-[12px] text-white">{err}</p>}
+            <div className={`mt-auto grid gap-2 ${host ? "grid-cols-[1fr_auto_1.3fr]" : "grid-cols-1"}`}>
+              <button onClick={invite} className={`h-[46px] text-[15px] ${lineBtn}`}>Invite</button>
+              {host && <button disabled={busy || n >= lobby.max} onClick={() => run(() => api.addBot(state.code, token))} className={`h-[46px] px-4 text-[15px] ${lineBtn}`}>+ Bot</button>}
+              {host && (
+                <button disabled={busy || n < lobby.min} onClick={() => run(() => api.start(state.code, token))} className={`h-[46px] text-[15px] ${goldBtn}`}>
+                  {n < lobby.min ? `${lobby.min - n} more` : busy ? "One moment…" : "Start game"}
+                </button>
+              )}
+            </div>
+          </div>
         </div>
+        <MatEdge />
       </div>
 
       {sel !== null && (
@@ -161,23 +157,7 @@ export function WaitingRoom({ state, token, onStarted, voice }: { state: ClientS
           onRemove={() => { setOpen(null); run(() => api.removeBot(state.code, token, sel)); }}
           onClose={() => setOpen(null)} />
       )}
-    </main>
-  );
-}
-
-function RoleRow({ roles, label }: { roles: string[]; label: string }) {
-  return (
-    <div className="flex flex-col items-center">
-      <div className="flex flex-wrap justify-center gap-1">
-        {roles.map((r) => (
-          <div key={r} className="flex w-[38px] flex-col items-center">
-            {/* eslint-disable-next-line @next/next/no-img-element -- static art */}
-            <img src={roleArt(r) ?? CARD_BACK} alt="" className="h-[50px] w-[36px] rounded-[4px] object-cover" style={{ boxShadow: "0 0 0 1px rgba(247,187,31,.5)" }} />
-            <span className="mt-0.5 w-full truncate text-center text-[9.5px] leading-tight">{r}</span>
-          </div>
-        ))}
-      </div>
-      <p className="mt-1 text-[11.5px] opacity-80">{label}</p>
+      {settings && <SettingsSheet onClose={() => setSettings(false)} />}
     </div>
   );
 }
@@ -195,7 +175,7 @@ function SeatSheet({ name, bot, host, isHost, busy, voice, muted, onMute, onRepo
     : { background: "linear-gradient(#0d1f4a, #061538)", color: "#fff", boxShadow: "inset 0 0 0 1px rgba(247,187,31,.5)" };
   const canRemove = host && !isHost;
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center" role="dialog" aria-label={name}>
+    <div className="fixed inset-0 z-50 flex items-end justify-center text-[#ffe7a6]" role="dialog" aria-label={name} style={{ fontFamily: "var(--font-poppins), Poppins, sans-serif" }}>
       <button aria-label="Close" className="absolute inset-0 bg-black/55" onClick={onClose} />
       <div className="relative w-full max-w-[420px] rounded-t-3xl px-4 pb-[max(18px,env(safe-area-inset-bottom))] pt-4"
         style={{ background: "linear-gradient(#020a1e, #020818)", boxShadow: "inset 0 1.5px 0 rgba(247,187,31,.6)" }}>
@@ -226,7 +206,7 @@ function SeatSheet({ name, bot, host, isHost, busy, voice, muted, onMute, onRepo
         {step === "remove" && (
           <div className="mt-4 flex flex-col gap-2">
             <p className="text-center text-[13.5px] opacity-85">{name} leaves the table and can&apos;t sit down here again under this name.</p>
-            <button onClick={() => { play("tap"); onRemove(); }} className="h-[52px] rounded-2xl text-[16px] font-bold text-[#2a1404] active:translate-y-0.5" style={goldBtn}>Remove {name}</button>
+            <button onClick={() => { play("tap"); onRemove(); }} className={`h-[52px] text-[16px] ${goldBtn}`}>Remove {name}</button>
           </div>
         )}
         {step === "report" && (
@@ -239,7 +219,7 @@ function SeatSheet({ name, bot, host, isHost, busy, voice, muted, onMute, onRepo
             </div>
             {reason ? (
               <button disabled={sending} onClick={async () => { play("tap"); setSending(true); await onReport(reason); if (voice) onMute(true); setStep("sent"); }}
-                className="h-[52px] rounded-2xl text-[16px] font-bold text-[#2a1404] active:translate-y-0.5 disabled:opacity-60" style={goldBtn}>
+                className={`h-[52px] text-[16px] ${goldBtn}`}>
                 {sending ? "Sending…" : `Report ${name}`}
               </button>
             ) : <p className="grid h-[52px] place-items-center text-[13px] opacity-70">What happened?</p>}
