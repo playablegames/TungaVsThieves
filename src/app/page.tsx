@@ -12,18 +12,17 @@ import { MotionSettings } from "@/components/MotionSettings";
 import { AgeGate } from "@/components/AgeGate";
 import { NICKNAMES, isMinor, readGate } from "@/lib/gate";
 import { NAME_MAX } from "@/lib/names";
-import { TABLE } from "@/rules/game";
 
 const NAME_KEY = "tunga:name";
 const LEARNED = "tunga:learned";
-/** Play with bots (designer 2026-10-12: "must open a screen to add however many bots we want"): 3 to 11 bots —
+/** Play with bots opens your table's lobby with 4 bots (owner 2026-11-23: one step); more bots are added there —
  *  4 to 12 players, the box's own range (rules 1.1; 2026-11-18 it stopped at 5 players) — 5 to start with */
-const BOTS_MIN = 3, BOTS_MAX = 11, BOTS_START = 4; // owner 2026-11-22: start at 4 bots + you = 5 players, 2 rounds
+const BOTS_START = 4; // owner 2026-11-22: start at 4 bots + you = 5 players, 2 rounds
 /** the sheet's heading and one line under it, per way in (2026-11-18 Make / join sheet) */
 const SHEET: Record<"create" | "join" | "bots" | "learn", { title: string; line: string; button: string }> = {
   create: { title: "Open a table", line: "Friends join with a code you’ll share next", button: "Open the table" },
   join: { title: "Join table", line: "", button: "Take a seat" },
-  bots: { title: "Play with bots", line: "Learn the game, no waiting", button: "Start the game" },
+  bots: { title: "Play with bots", line: "Your table opens with 4 bots. Add more there.", button: "Open my table" },
   learn: { title: "Learn by playing", line: "A table of bots, explained as you go", button: "Start the game" },
 };
 
@@ -60,7 +59,6 @@ function Entry() {
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [bots, setBots] = useState(BOTS_START);
   const nameRef = useRef<HTMLInputElement>(null);
   const codeOk = code.trim().length === 5;
   // JOIN checks the code BEFORE the name (2026-11-18): found + how many sit there, or why you can't sit
@@ -86,6 +84,9 @@ function Entry() {
       const nick = NICKNAMES.includes(savedName()) ? savedName() : NICKNAMES[0];
       setName(nick); setAsk(kind); return;
     }
+    // (owner 2026-11-23: "why are there 2 steps, play with bots must open the lobby") a known name goes straight to the
+    // table's lobby, where bots are added and the game started
+    if (kind === "bots" && savedName()) { void open("bots", savedName()); return; }
     setName(savedName());
     setPeek(kind === "join" ? "looking" : null);
     setAsk(kind);
@@ -96,6 +97,9 @@ function Entry() {
 
   async function go() {
     if (!ask || !name.trim()) return;
+    await open(ask, name);
+  }
+  async function open(ask: "create" | "join" | "bots" | "learn", name: string) {
     setError(null); setBusy(true);
     try { localStorage.setItem(NAME_KEY, name.trim()); } catch {}
     try {
@@ -108,7 +112,7 @@ function Entry() {
         return;
       }
       // (2026-10-14) Play with bots: the table is seated, dealt and started in ONE call (it was three)
-      const r = ask === "join" ? await api.join(code.trim().toUpperCase(), name) : ask === "bots" ? await api.createWithBots(name, bots) : await api.create(name);
+      const r = ask === "join" ? await api.join(code.trim().toUpperCase(), name) : ask === "bots" ? await api.createWithBots(name, BOTS_START) : await api.create(name);
       saveToken(r.code, r.token);
       router.push(`/g/${r.code}`);
     } catch (e) {
@@ -213,19 +217,6 @@ function Entry() {
               </select>
             ) : <input id="name" ref={nameRef} value={name} maxLength={NAME_MAX} onChange={(e) => setName(e.target.value)} placeholder="Your name" autoComplete="nickname"
               className="min-h-14 rounded-xl border-[1.5px] border-card-ink/30 bg-white/60 px-4 text-[17px] font-medium text-card-ink caret-marigold-deep outline-none placeholder:font-normal placeholder:text-card-ink/40 focus:border-marigold-deep" />}
-            {ask === "bots" && (
-              <div className="flex items-center justify-between gap-3 rounded-xl border-[1.5px] border-card-ink/20 px-2 py-2">
-                <button type="button" aria-label="One bot fewer" disabled={busy || bots <= BOTS_MIN} onClick={() => setBots((b) => Math.max(BOTS_MIN, b - 1))}
-                  className="size-12 rounded-full border-[1.5px] border-card-ink/40 text-[24px] font-medium transition-transform duration-150 active:scale-95 disabled:opacity-30">−</button>
-                <p className="text-center" aria-live="polite">
-                  <span className="block text-[20px] font-semibold leading-tight tabular-nums">{bots} bots</span>
-                  <span className="block text-[13px] text-card-ink/70">{bots + 1} players · {TABLE[bots + 1][2]} rounds</span>
-                  <span className="block text-[13px] text-card-ink/70">{TABLE[bots + 1][0]} villagers · {TABLE[bots + 1][1]} {TABLE[bots + 1][1] === 1 ? "thief" : "thieves"}</span>
-                </p>
-                <button type="button" aria-label="One bot more" disabled={busy || bots >= BOTS_MAX} onClick={() => setBots((b) => Math.min(BOTS_MAX, b + 1))}
-                  className="size-12 rounded-full border-[1.5px] border-card-ink/40 text-[24px] font-medium transition-transform duration-150 active:scale-95 disabled:opacity-30">+</button>
-              </div>
-            )}
             {error && <p role="alert" className="rounded-xl bg-crimson-deep p-3 text-center text-[14px] text-white">{error}</p>}
             <button type="submit" disabled={busy || !name.trim() || joinBlocked}
               className="btn-gold min-h-14 whitespace-nowrap rounded-full text-[17px] font-semibold">

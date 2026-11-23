@@ -2,8 +2,8 @@
 // THE LOBBY IS THE GAME TABLE (owner 2026-11-23: "the lobby looks like a different table, not the same table"; "roles
 // must be mentioned below as buttons not cards"; "no music in the lobby"; bot tables use this lobby too). The same
 // night village, courtyard, seats and garland as the game: people sit in their real seats as they join, empty seats
-// show "+" (tap to invite), the centre shows who is seated. Where your cards will be: the roles in play as buttons
-// (each new seat adds the next role [1.4c: the roles in play are public]) and Invite · + Bot · Start.
+// show "+" (tap to invite). The centre: table code (tap = copy link), who is seated, Add bot + Start game (host).
+// Where your cards will be: ONLY the roles in this game, big and bold [1.4c: the roles in play are public].
 // Voice safety: your mic starts OFF; tap a person to mute them for yourself, report them, or (host) remove them.
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -52,8 +52,6 @@ export function WaitingRoom({ state, token, onStarted, voice }: { state: ClientS
   const me = state.you.seat;
   const link = typeof location === "undefined" ? "" : `${location.origin}/?code=${state.code}`;
   const now = rolesAt(lobby.table, n, lobby.min);
-  const after = n < lobby.max && n >= lobby.min ? rolesAt(lobby.table, n + 1, lobby.min) : null;
-  const adds = after ? [...after.v.filter((r) => !now.v.includes(r)), ...after.t.filter((r) => !now.t.includes(r))][0] : null;
   // the seats round the table: everyone here, then a few empty ones (at least up to the smallest table)
   const seats = Math.min(lobby.max, Math.max(lobby.min, n + (n < 8 ? 2 : 1)));
   const players = lobby.names.map((name, seat) => ({ seat, name, alive: true }));
@@ -74,7 +72,8 @@ export function WaitingRoom({ state, token, onStarted, voice }: { state: ClientS
     try { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { setErr(link); }
   }
   const sel = open !== null && open < n ? open : null;
-  const pill = (thief: boolean) => `rounded-full bg-[#021230d9] px-2.5 py-[5px] text-[12.5px] font-semibold ${thief ? "text-[#ff8a7a] shadow-[inset_0_0_0_1.5px_rgba(255,138,122,.7)]" : "text-[#ffe7a6] shadow-[inset_0_0_0_1.5px_rgba(247,187,31,.6)]"}`;
+  const big = now.v.length + now.t.length > 9;
+  const role = (thief: boolean) => `rounded-2xl bg-[#021230e6] ${big ? "px-3 py-[7px] text-[16px]" : "px-4 py-[9px] text-[19px]"} font-bold ${thief ? "text-[#ff8a7a] shadow-[inset_0_0_0_2px_rgba(255,138,122,.75)]" : "text-[#ffe7a6] shadow-[inset_0_0_0_2px_rgba(247,187,31,.65)]"}`;
 
   return (
     <div className="fixed inset-0 overflow-hidden bg-[#15142c]">
@@ -93,18 +92,30 @@ export function WaitingRoom({ state, token, onStarted, voice }: { state: ClientS
           </button>
         </div>
 
-        {/* the centre: the same panel as the game's */}
-        <div className="absolute z-[2] w-[196px] -translate-x-1/2 -translate-y-1/2 rounded-[14px] px-3 pb-3 pt-[11px] text-center shadow-[inset_0_0_0_1px_rgba(247,187,31,.55),0_10px_24px_rgba(0,0,0,.55)]"
-          style={{ left: W / 2, top: CY, background: "linear-gradient(rgba(12,44,107,.94), rgba(2,18,48,.96))" }} role="status" aria-live="polite">
+        {/* the centre (owner 2026-11-23): the table code, who is seated, and the host's two buttons */}
+        <div className="absolute z-[3] w-[224px] -translate-x-1/2 -translate-y-1/2 rounded-[16px] px-3.5 pb-3.5 pt-3 text-center shadow-[inset_0_0_0_1px_rgba(247,187,31,.55),0_10px_24px_rgba(0,0,0,.55)]"
+          style={{ left: W / 2, top: CY, background: "linear-gradient(rgba(12,44,107,.95), rgba(2,18,48,.97))" }} role="status" aria-live="polite">
           <span className="absolute -top-[5px] left-1/2 size-2.5 -translate-x-1/2 rotate-45 bg-[#f7bb1f]" aria-hidden />
           <span className="absolute -bottom-[5px] left-1/2 size-2.5 -translate-x-1/2 rotate-45 bg-[#f7bb1f]" aria-hidden />
           <button onClick={() => { play("tap"); copy(); }} aria-label="Copy the table link" className="font-[family-name:var(--font-cinzel)] text-[12px] font-bold tracking-[2px] text-[#f7bb1f]">
             {copied ? "LINK COPIED ✓" : `TABLE ${state.code}`}
           </button>
-          <p className="text-[12px] text-[#ffe7a6e6]">{n} seated{n < lobby.min ? ` · ${lobby.min - n} more to play` : ""}</p>
-          <p className="font-display mt-[7px] rounded-lg bg-[#021230bf] px-2 py-[7px] text-[16px] font-black leading-tight text-white shadow-[inset_0_0_0_1px_rgba(247,187,31,.3)]">
-            {host ? (n < lobby.min ? "Invite or add bots" : "Ready when you are") : `Waiting for ${lobby.names[state.host] ?? "the host"}`}
-          </p>
+          <p className="text-[12px] text-[#ffe7a6e6]">{n} seated</p>
+          {host ? (
+            <div className="mt-2.5 flex flex-col gap-2">
+              <button disabled={busy || n >= lobby.max} onClick={() => run(() => api.addBot(state.code, token))} className={`h-11 text-[15px] ${lineBtn}`}>
+                {n >= lobby.max ? "Table full" : "Add bot"}
+              </button>
+              <button disabled={busy || n < lobby.min} onClick={() => run(() => api.start(state.code, token))} className={`h-11 text-[15px] ${goldBtn}`}>
+                {n < lobby.min ? `${lobby.min - n} more to start` : busy ? "One moment…" : "Start game"}
+              </button>
+            </div>
+          ) : (
+            <p className="font-display mt-2 rounded-lg bg-[#021230bf] px-2 py-[7px] text-[15px] font-black leading-tight text-white shadow-[inset_0_0_0_1px_rgba(247,187,31,.3)]">
+              Waiting for {lobby.names[state.host] ?? "the host"}
+            </p>
+          )}
+          {err && <p role="alert" className="mt-2 rounded-lg bg-[#5a1010e6] px-2 py-1 text-[11.5px] text-white">{err}</p>}
         </div>
 
         <Seats players={players} you={me} myRole={null} active={[]} total={seats} talking={voice?.talking} muted={voice?.muted}
@@ -119,31 +130,12 @@ export function WaitingRoom({ state, token, onStarted, voice }: { state: ClientS
           );
         })}
 
-        {/* where your cards will be: the roles in play as buttons, then Invite · + Bot · Start */}
+        {/* where your cards will be: ONLY the roles in this game, big and bold (owner 2026-11-23) */}
         <div className="absolute inset-x-0 bottom-0 z-[1]" style={{ top: HAND_TOP }}>
           <div className="absolute inset-0 shadow-[0_-10px_24px_rgba(0,0,0,.5)]" style={{ background: "linear-gradient(rgba(2,10,30,.35), rgba(2,8,24,.9)), repeating-linear-gradient(90deg, rgba(255,231,166,.035) 0 1px, transparent 1px 12px), repeating-linear-gradient(0deg, #0e1a3c 0 6px, #0a1532 6px 12px)" }} />
-          <div className="absolute inset-x-3 top-[22px] bottom-[12px] flex flex-col">
-            <p className="text-center text-[12px] text-[#ffe7a6d9]">
-              In this game · {Math.max(n, lobby.min)} players · {now.rounds} rounds{n < lobby.min ? ` (at ${lobby.min})` : ""}
-            </p>
-            <div className="mt-2 flex flex-wrap justify-center gap-1.5">
-              {now.v.map((r) => <span key={r} className={pill(false)}>{r}</span>)}
-              {now.t.map((r) => <span key={r} className={pill(true)}>{r}</span>)}
-            </div>
-            <p className="mt-1.5 text-center text-[12px] text-[#ffe7a6b3]">
-              {now.v.length} villagers · {now.t.length} {now.t.length === 1 ? "thief" : "thieves"}
-              {adds ? <> · next seat adds <b className="text-[#f7bb1f]">{adds}</b></> : n >= lobby.max ? " · the table is full" : ""}
-            </p>
-            {err && <p role="alert" className="mt-1 truncate rounded-lg bg-[#5a1010e6] px-2 py-1 text-center text-[12px] text-white">{err}</p>}
-            <div className={`mt-auto grid gap-2 ${host ? "grid-cols-[1fr_auto_1.3fr]" : "grid-cols-1"}`}>
-              <button onClick={invite} className={`h-[46px] text-[15px] ${lineBtn}`}>Invite</button>
-              {host && <button disabled={busy || n >= lobby.max} onClick={() => run(() => api.addBot(state.code, token))} className={`h-[46px] px-4 text-[15px] ${lineBtn}`}>+ Bot</button>}
-              {host && (
-                <button disabled={busy || n < lobby.min} onClick={() => run(() => api.start(state.code, token))} className={`h-[46px] text-[15px] ${goldBtn}`}>
-                  {n < lobby.min ? `${lobby.min - n} more` : busy ? "One moment…" : "Start game"}
-                </button>
-              )}
-            </div>
+          <div className="absolute inset-x-3 top-[26px] bottom-[14px] flex flex-wrap content-center justify-center gap-2">
+            {now.v.map((r) => <span key={r} className={role(false)}>{r}</span>)}
+            {now.t.map((r) => <span key={r} className={role(true)}>{r}</span>)}
           </div>
         </div>
         <MatEdge />
