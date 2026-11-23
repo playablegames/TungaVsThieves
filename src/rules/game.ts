@@ -41,7 +41,9 @@ export type Phase =
 
 export interface Ballot { for: number | null; extra: boolean }
 /** where the game goes after an out player has given the extra vote */
-type Next = { kind: "pass"; seat: number; keep: number; draw: number } | { kind: "pileTo"; from: number } | { kind: "count" };
+type Next = { kind: "pass"; seat: number; keep: number; draw: number } | { kind: "pileTo"; from: number } | { kind: "count" }
+  // (owner 2026-11-23) after taking 2 cards (Faisla out, Teer Kaman hit): YOUR OWN 3 go to the next player, you keep the 2 you got
+  | { kind: "passOwn"; seat: number; own: Card[] };
 
 export interface Event { n: number; to: "all" | number[]; type: string; msg: string; data?: Record<string, unknown> }
 
@@ -228,7 +230,17 @@ function goOut(s: State, seat: number, next: Next) {
   s.phase = { kind: "gift", seat, next };
 }
 
+/** (owner 2026-11-23: "when you play a pair, your 3 cards are gone to the next person and you can only draw 2 cards or
+ *  get 2 cards") after Hera Pheri, a Faisla that puts someone out, or a Teer Kaman hit: the player's OWN 3 cards go to
+ *  the next player face down — no choosing — and they keep the 2 they took. */
+function passOwn(s: State, seat: number, own: Card[]) {
+  const p = P(s, seat);
+  if (own.length && p.hand.length - 2 === own.length) return give(s, seat, own, 2, 0);
+  toPass(s, seat, 2, 0); // a short deck left an odd hand: fall back to choosing
+}
+
 function runNext(s: State, next: Next) {
+  if (next.kind === "passOwn") return passOwn(s, next.seat, next.own);
   if (next.kind === "pass") return toPass(s, next.seat, next.keep, next.draw);
   if (next.kind === "pileTo") return endTurn(s, next.from);
   return count_(s);
@@ -263,10 +275,11 @@ function closeVote(s: State) {
   const caller = ph.caller!, after = ph.after!;
   if (out === null) return toPass(s, caller, 0, after.draw);
   if (out === caller) return goOut(s, caller, { kind: "pileTo", from: caller }); // [5.4] the caller's own 3 become the pile
-  // [5.2] the out player's cards go to the caller; [5.4] caller holds 5, passes 3, no draw
+  // [5.2] the out player's cards go to the caller; the caller's own 3 go on to the next player (owner 2026-11-23)
   const victim = P(s, out);
+  const own = [...P(s, caller).hand];
   P(s, caller).hand.push(...victim.hand.splice(0));
-  goOut(s, out, { kind: "pass", seat: caller, keep: 2, draw: 0 });
+  goOut(s, out, { kind: "passOwn", seat: caller, own });
 }
 
 /** [6.2] [6.3] [6.4] count the Stones */
@@ -353,12 +366,13 @@ export function apply(state: State, seat: number, m: Move): State {
           emit(s, [t!.seat], "kundli", `${me.name} is ${me.role}.`, { target: seat, role: me.role, side: me.side });
           toPass(s, seat, 0, 2); return s;
         case "HERA_PHERI": { // [3.2] steal both; the robbed player draws 2 at once; you hold 5, pass 3, no draw
+          const own = [...me.hand];
           const stolen = t!.hand.splice(0);
           me.hand.push(...stolen);
           emit(s, [seat], "stole", `You take ${stolen.map((c) => NAME[c]).join(" and ")} from ${t!.name}.`, { cards: stolen, target: t!.seat });
           emit(s, [t!.seat], "robbed", `${me.name} takes your ${stolen.map((c) => NAME[c]).join(" and ")}.`, { cards: stolen, from: seat });
           draw(s, t!.seat, 2);
-          s.phase = { kind: "pass", seat, keep: 2, draw: 0 };
+          passOwn(s, seat, own); // your own 3 go on, you keep the 2 you stole (owner 2026-11-23)
           return s;
         }
         case "FAISLA": startVote(s, false, seat, { seat, draw: 2 }); return s; // [3.4]
@@ -380,7 +394,7 @@ export function apply(state: State, seat: number, m: Move): State {
       // (owner 2026-11-17) as at the table: the target shows their role card to the SHOOTER ONLY, then the shooter says hit
       // or miss. The table never sees it — an out thief keeps the secret and can poison the game to the end.
       emit(s, [seat], "teer_kaman_shown", `${t.name} shows you their role card: ${t.role}.`, { target: t.seat, role: t.role });
-      if (hit) { me.hand.push(...t.hand.splice(0)); goOut(s, t.seat, { kind: "pass", seat, keep: 2, draw: 0 }); } // [5.3]
+      if (hit) { const own = [...me.hand]; me.hand.push(...t.hand.splice(0)); goOut(s, t.seat, { kind: "passOwn", seat, own }); } // [5.3] own 3 go on, keep the 2 taken
       else goOut(s, seat, { kind: "pileTo", from: seat }); // [5.3] [5.4] the shooter's 3 become the next player's pile
       return s;
     }

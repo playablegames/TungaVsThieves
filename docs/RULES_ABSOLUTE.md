@@ -42,7 +42,7 @@ Sources: **[P]** = the owner's 10 How-to-play pages (approved 2026-11-17) · **[
 | # | Card | Rule | Source |
 |---|---|---|---|
 | 3.1 | Talashi | Pick any living player; only you see their 2 action cards. | [P] |
-| 3.2 | Hera Pheri | **STEAL, not swap** (owner 2026-11-17: the printed "draw 2 & swap" text is wrong). You take both cards of any living player. Flow: pair → you hold 3 → steal their 2 → you hold 5 → pass 3 → hold 2, no draw. The robbed player **draws 2 straight away**. ⚠ How to play page 6 still says "Draw 2 cards, then swap 2" — fix. | owner Q11 + Q11b |
+| 3.2 | Hera Pheri | **STEAL, not swap** (owner 2026-11-17: the printed "draw 2 & swap" text is wrong). You take both cards of any living player. Flow: pair → you hold 3 → steal their 2 → **your own 3 go to the next player (no choosing) → you hold the 2 you stole**, no draw (owner 2026-11-23: "your 3 cards are gone to the next person and you can only draw 2 cards or get 2 cards"; same after a Faisla that puts someone out and a Teer Kaman hit). The robbed player **draws 2 straight away**. ⚠ How to play page 6 still says "Draw 2 cards, then swap 2" — fix. | owner Q11 + Q11b |
 | 3.3 | Kundli | Pick any living player; you and they see each other's role, in secret. | [P] |
 | 3.4 | Faisla | **Every living player votes, the caller too. No voting for yourself.** The player with the **most votes is out — plain most votes, no majority needed.** **You may choose not to vote (a "No vote" button).** 45 s to vote (owner 2026-11-21; was 20); no vote in time = no vote. **OPEN VOTE (owner 2026-11-20): every vote shows to everyone the moment it is cast, and any player may CHANGE their vote until the vote closes — so the table can agree on one target. The vote closes when the 45 s run out, or earlier: once everyone has voted, 5 s after the last change.** | owner Q12 + 2026-11-20 |
 | 3.5 | Faisla tie | **A tie for most votes = no result, nobody is out.** | owner Q12 |
@@ -68,8 +68,8 @@ of turn, never during a vote or a Teer Kaman. Team sizes per 1.2 (owner 2026-11-
 | # | Rule | Source |
 |---|---|---|
 | 5.1 | Only Faisla or Teer Kaman can put a player out. | [P] |
-| 5.2 | Out by Faisla: your cards go to the player who played Faisla. | [P] |
-| 5.3 | Right Teer Kaman: the shooter takes the target's cards. Wrong: the shooter is out, and their cards go to the next player. | [P] |
+| 5.2 | Out by Faisla: your cards go to the player who played Faisla; the caller's own 3 go to the next player (owner 2026-11-23). | [P] |
+| 5.3 | Right Teer Kaman: the shooter takes the target's cards and passes their own 3 to the next player (owner 2026-11-23). Wrong: the shooter is out, and their cards go to the next player. | [P] |
 | 5.4 | Nobody ever holds too many: **Faisla (someone else out)**: caller holds 3 + their 2 = 5 → pass 3 → hold 2, no draw. **Teer Kaman hit**: shooter 3 + target's 2 = 5 → pass 3 → hold 2, no draw. **Teer Kaman miss**: the shooter is out; their 3 cards go to the next player AS THE PILE. **Faisla caller voted out by their own Faisla**: same — their 3 cards go to the next player as the pile. (Balance-subject.) | owner Q17 |
 | 5.5 | The out player must give an extra vote to a living player. It is used once. A newer gift (from a later out player) cancels the older one. | [P] + [C] |
 | 5.6 | The extra vote can be used in **a Faisla vote OR the final vote — the holder chooses (a tick box: "Use my extra vote here", their vote counts 2). Used once, then it is gone for good.** | owner Q18 |

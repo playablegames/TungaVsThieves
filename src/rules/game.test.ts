@@ -133,19 +133,19 @@ describe("3 · action cards", () => {
     expect(ev.to).toEqual([me]);
     expect(ev.data!.cards).toEqual(s.players[tg].hand);
   });
-  it("3.2 Hera Pheri steals both cards; the robbed player draws 2 at once; you pass 3 and keep 2, no draw", () => {
+  it("3.2 Hera Pheri steals both cards; the robbed player draws 2 at once; YOUR OWN 3 go on, you keep the 2 stolen, no draw", () => {
     const { s, me } = at(5, ["HERA_PHERI", "HERA_PHERI", "FAISLA", "KUNDLI", "TALASHI"]);
-    const tg = others(s, me)[0];
+    const tg = others(s, me).find((x) => x !== nextLiving(s, me))!; // not the next player (they pick up the pile)
     s.players[tg].hand = ["TUNGA_STONE", "BHADRA_STONE"];
-    let t = move(s, me, { kind: "play", card: "HERA_PHERI", target: tg });
-    expect(t.players[me].hand).toEqual(expect.arrayContaining(["TUNGA_STONE", "BHADRA_STONE"]));
-    expect(t.players[me].hand.length).toBe(5);
+    const deck = s.deck.length;
+    const t = move(s, me, { kind: "play", card: "HERA_PHERI", target: tg });
+    // (owner 2026-11-23) no choosing: your own 3 go to the next player, you hold what you stole
+    expect(t.players[me].hand.sort()).toEqual(["BHADRA_STONE", "TUNGA_STONE"]);
     expect(t.players[tg].hand.length).toBe(2);
     expect(t.players[tg].hand).not.toContain("TUNGA_STONE");
-    const deck = t.deck.length;
-    t = move(t, me, { kind: "give", cards: ["FAISLA", "KUNDLI", "TALASHI"] });
-    expect(t.players[me].hand.sort()).toEqual(["BHADRA_STONE", "TUNGA_STONE"]);
-    expect(t.deck.length).toBe(deck);
+    expect(t.players[nextLiving(t, me)].hand).toEqual(expect.arrayContaining(["FAISLA", "KUNDLI", "TALASHI"])); // they picked up your 3
+    expect(t.deck.length).toBe(deck - 2); // only the robbed player drew
+    expect(turnSeat(t)).toBe(nextLiving(t, me));
   });
   it("3.3 Kundli: you and they see each other's role, nobody else", () => {
     const { s, me } = at(5, ["KUNDLI", "KUNDLI", "FAISLA", "TALASHI", "TUNGA_STONE"]);
@@ -290,7 +290,7 @@ describe("4 · Dal Badal", () => {
 });
 
 describe("5 · elimination", () => {
-  it("5.2 5.4 out by Faisla: their cards go to the caller, who passes 3 and keeps 2 with no draw", () => {
+  it("5.2 5.4 out by Faisla: their cards go to the caller, whose own 3 go on — keeps the 2 taken, no draw", () => {
     const { s, me } = at(6, ["FAISLA", "FAISLA", "KUNDLI", "TALASHI", "TUNGA_STONE"]);
     let t = move(s, me, { kind: "play", card: "FAISLA" });
     const tg = others(t, me)[0];
@@ -298,11 +298,10 @@ describe("5 · elimination", () => {
     for (const v of living(t).map((p) => p.seat)) t = move(t, v, { kind: "vote", for: v === tg ? me : tg }); t = closeVoteNow(t); // [3.4] the clock closes the open vote
     expect(t.players[tg].alive).toBe(false);
     expect(t.players[me].hand).toEqual(expect.arrayContaining(theirs));
-    t = move(t, tg, { kind: "gift", to: me });
-    expect(t.phase.kind === "pass" && t.phase.seat === me && t.phase.keep === 2).toBe(true);
     const deck = t.deck.length;
-    t = move(t, me, { kind: "give", cards: t.players[me].hand.slice(0, 3) });
-    expect(t.players[me].hand.length).toBe(2);
+    t = move(t, tg, { kind: "gift", to: me });
+    expect(t.players[me].hand.sort()).toEqual([...theirs].sort()); // (owner 2026-11-23) no choosing
+    expect(t.players[turnSeat(t)].hand).toEqual(expect.arrayContaining(["KUNDLI", "TALASHI", "TUNGA_STONE"])); // the next player picked up your 3
     expect(t.deck.length).toBe(deck);
   });
   it("5.4 the Faisla caller voted out by their own Faisla: their 3 cards become the next player's pile", () => {
@@ -356,7 +355,7 @@ describe("5 · elimination", () => {
     if (t.phase.kind === "over") return;
     t = move(t, tg, { kind: "gift", to: me });
     expect(() => move(t, tg, { kind: "pass" })).toThrow(/only watch/);
-    t = move(t, me, { kind: "give", cards: t.players[me].hand.slice(0, 3) });
+    // a hit: the shooter's own 3 went on by themselves (owner 2026-11-23), and the turn skips the out player
     expect(turnSeat(t)).toBe(nextLiving(t, tg));
   });
 });
