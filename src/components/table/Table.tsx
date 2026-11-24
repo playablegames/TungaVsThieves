@@ -176,18 +176,21 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
   const left = deadline && t !== null ? Math.max(0, (deadline - t) / 1000) : null;
 
   // WHAT EVERYONE DID THIS ROUND (a tag on their seat), WHAT THEY SAID (a bubble for 7 s) — owner 2026-11-21
+  // (owner 2026-11-24: "when I play the pair, whether a person passed or played is lost") each seat keeps its LAST move
+  // until that player makes a new one — a new round no longer wipes every tag (a pair played last in a round did that)
   const doing: Record<number, string> = {};
-  const roundStart = view.events.findLastIndex((e) => e.type === "round");
-  for (const e of view.events.slice(roundStart + 1)) {
+  const fresh: Record<number, boolean> = {}; // their turn began and they haven't played yet this turn
+  for (const e of view.events) {
     const d = (e.data ?? {}) as { seat?: number; card?: string; target?: number; hit?: boolean };
     if (typeof d.seat !== "number") continue;
     const who = (x?: number) => (x === undefined ? "" : x === you ? "you" : view.players[x]?.name ?? "");
     // (owner 2026-11-23: "the pass signal is fake") the 3 cards that go on after a pair / Dal Badal / Bhukamp are not a
     // choice to pass: only a turn where they played nothing shows "Passed"
-    if (e.type === "pass") { if (!doing[d.seat] && !(e.data as { auto?: boolean }).auto) doing[d.seat] = "Passed"; }
-    else if (e.type === "play" && d.card) doing[d.seat] = `${CARD[d.card as Card].name}${d.target !== undefined ? ` on ${who(d.target)}` : ""}`;
-    else if (e.type === "teer_kaman") doing[d.seat] = `Teer Kaman ${d.hit ? "HIT" : "missed"} ${who(d.target)}`;
-    else if (e.type === "dal_badal") doing[d.seat] = "Dal Badal";
+    if (e.type === "turn") fresh[d.seat] = true;
+    else if (e.type === "pass") { if (fresh[d.seat] && !(e.data as { auto?: boolean }).auto) doing[d.seat] = "Passed"; fresh[d.seat] = false; }
+    else if (e.type === "play" && d.card) { fresh[d.seat] = false; doing[d.seat] = `${CARD[d.card as Card].name}${d.target !== undefined ? ` on ${who(d.target)}` : ""}`; }
+    else if (e.type === "teer_kaman") { fresh[d.seat] = false; doing[d.seat] = `Teer Kaman ${d.hit ? "HIT" : "missed"} ${who(d.target)}`; }
+    else if (e.type === "dal_badal") { fresh[d.seat] = false; doing[d.seat] = "Dal Badal"; }
   }
   const saying: Record<number, { text: string; key: number }> = {};
   for (const e of view.events) {
