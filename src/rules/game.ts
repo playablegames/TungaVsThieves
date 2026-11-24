@@ -390,8 +390,9 @@ export function apply(state: State, seat: number, m: Move): State {
       const roles = [...new Set(m.roles)];
       if (roles.length !== tkRoles(s)) throw new RuleError(`Name ${tkRoles(s)} role${tkRoles(s) > 1 ? "s" : ""}`);
       const hit = roles.includes(t.role);
-      emit(s, "all", "teer_kaman", `${me.name} shoots at ${t.name}: ${hit ? "HIT" : "MISS"}.`, { seat, target: t.seat, hit });
-      emit(s, [seat], "teer_kaman_roles", `You named ${roles.join(" and ")}.`, { roles });
+      // (owner 2026-11-24: "we are not shown the guess — whether he guessed a villager or a thief role is an indicator")
+      // the roles are named OUT LOUD, as at the table; only the target's card stays with the shooter
+      emit(s, "all", "teer_kaman", `${me.name} shoots at ${t.name} as ${roles.join(" or ")}: ${hit ? "HIT" : "MISS"}.`, { seat, target: t.seat, hit, roles });
       // (owner 2026-11-17) as at the table: the target shows their role card to the SHOOTER ONLY, then the shooter says hit
       // or miss. The table never sees it — an out thief keeps the secret and can poison the game to the end.
       emit(s, [seat], "teer_kaman_shown", `${t.name} shows you their role card: ${t.role}.`, { target: t.seat, role: t.role });

@@ -93,7 +93,7 @@ export function Seats({ players, you, myRole, active, total, reveal = false, vot
               )}
               {doing[p.seat] && !me && (
                 // what they did this round, ON their own card (owner 2026-11-23: under the name it ran into the seat below)
-                <span className="absolute inset-x-[-6px] top-[4px] truncate rounded-md bg-[#0c2c6bf0] px-1 py-[1px] text-center text-[10.5px] font-semibold text-[#ffe7a6] shadow-[inset_0_0_0_1px_rgba(247,187,31,.45)]">{doing[p.seat]}</span>
+                <span className="absolute inset-x-[-6px] top-[4px] line-clamp-2 whitespace-pre-line break-words leading-[13px] rounded-md bg-[#0c2c6bf0] px-1 py-[1px] text-center text-[10.5px] font-semibold text-[#ffe7a6] shadow-[inset_0_0_0_1px_rgba(247,187,31,.45)]">{doing[p.seat]}</span>
               )}
               {(votes[p.seat] ?? 0) > 0 && (
                 <span key={votes[p.seat]} className="tt-pop absolute -right-[9px] -top-2 grid h-[22px] min-w-[22px] place-items-center rounded-full bg-[#e8434b] px-1 text-[12px] font-bold text-white shadow-[0_0_0_2px_#021230]"

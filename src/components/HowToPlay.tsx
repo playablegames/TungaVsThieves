@@ -21,7 +21,7 @@ const CARDS: { c: Card; text: React.ReactNode }[] = [
   { c: "KUNDLI", text: "You and another player secretly see each other's role." },
   { c: "FAISLA", text: "Everyone votes. The player with the most votes is out. A tie: nobody is out." },
   { c: "BHUKAMP", text: "Everyone passes one card, any card, even a Stone, to the next player." },
-  { c: "TEER_KAMAN", text: "Name a player's exact role (2 guesses at 7 or more players). Right: they are out. Wrong: you are out." },
+  { c: "TEER_KAMAN", text: "Name a player's exact role out loud (2 guesses at 7 or more players). Only you see their card. Right: they are out. Wrong: you are out." },
 ];
 
 const H = ({ children }: { children: React.ReactNode }) => (

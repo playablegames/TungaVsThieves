@@ -222,7 +222,7 @@ describe("3 · action cards", () => {
     expect(t.players[tg].alive).toBe(false);
     expect(t.events.find((e) => e.type === "teer_kaman")!.data!.hit).toBe(true);
     // the role is never announced to the table
-    expect(t.events.filter((e) => e.to === "all" && e.type !== "roles_in_play").some((e) => e.msg.includes(s.players[tg].role))).toBe(false);
+    expect(t.events.filter((e) => e.to === "all" && e.type !== "roles_in_play" && e.type !== "teer_kaman").some((e) => e.msg.includes(s.players[tg].role))).toBe(false);
     // miss — a wrong role of the same side still misses
     ({ s, me } = at(6, ["TEER_KAMAN", "TEER_KAMAN", "FAISLA", "KUNDLI", "TALASHI"], 5));
     const tg2 = others(s, me)[0];

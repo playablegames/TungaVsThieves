@@ -10,8 +10,8 @@ import { play } from "@/lib/sfx";
 import { besideMe, type Card, type Move, type Talk } from "@/rules/game";
 import type { TableView } from "@/server/game";
 import { Centre } from "./Centre";
-import { RolesSheet } from "./RolesSheet";
-import { FilmLayer } from "./FilmLayer";
+import { RolesSheet, ShotSheet } from "./RolesSheet";
+import { FilmLayer, useFilmPlaying } from "./FilmLayer";
 import { notes as knownNotes, publicTags, type Claim } from "./knowledge";
 import { SecretLayer } from "./SecretLayer";
 import { GearButton, SettingsSheet } from "./SettingsSheet";
@@ -90,6 +90,7 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
     return { idx, at: "" };
   });
   const [picked, setPicked] = useState<number[]>([]);
+  const filmOn = useFilmPlaying();
   const [note, setNote] = useState<{ text: string; until: number } | null>(null);
   // [1.4c] roles in play: shown once when a game opens (before anyone has passed), and on tapping ROUND in the middle.
   // (owner 2026-11-23: "let both be there, be safe") kept as well as the roles face up in the lobby
@@ -181,7 +182,7 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
   const doing: Record<number, string> = {};
   const fresh: Record<number, boolean> = {}; // their turn began and they haven't played yet this turn
   for (const e of view.events) {
-    const d = (e.data ?? {}) as { seat?: number; card?: string; target?: number; hit?: boolean };
+    const d = (e.data ?? {}) as { seat?: number; card?: string; target?: number; hit?: boolean; roles?: string[] };
     if (typeof d.seat !== "number") continue;
     const who = (x?: number) => (x === undefined ? "" : x === you ? "you" : view.players[x]?.name ?? "");
     // (owner 2026-11-23: "the pass signal is fake") the 3 cards that go on after a pair / Dal Badal / Bhukamp are not a
@@ -189,7 +190,7 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
     if (e.type === "turn") fresh[d.seat] = true;
     else if (e.type === "pass") { if (fresh[d.seat] && !(e.data as { auto?: boolean }).auto) doing[d.seat] = "Passed"; fresh[d.seat] = false; }
     else if (e.type === "play" && d.card) { fresh[d.seat] = false; doing[d.seat] = `${CARD[d.card as Card].name}${d.target !== undefined ? ` on ${who(d.target)}` : ""}`; }
-    else if (e.type === "teer_kaman") { fresh[d.seat] = false; doing[d.seat] = `Teer Kaman ${d.hit ? "HIT" : "missed"} ${who(d.target)}`; }
+    else if (e.type === "teer_kaman") { fresh[d.seat] = false; doing[d.seat] = `${d.hit ? "Hit" : "Missed"} ${who(d.target)}${d.roles?.length ? `\n${d.roles.join(" / ")}` : ""}`; }
     else if (e.type === "dal_badal") { fresh[d.seat] = false; doing[d.seat] = "Dal Badal"; }
   }
   const saying: Record<number, { text: string; key: number }> = {};
@@ -393,6 +394,7 @@ export function Table({ view, deadline, now, total = 20, onMove, initialOpen = n
         {rolesOpen && <RolesSheet roles={view.rolesInPlay} onClose={() => setRolesOpen(false)} />}
         {/* the big moments' films, over everything (owner 2026-11-20) */}
         <FilmLayer view={view} />
+        <ShotSheet view={view} film={filmOn} />
         {/* your private result (Kundli, Talashi, Hera Pheri, Teer Kaman, Bhukamp), after its film — owner 2026-11-22 */}
         <SecretLayer view={view} />
         {settings && <SettingsSheet onClose={() => setSettings(false)} />}

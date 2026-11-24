@@ -408,8 +408,16 @@ export class Brain {
           break;
         }
         case "teer_kaman": {
-          // a shot is aimed across the table: shooter and target likely on opposite sides (the roles named are private)
+          // a shot is aimed across the table: shooter and target likely on opposite sides
           if (actor !== undefined && target !== undefined) this.weigh("teer_kaman", (h) => (this.isT(h, actor) !== this.isT(h, target!) ? M.aim : 1 - M.aim));
+          // (owner 2026-11-24) the roles are named out loud: naming thief roles = hunting thieves = most likely a villager,
+          // and the reverse; a HIT puts the target on the named side
+          const named = [...new Set(((d.roles as string[] | undefined) ?? []).map(sideOf))];
+          if (actor !== undefined && actor !== this.seat && named.length === 1) {
+            const hunts = named[0];
+            this.weigh("teer_kaman", (h) => ((this.isT(h, actor) === 1) !== (hunts === "T") ? 0.9 : 0.1));
+            if (d.hit && target !== undefined && target !== this.seat) this.setFact(target, hunts);
+          }
           break;
         }
         case "tally": {
