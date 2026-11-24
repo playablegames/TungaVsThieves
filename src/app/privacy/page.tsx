@@ -1,4 +1,4 @@
-// PRIVACY (first written 2026-10-14; redone 2026-11-16 for the Play Store and India's DPDP Act 2023; checked against the app 2026-11-23): what the game
+// PRIVACY (first written 2026-10-14; redone 2026-11-16 for the Play Store and India's DPDP Act 2023; checked against the app 2026-11-23; optional WhatsApp number + email added 2026-11-24): what the game
 // keeps, in plain words. Who we are and where to write come from lib/legal.ts.
 import type { Metadata } from "next";
 import { A, LegalPage, Part, Points } from "@/components/LegalPage";
@@ -8,7 +8,8 @@ export const metadata: Metadata = { title: "Privacy — Tunga vs Thieves" };
 
 /** what · where it goes · note */
 const ROWS: [string, string, string][] = [
-  ["The name you type", "Shown to your table and kept with the game.", "No account, no email, no phone number."],
+  ["The name you type", "Shown to your table and kept with the game.", "No account."],
+  ["Your WhatsApp number and email, only if you type them", "Asked once, before your first game. Both are optional. Kept by us, apart from the games.", "Used only to add you to the Playable Games WhatsApp group and tell you about game nights and offers. Never asked from players under 18."],
   ["The game itself: moves, votes, accusations, chat lines", "Kept on our server with the game.", "Used to fix bugs and to make the computer players play more like people."],
   ["Messages you whisper to the player beside you", "Kept with the game. Only that player gets it.", "The table sees that you whispered, never what."],
   ["Voice, in the waiting room and at the table", "Goes live between the phones. We never record it.", "Your mic starts off; you can mute anyone for yourself."],
@@ -35,22 +36,23 @@ export default function Privacy() {
         </dl>
       </Part>
       <Part title="What we never collect">
-        <p>Your email, phone number, contacts, photos, location or advertising ID. We do not sell or share what the game keeps, and nothing is used for advertising.</p>
+        <p>Your contacts, photos, location or advertising ID. We do not sell or share anything you give us, and we never use it to show you ads.</p>
       </Part>
       <Part title={`Under ${ADULT_AGE}`}>
-        <p>The game asks when you were born before your first game. The date is not stored or sent to us: the phone remembers only whether you are {ADULT_AGE} or over. Players under {ADULT_AGE} play against the computer players with a nickname from a list. For them there is no chat, no voice, no typed name and no turn alerts.</p>
+        <p>The game asks when you were born before your first game. The date is not stored or sent to us: the phone remembers only whether you are {ADULT_AGE} or over. Players under {ADULT_AGE} play against the computer players with a nickname from a list. For them there is no chat, no voice, no typed name, no turn alerts, and we never ask for a phone number or email.</p>
       </Part>
       <Part title="Who helps us run it">
         <p>The game runs on hosting from Vercel and a database from Supabase, voice may pass through a relay service so phones can reach each other, and reports reach us through our Google Workspace email. They handle the data only to run the game for us. Their servers may be outside India.</p>
       </Part>
       <Part title="How long it is kept">
-        <p>A game and everything sent in it, reports included, is deleted 90 days after its last move, or sooner if you ask us to delete it. What is kept on your phone stays until you clear the browser or the app&apos;s data.</p>
+        <p>A game and everything sent in it, reports included, is deleted 90 days after its last move, or sooner if you ask us to delete it. Your WhatsApp number and email stay until you ask us to remove them, or leave the WhatsApp group and tell us. What is kept on your phone stays until you clear the browser or the app&apos;s data.</p>
       </Part>
       <Part title="Your choices">
         <Points items={[
           "Ask what we hold about a game you played.",
           "Ask us to correct it or delete it.",
           "Take back your consent: stop playing and ask us to delete your games.",
+          "Ask us to remove your WhatsApp number and email at any time.",
           "Complain to us, and if you are not satisfied, to the Data Protection Board of India.",
         ]} />
         <p>Send the table code with your request so we can find the game: see <A href="/contact">Contact and complaints</A>, or use <b>Report a problem</b> in the menu at your table.</p>

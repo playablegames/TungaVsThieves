@@ -43,10 +43,12 @@ export interface Store {
   messages(code: string, sinceId: number): Promise<ChatMessage[]>;
   /** rooms whose decision clock has run out — the server's sweep closes them even if every phone is asleep */
   due(now: number, limit: number): Promise<string[]>;
+  /** (owner 2026-11-24) optional phone/email for the WhatsApp group — kept apart from games, so the 90-day game sweep never touches it */
+  addContact(c: { name: string; phone: string | null; email: string | null }): Promise<void>;
 }
 
 // ------------------------------------------------------------------ memory
-type Mem = { games: Map<string, GameRow>; chat: Map<string, ChatMessage[]>; seq: number };
+type Mem = { games: Map<string, GameRow>; chat: Map<string, ChatMessage[]>; seq: number; contacts?: { name: string; phone: string | null; email: string | null }[] };
 const mem: Mem = ((globalThis as unknown as { __tunga?: Mem }).__tunga ??= { games: new Map(), chat: new Map(), seq: 0 });
 
 export const memoryStore: Store = {
@@ -67,6 +69,7 @@ export const memoryStore: Store = {
   async due(now, limit) {
     return [...mem.games.values()].filter((g) => g.status === "playing" && g.deadline !== null && g.deadline < now).slice(0, limit).map((g) => g.code);
   },
+  async addContact(c) { (mem.contacts ??= []).push(c); },
 };
 
 // ------------------------------------------------------------------ supabase
@@ -113,6 +116,10 @@ function supabaseStore(sb: SupabaseClient): Store {
       const { data, error } = await sb.from("games").select("code").eq("status", "playing").lt("deadline", now).limit(limit);
       if (error) throw error;
       return (data ?? []).map((d) => d.code as string);
+    },
+    async addContact(c) {
+      const { error } = await sb.from("contacts").insert(c);
+      if (error) throw error;
     },
   };
 }

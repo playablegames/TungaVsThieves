@@ -28,6 +28,8 @@ async function call<T>(path: string, init: RequestInit & { token?: string | null
 }
 
 export const api = {
+  /** (owner 2026-11-24) optional phone/email for the Playable Games WhatsApp group; never tied to a game */
+  contact: (name: string, phone: string, email: string) => call<{ ok: true }>("/api/contact", { method: "POST", body: JSON.stringify({ name, phone, email }) }),
   create: (name: string) => call<{ code: string; token: string }>("/api/games", { method: "POST", body: JSON.stringify({ name, games: gamesPlayed() }) }),
   /** Play with bots: you + `bots` bots, dealt and started, in one call (2026-10-14) */
   createWithBots: (name: string, bots: number) => call<{ code: string; token: string }>("/api/games", { method: "POST", body: JSON.stringify({ name, bots, games: gamesPlayed() }) }),

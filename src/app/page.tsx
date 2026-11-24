@@ -15,6 +15,16 @@ import { NAME_MAX } from "@/lib/names";
 
 const NAME_KEY = "tunga:name";
 const LEARNED = "tunga:learned";
+/** (owner 2026-11-24) phone + email are asked ONCE, both optional, never to under-18s; "yes" once the sheet was sent */
+const CONTACT_KEY = "tunga:contact";
+function contactAsked(): boolean {
+  try { return localStorage.getItem(CONTACT_KEY) === "yes"; } catch { return true; }
+}
+/** 10-digit Indian mobile from whatever was typed (+91, 0, spaces, dashes), or null */
+function cleanPhone(raw: string): string | null {
+  const d = raw.replace(/\D/g, "").replace(/^(91|0)(?=\d{10}$)/, "");
+  return /^[6-9]\d{9}$/.test(d) ? d : null;
+}
 /** Play with bots opens your table's lobby with 4 bots (owner 2026-11-23: one step); more bots are added there —
  *  4 to 12 players, the box's own range (rules 1.1; 2026-11-18 it stopped at 5 players) — 5 to start with */
 const BOTS_START = 4; // owner 2026-11-22: start at 4 bots + you = 5 players, 2 rounds
@@ -57,6 +67,9 @@ function Entry() {
   const [rules, setRules] = useState(false);
   const [comfort, setComfort] = useState(false);
   const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [askContact, setAskContact] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
@@ -86,7 +99,10 @@ function Entry() {
     }
     // (owner 2026-11-23: "why are there 2 steps, play with bots must open the lobby") a known name goes straight to the
     // table's lobby, where bots are added and the game started
-    if (kind === "bots" && savedName()) { void open("bots", savedName()); return; }
+    // (2026-11-24) ...unless this phone has not yet been offered the phone + email boxes: then the sheet shows once
+    const offer = !contactAsked();
+    setAskContact(offer);
+    if (kind === "bots" && savedName() && !offer) { void open("bots", savedName()); return; }
     setName(savedName());
     setPeek(kind === "join" ? "looking" : null);
     setAsk(kind);
@@ -97,6 +113,14 @@ function Entry() {
 
   async function go() {
     if (!ask || !name.trim()) return;
+    if (askContact && !minor) {
+      const p = phone.trim() ? cleanPhone(phone) : "";
+      const m = email.trim().toLowerCase();
+      if (p === null) { setError("Check the WhatsApp number: 10 digits"); return; }
+      if (m && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(m)) { setError("Check the email"); return; }
+      if (p || m) void api.contact(name.trim(), p, m).catch(() => {});
+      try { localStorage.setItem(CONTACT_KEY, "yes"); } catch {}
+    }
     await open(ask, name);
   }
   async function open(ask: "create" | "join" | "bots" | "learn", name: string) {
@@ -217,6 +241,15 @@ function Entry() {
               </select>
             ) : <input id="name" ref={nameRef} value={name} maxLength={NAME_MAX} onChange={(e) => setName(e.target.value)} placeholder="Your name" autoComplete="nickname"
               className="min-h-14 rounded-xl border-[1.5px] border-card-ink/30 bg-white/60 px-4 text-[17px] font-medium text-card-ink caret-marigold-deep outline-none placeholder:font-normal placeholder:text-card-ink/40 focus:border-marigold-deep" />}
+            {askContact && !minor && <>
+              <label htmlFor="phone" className="sr-only">WhatsApp number</label>
+              <input id="phone" type="tel" inputMode="tel" value={phone} maxLength={16} onChange={(e) => setPhone(e.target.value)} placeholder="WhatsApp number (optional)" autoComplete="tel-national"
+                className="min-h-14 rounded-xl border-[1.5px] border-card-ink/30 bg-white/60 px-4 text-[17px] font-medium text-card-ink caret-marigold-deep outline-none placeholder:font-normal placeholder:text-card-ink/40 focus:border-marigold-deep" />
+              <label htmlFor="email" className="sr-only">Email</label>
+              <input id="email" type="email" inputMode="email" value={email} maxLength={120} onChange={(e) => setEmail(e.target.value)} placeholder="Email (optional)" autoComplete="email"
+                className="min-h-14 rounded-xl border-[1.5px] border-card-ink/30 bg-white/60 px-4 text-[17px] font-medium text-card-ink caret-marigold-deep outline-none placeholder:font-normal placeholder:text-card-ink/40 focus:border-marigold-deep" />
+              <p className="-mt-2 text-[13px] leading-snug text-card-ink/70">We add your number to the Playable Games WhatsApp group for game nights and offers. <a href="/privacy" className="underline">Privacy</a></p>
+            </>}
             {error && <p role="alert" className="rounded-xl bg-crimson-deep p-3 text-center text-[14px] text-white">{error}</p>}
             <button type="submit" disabled={busy || !name.trim() || joinBlocked}
               className="btn-gold min-h-14 whitespace-nowrap rounded-full text-[17px] font-semibold">
