@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "in.playablegames.tunga",
+      "sha256_cert_fingerprints": [
+        "3F:45:82:AB:DD:FE:FC:D3:4B:15:C6:BC:4F:13:50:63:0B:63:B7:51:A1:40:90:5F:22:4C:B6:38:0C:E0:4C:C4"
+      ]
+    }
+  }
+]
