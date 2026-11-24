@@ -127,6 +127,9 @@ export class Brain {
   /** my facts about roles */
   known: Record<number, string> = {};
   stone: Record<number, number> = {};
+  /** (owner 2026-11-24: "bots find the last Stone") W: a Stone moves with the cards — the chance the face-down pile holds
+   *  one, what a player keeps after a forced pass (the 2 they took), and whether this turn's player played Dal Badal */
+  pileStone = 0; keepStone: Record<number, number> = {}; dbBy = -1;
   claims: Record<number, string> = {};
   /** (owner 2026-11-21: "why can't bots pass info to bots they trust") roles OTHERS say they saw (Kundli): seat → { role, from } */
   told: Record<number, { role: string; from: number }> = {};
@@ -241,6 +244,51 @@ export class Brain {
   /** a deterministic little coin per (bot, event) — for mix-ups */
   private coin(n: number) { const x = Math.sin((this.seat + 1) * 9301 + n * 49297) * 233280; return x - Math.floor(x); }
 
+  /** W — FOLLOW THE STONES (owner 2026-11-24): a Stone can't be played, so it travels only with passed cards. Every
+   *  public move tells me where a Stone I believed in has gone: a forced pass (after a pair) sends ALL of it to the pile,
+   *  a chosen pass sends some, the next player picks the pile up, Hera Pheri / a hit / a Faisla-out hand the 2 taken cards
+   *  to the player who took them, an out player holds nothing. Once I know where both Stones are, nobody else has one. */
+  private follow(type: string, d: Record<string, unknown>, actor: number | undefined, myStones: number) {
+    const me = this.seat, st = this.stone;
+    const or = (a: number, b: number) => 1 - (1 - a) * (1 - b);
+    switch (type) {
+      case "turn":
+        if (actor !== undefined && actor !== me) st[actor] = or(st[actor] ?? 0, this.pileStone);
+        this.pileStone = 0; this.dbBy = -1;
+        break;
+      case "dal_badal": if (actor === this.turnOf) this.dbBy = actor; break;
+      case "play":
+        if (d.card === "HERA_PHERI" && actor !== undefined && typeof d.target === "number" && actor !== me) {
+          this.keepStone[actor] = d.target === me ? 0 : st[d.target] ?? 0; // what I lost, the "robbed" event tells me
+          if (d.target !== me) st[d.target] = 0; // they draw 2 fresh cards — no Stone is in the deck
+        }
+        break;
+      case "out": {
+        const v = d.seat as number | undefined;
+        if (v === undefined || v === me) break;
+        if (v === this.turnOf) this.pileStone = or(this.pileStone, st[v] ?? 0); // a missed shot / a caller out: their 3 are the pile
+        else if (this.turnOf !== me && this.keepStone[this.turnOf] === undefined) this.keepStone[this.turnOf] = st[v] ?? 0; // hit / Faisla-out: the 2 go to the taker
+        st[v] = 0;
+        break;
+      }
+      case "pass": {
+        if (actor === undefined || actor === me) { this.pileStone = 0; delete this.keepStone[me]; break; } // mine: "gave" says
+        const had = st[actor] ?? 0;
+        const share = !d.auto ? 0.35 : this.dbBy === actor ? 0.75 : 1;
+        this.pileStone = had * share;
+        st[actor] = this.keepStone[actor] !== undefined ? this.keepStone[actor] : had * (1 - share);
+        delete this.keepStone[actor];
+        break;
+      }
+    }
+    // both Stones found (in my hand or known for sure): nobody else holds one
+    const sure = Object.entries(st).filter(([x, v]) => Number(x) !== me && v >= 0.99).map(([x]) => Number(x));
+    if (myStones + sure.length >= 2) {
+      for (const x of Object.keys(st)) if (!sure.includes(Number(x)) && Number(x) !== me) st[Number(x)] = 0;
+      this.pileStone = 0;
+    }
+  }
+
   read(s: State, r: R) {
     for (; this.seen < s.events.length; this.seen++) {
       const e = s.events[this.seen];
@@ -249,6 +297,7 @@ export class Brain {
       const actor = d.seat as number | undefined;
       let target = d.target as number | undefined;
       if ((e.type === "play" || e.type === "dal_badal") && actor === this.turnOf) this.turnPlayed = true;
+      if (EXP.includes("W") && e.to === "all") this.follow(e.type, d, actor, (s.players[this.seat]?.hand ?? []).filter(isStone).length);
       switch (e.type) {
         case "turn": this.turns++; this.fade(); this.turnOf = actor ?? -1; this.turnPlayed = false; break;
         case "role": this.known[this.seat] = d.role as string; this.setFact(this.seat, d.side as Side); break;
@@ -283,7 +332,9 @@ export class Brain {
           const stealer = [...s.events].slice(0, e.n).reverse().find((x) => x.type === "play" && (x.data as { card?: string })?.card === "HERA_PHERI");
           const by = (stealer?.data as { seat?: number })?.seat;
           if (by !== undefined) {
-            this.stone[by] = lost ? 1 : this.stone[by] ?? 0;
+            // W: the 2 taken stay with them, their own 3 go on — so it's the 2 they KEEP that hold my Stone
+            if (EXP.includes("W")) this.keepStone[by] = lost ? 1 : 0;
+            else this.stone[by] = lost ? 1 : this.stone[by] ?? 0;
             if (lost) this.stoneWent[by] = (d.cards as Card[]).filter(isStone);
             // I'm a villager robbed of a Stone: the robber is more likely a thief (big moment)
             if (lost && this.sideThen(s) === "V") this.weigh("robbed", (h) => (this.isT(h, by) ? 2 : 1));
