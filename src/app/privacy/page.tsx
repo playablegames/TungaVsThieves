@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: "Privacy — Tunga vs Thieves" };
 /** what · where it goes · note */
 const ROWS: [string, string, string][] = [
   ["The name you type", "Shown to your table and kept with the game.", "No account."],
-  ["Your WhatsApp number and email, only if you type them", "Asked once, before your first game. Both are optional. Kept by us, apart from the games.", "Used only to add you to the Playable Games WhatsApp group and tell you about game nights and offers. Never asked from players under 18."],
+  ["Your WhatsApp number and email, only if you type them", "Asked once, before your first game. Both are optional. Kept by us, apart from the games.", "Used only to send you updates and offers from Playable Games on WhatsApp or email. Never asked from players under 18."],
   ["The game itself: moves, votes, accusations, chat lines", "Kept on our server with the game.", "Used to fix bugs and to make the computer players play more like people."],
   ["Messages you whisper to the player beside you", "Kept with the game. Only that player gets it.", "The table sees that you whispered, never what."],
   ["Voice, in the waiting room and at the table", "Goes live between the phones. We never record it.", "Your mic starts off; you can mute anyone for yourself."],
@@ -45,7 +45,7 @@ export default function Privacy() {
         <p>The game runs on hosting from Vercel and a database from Supabase, voice may pass through a relay service so phones can reach each other, and reports reach us through our Google Workspace email. They handle the data only to run the game for us. Their servers may be outside India.</p>
       </Part>
       <Part title="How long it is kept">
-        <p>A game and everything sent in it, reports included, is deleted 90 days after its last move, or sooner if you ask us to delete it. Your WhatsApp number and email stay until you ask us to remove them, or leave the WhatsApp group and tell us. What is kept on your phone stays until you clear the browser or the app&apos;s data.</p>
+        <p>A game and everything sent in it, reports included, is deleted 90 days after its last move, or sooner if you ask us to delete it. Your WhatsApp number and email stay until you ask us to remove them. What is kept on your phone stays until you clear the browser or the app&apos;s data.</p>
       </Part>
       <Part title="Your choices">
         <Points items={[
