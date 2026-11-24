@@ -35,7 +35,7 @@ export function EndSheet({ view, host, hostName, next, busy, error, onAgain, onF
             came from the app. Side by side with Home so the stack is no taller than before (4 rows covered your card on a 360×740 phone) */}
         <div className="flex gap-2">
           <Link href="/" className="btn-line flex min-h-[52px] flex-1 items-center justify-center whitespace-nowrap rounded-full px-4 text-[16px] font-semibold">Home</Link>
-          <a href={BOX_URL} target="_blank" rel="noopener" className="btn-line flex min-h-[52px] flex-[1.6] items-center justify-center whitespace-nowrap rounded-full px-4 text-[16px] font-semibold">Get the real box</a>
+          <a href={BOX_URL} target="_blank" rel="noopener" className="btn-line flex min-h-[52px] flex-[1.6] items-center justify-center whitespace-nowrap rounded-full px-4 text-[16px] font-semibold">Buy now</a>
         </div>
       </div>
     </div>
