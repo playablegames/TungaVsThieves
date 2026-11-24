@@ -92,7 +92,8 @@ export function talkyOf(name: string): number { return 0.45 + (hashStr(name) % 1
 // V live vote · P pressure · C passing on purpose · A asking for cards (owner 2026-11-21/22)
 // L last pile safe · F final vote weighs Stones
 // H hold the Stone (no pair play that would pass it on) · Q read the quiet-pass tell · X villagers hunt a quiet suspect
-const EXP = (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env.BRAIN_EXP ?? "KSTVPCALFHQX";
+// W follow the Stones as cards move (owner 2026-11-24)
+const EXP = (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env.BRAIN_EXP ?? "KSTVPCALFHQXW";
 const ENV = (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env ?? {};
 const TRY = ENV.BRAIN_TRY ?? "";
 const M = { honest: 0.9, hunch: 1.6, ballot: 1.4, aim: 0.7, liar: 0.6, steal: 1.5 };
