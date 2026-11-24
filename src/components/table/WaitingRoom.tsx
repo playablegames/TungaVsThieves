@@ -4,7 +4,7 @@
 // night village, courtyard, seats and garland as the game: people sit in their real seats as they join, empty seats
 // show "+" (tap to invite). The centre: table code (tap = copy link), who is seated, Add bot + Start game (host).
 // The roles in this game lie FACE UP in the seats [1.4c: the roles in play are public]; the bottom: Add bots,
-// Invite friends, Start the game, one below another. The start: the cards flip to their backs, the table spins.
+// Invite friends, Start the game, one below another. The start: the cards flip to their backs (no table spin: owner 2026-11-24).
 // Voice safety: your mic starts OFF; tap a person to mute them for yourself, report them, or (host) remove them.
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -40,7 +40,7 @@ function rolesAt(table: Record<number, [number, number, number]>, n: number, min
 
 export function WaitingRoom({ state, token, onStarted, voice, spinning = false }: {
   state: ClientState; token: string; onStarted: () => void; voice: VoiceControls | null;
-  /** THE GAME STARTS (owner 2026-11-23): the role cards flip to their backs, then the table SPINS */
+  /** THE GAME STARTS: the role cards flip to their backs. The table does NOT spin (owner 2026-11-24: "people will leave at that point") */
   spinning?: boolean;
 }) {
   const lobby = state.lobby;
@@ -51,13 +51,12 @@ export function WaitingRoom({ state, token, onStarted, voice, spinning = false }
   const [copied, setCopied] = useState(false);
   const [open, setOpen] = useState<number | null>(null);
   const [settings, setSettings] = useState(false);
-  // the start: 0-700ms the cards flip (faces -> backs at the half), then the ring spins two turns
+  // the start: 0-700ms the cards flip (faces -> backs at the half)
   const [backs, setBacks] = useState(false);
-  const [spin, setSpin] = useState(false);
   useEffect(() => {
     if (!spinning) return;
-    const a = setTimeout(() => setBacks(true), 350), b = setTimeout(() => setSpin(true), 700);
-    return () => { clearTimeout(a); clearTimeout(b); };
+    const a = setTimeout(() => setBacks(true), 350);
+    return () => clearTimeout(a);
   }, [spinning]);
   // MUSIC (owner 2026-11-23): the table's score plays in the lobby too (after the first tap, as browsers require)
   useEffect(() => { unlockOnFirstTap(); startMusicOnFirstTap(); setMood("calm"); }, []);
@@ -132,8 +131,7 @@ export function WaitingRoom({ state, token, onStarted, voice, spinning = false }
           {err && <p role="alert" className="mt-2 rounded-lg bg-[#5a1010e6] px-2 py-1 text-[11.5px] text-white">{err}</p>}
         </div>
 
-        <div className={`pointer-events-none absolute inset-0 z-[2] [&>*]:pointer-events-auto ${spinning && !spin ? "tt-flip" : ""}`}
-          style={{ transformOrigin: `${W / 2}px ${CY}px`, transform: spin ? "rotate(720deg)" : "none", transition: spin ? "transform 1900ms cubic-bezier(.3,.05,.15,1)" : "none" }}>
+        <div className={`pointer-events-none absolute inset-0 z-[2] [&>*]:pointer-events-auto ${spinning ? "tt-flip" : ""}`}>
         <Seats players={players} you={me} myRole={backs ? null : shown[me] ?? null} reveal={!backs} active={[]} total={seats} talking={voice?.talking} muted={voice?.muted}
           onSeat={spinning ? undefined : (s) => { play("tap"); setOpen(s === me ? null : s); }} />
         {/* the empty seats: tap to invite */}

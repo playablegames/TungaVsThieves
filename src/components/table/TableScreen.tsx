@@ -17,8 +17,8 @@ import { countGame } from "@/lib/experience";
 
 export function TableScreen({ code }: { code: string }) {
   const { hydrated, token, state, act, now, error, reclaim, refresh, whisper, tellTo } = useGame(code);
-  // THE GAME STARTS (owner 2026-11-23): on every phone that was in the lobby, the lobby stays up ~2.7 s while its role
-  // cards flip to their backs and the table spins; then the game table takes over
+  // THE GAME STARTS: on every phone that was in the lobby, the lobby stays up ~0.9 s while its role cards flip to
+  // their backs; then the game table takes over (the table spin was removed, owner 2026-11-24)
   const [lastLobby, setLastLobby] = useState<typeof state>(null);
   const [spinUntil, setSpinUntil] = useState(0);
   if (state?.status === "lobby" && state.lobby && state !== lastLobby) setLastLobby(state);
@@ -26,7 +26,7 @@ export function TableScreen({ code }: { code: string }) {
   const [, tick] = useState(0);
   useEffect(() => {
     if (!spinUntil) return;
-    const id = setTimeout(() => { setLastLobby(null); tick((x) => x + 1); }, 2700);
+    const id = setTimeout(() => { setLastLobby(null); tick((x) => x + 1); }, 900);
     return () => clearTimeout(id);
   }, [spinUntil]);
   const router = useRouter();
