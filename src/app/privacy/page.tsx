@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: "Privacy — Tunga vs Thieves" };
 /** what · where it goes · note */
 const ROWS: [string, string, string][] = [
   ["The name you type", "Shown to your table and kept with the game.", "No account."],
-  ["Your WhatsApp number and email, only if you type them", "Asked once, before your first game. Both are optional. Kept by us, apart from the games.", "Used only to send you updates and offers from Playable Games on WhatsApp or email. Never asked from players under 18."],
+  ["Your WhatsApp number and email, only if you type them", "Asked once, before your first game. Both are optional. Kept by us, apart from the games.", "Used only by Playable Games for updates and marketing, on WhatsApp or email. Never asked from players under 18."],
   ["The game itself: moves, votes, accusations, chat lines", "Kept on our server with the game.", "Used to fix bugs and to make the computer players play more like people."],
   ["Messages you whisper to the player beside you", "Kept with the game. Only that player gets it.", "The table sees that you whispered, never what."],
   ["Voice, in the waiting room and at the table", "Goes live between the phones. We never record it.", "Your mic starts off; you can mute anyone for yourself."],

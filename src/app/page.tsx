@@ -248,7 +248,7 @@ function Entry() {
               <label htmlFor="email" className="sr-only">Email</label>
               <input id="email" type="email" inputMode="email" value={email} maxLength={120} onChange={(e) => setEmail(e.target.value)} placeholder="Email (optional)" autoComplete="email"
                 className="min-h-14 rounded-xl border-[1.5px] border-card-ink/30 bg-white/60 px-4 text-[17px] font-medium text-card-ink caret-marigold-deep outline-none placeholder:font-normal placeholder:text-card-ink/40 focus:border-marigold-deep" />
-              <p className="-mt-2 text-[13px] leading-snug text-card-ink/70">Get updates and offers from Playable Games on WhatsApp. <a href="/privacy" className="underline">Privacy</a></p>
+              <p className="-mt-2 text-[13px] leading-snug text-card-ink/70">Used by Playable Games for updates and marketing. <a href="/privacy" className="underline">Privacy</a></p>
             </>}
             {error && <p role="alert" className="rounded-xl bg-crimson-deep p-3 text-center text-[14px] text-white">{error}</p>}
             <button type="submit" disabled={busy || !name.trim() || joinBlocked}
